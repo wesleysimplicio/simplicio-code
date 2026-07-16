@@ -9687,6 +9687,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplicio-runtime-client"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13936,6 +13945,7 @@ dependencies = [
  "serde_yaml",
  "shellexpand",
  "similar",
+ "simplicio-runtime-client",
  "strip-ansi-escapes",
  "strum 0.26.3",
  "tar",

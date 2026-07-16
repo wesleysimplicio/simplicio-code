@@ -398,8 +398,9 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
         use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
         use xai_grok_tools::implementations::web_search::WebSearchConfig;
-        let fs = Arc::new(xai_grok_tools::computer::local::LocalFs)
-            as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
+        let fs = Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
+            cwd.clone(),
+        )) as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
         let notification_handle = xai_grok_tools::notification::ToolNotificationHandle::noop();
         let (image_gen_config, video_gen_config, web_search_config, app_builder_deployer_config) =
             if let (Some(auth), Some(url)) = (&self.auth, &self.api_base_url) {

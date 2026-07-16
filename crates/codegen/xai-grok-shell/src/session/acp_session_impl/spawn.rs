@@ -587,7 +587,9 @@ pub(crate) async fn spawn_session_actor(
                 tool_context.session_id.clone().unwrap(),
             ))
         } else {
-            std::sync::Arc::new(xai_grok_tools::computer::local::LocalFs)
+            std::sync::Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
+                tool_context.cwd.as_path().to_path_buf(),
+            ))
         };
     let bridge_state_path =
         crate::session::persistence::session_dir(&session_info).join("tool_state.json");
