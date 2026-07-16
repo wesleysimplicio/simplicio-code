@@ -30,7 +30,7 @@ for the version of the code present in this tree.
 - leitura de arquivos obrigatoriamente via `simplicio_file_read`;
 - handshake MCP valida que o processo é o Simplicio Runtime verdadeiro;
 - falha fechada: sem Runtime, o agente não lê diretamente do disco;
-- TUI, headless e ACP local compartilham o mesmo backend de leitura;
+- TUI, headless, workspace e ACP compartilham o mesmo backend de leitura;
 - escrita/exclusão ainda usam o backend local existente nesta primeira versão.
 
 Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.

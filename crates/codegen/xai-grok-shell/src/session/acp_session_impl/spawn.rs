@@ -580,17 +580,14 @@ pub(crate) async fn spawn_session_actor(
             .warm_persistent_shell(tool_context.cwd.as_path())
             .await;
     }
+    // Capability discovery remains part of ACP negotiation, but Simplicio Code
+    // never delegates project reads to the editor. Runtime ownership is
+    // fail-closed and identical across TUI, headless, workspace and ACP.
+    let _ = client_fs_capable;
     let fs_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem> =
-        if client_fs_capable && tool_context.gateway.is_some() {
-            std::sync::Arc::new(xai_grok_workspace::file_system::AcpFsAdapter::new(
-                tool_context.gateway.clone().unwrap(),
-                tool_context.session_id.clone().unwrap(),
-            ))
-        } else {
-            std::sync::Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
-                tool_context.cwd.as_path().to_path_buf(),
-            ))
-        };
+        std::sync::Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
+            tool_context.cwd.as_path().to_path_buf(),
+        ));
     let bridge_state_path =
         crate::session::persistence::session_dir(&session_info).join("tool_state.json");
     let initial_agent_type = Some(agent_definition.name.clone());

@@ -22,7 +22,8 @@ MCP stdio: simplicio serve --mcp --stdio --json
 simplicio_file_read (sandbox + limite + contrato tipado)
 ```
 
-O Runtime é a autoridade de leitura. `SimplicioRuntimeFs` não possui fallback
+O Runtime é a autoridade de leitura, inclusive quando um cliente ACP anuncia
+filesystem próprio. `SimplicioRuntimeFs` não possui fallback
 local: falha de instalação, identidade, protocolo, sandbox ou truncamento
 interrompe a leitura. O cliente mantém uma sessão MCP por workspace e reinicia
 a conexão após falha recuperável.
