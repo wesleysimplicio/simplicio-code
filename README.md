@@ -1,20 +1,11 @@
 <div align="center">
 
-<h1>
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://media.x.ai/v1/website/spacexai-symbol-white-transparent-0c31957f.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png">
-    <img alt="SpaceXAI logo" src="https://media.x.ai/v1/website/spacexai-symbol-black-transparent-6435cf42.png" width="96">
-  </picture>
-  <br>
-  Grok Build (<code>grok</code>)
-</h1>
+<h1>Simplicio Code (<code>simplicio-code</code>)</h1>
 
-**Grok Build** is SpaceXAI's terminal-based AI coding agent. It runs as a
-full-screen TUI that understands your codebase, edits files, executes shell
-commands, searches the web, and manages long-running tasks — interactively,
-headlessly for scripting/CI, or embedded in editors via the Agent Client
-Protocol (ACP).
+**Simplicio Code** é o agente de programação da assinatura Simplicio. Ele une
+uma interface terminal/ACP em Rust ao Simplicio Runtime: toda leitura de arquivo
+do projeto feita pelo agente passa pelo contrato MCP do Runtime, com sandbox,
+controle de contexto e economia de tokens.
 
 [Installing the released binary](#installing-the-released-binary) ·
 [Building from source](#building-from-source) ·
@@ -24,12 +15,8 @@ Protocol (ACP).
 [Contributing](#contributing) ·
 [License](#license)
 
-![Grok Build TUI](https://media.x.ai/v1/website/universe-tui-screenshot-6f7a0837.png)
-
-**Learn more about Grok Build at [x.ai/cli](https://x.ai/cli)**
-
-This repository contains the Rust source for the `grok` CLI/TUI and its agent
-runtime. It is synced periodically from the SpaceXAI monorepo.
+Este é um fork privado de produto. O remoto `upstream` preserva a origem do
+Grok Build; integrações próprias vivem neste repositório.
 
 A small `SOURCE_REV` file at the root records the full monorepo commit SHA
 for the version of the code present in this tree.
@@ -38,18 +25,23 @@ for the version of the code present in this tree.
 
 ---
 
-## Installing the released binary
+## Estado do produto
 
-Prebuilt binaries are published for macOS, Linux, and Windows:
+- leitura de arquivos obrigatoriamente via `simplicio_file_read`;
+- handshake MCP valida que o processo é o Simplicio Runtime verdadeiro;
+- falha fechada: sem Runtime, o agente não lê diretamente do disco;
+- TUI, headless e ACP local compartilham o mesmo backend de leitura;
+- escrita/exclusão ainda usam o backend local existente nesta primeira versão.
+
+Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.
+
+## Instalando o binário
+
+Os instaladores públicos serão publicados após a primeira release privada:
 
 ```sh
-curl -fsSL https://x.ai/cli/install.sh | bash   # macOS / Linux / Git Bash
-irm https://x.ai/cli/install.ps1 | iex          # Windows PowerShell
-grok --version
+simplicio-code --version
 ```
-
-See the [changelog](https://x.ai/build/changelog) for the latest fixes,
-features, and improvements in each release.
 
 ## Building from source
 
@@ -73,14 +65,13 @@ Requirements:
   and not currently tested from this tree.
 
 ```sh
-cargo run -p xai-grok-pager-bin              # build + launch the TUI
-cargo build -p xai-grok-pager-bin --release  # release binary: target/release/xai-grok-pager
+cargo run -p xai-grok-pager-bin --bin simplicio-code
+cargo build -p xai-grok-pager-bin --bin simplicio-code --release
 cargo check -p xai-grok-pager-bin            # fast validation
 ```
 
-The binary artifact is named `xai-grok-pager`; official installs ship it as
-`grok`. On first launch it opens your browser to authenticate — see the
-[authentication guide](crates/codegen/xai-grok-pager/docs/user-guide/02-authentication.md).
+O artefato é `target/release/simplicio-code`. O fluxo de autenticação Simplicio
+e o gateway de inferência serão conectados antes da primeira distribuição.
 
 ## Documentation
 
