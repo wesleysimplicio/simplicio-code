@@ -207,9 +207,10 @@ async fn unauthorized_401_is_a_stable_server_error_without_leaking_the_body() {
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let err = gateway.models().await.unwrap_err();
     match err {
-        GatewayError::Server { status, message } => {
+        GatewayError::Server { status, message, retry_after } => {
             assert_eq!(status, 401);
             assert!(!message.to_lowercase().contains("token"), "redacted message must not echo the raw token field: {message}");
+            assert_eq!(retry_after, None, "401 response carried no Retry-After header");
         }
         other => panic!("expected Server{{401}}, got {other:?}"),
     }
@@ -253,7 +254,78 @@ async fn rate_limited_429_is_a_stable_server_error() {
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let err = gateway.usage().await.unwrap_err();
-    assert!(matches!(err, GatewayError::Server { status, .. } if status == 429));
+    match err {
+        GatewayError::Server { status, retry_after, .. } => {
+            assert_eq!(status, 429);
+            assert_eq!(retry_after, Some(std::time::Duration::from_secs(12)), "Retry-After: 12 must surface as a 12s backoff hint");
+        }
+        other => panic!("expected Server{{429}}, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn rate_limited_429_without_retry_after_header_yields_no_hint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(paths::MODELS))
+        .respond_with(ResponseTemplate::new(429).set_body_string(r#"{"message":"rate limited"}"#))
+        .mount(&server)
+        .await;
+
+    let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
+    let err = gateway.models().await.unwrap_err();
+    match err {
+        GatewayError::Server { status, retry_after, .. } => {
+            assert_eq!(status, 429);
+            assert_eq!(retry_after, None, "missing header must yield None, not a fabricated default");
+        }
+        other => panic!("expected Server{{429}}, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn rate_limited_429_with_unparseable_retry_after_yields_no_hint() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path(paths::USAGE))
+        // HTTP-date form is legal HTTP but intentionally not parsed by this
+        // client (see `parse_retry_after` doc comment) — must degrade to
+        // `None`, never panic or misparse into a bogus duration.
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "Wed, 21 Oct 2099 07:28:00 GMT").set_body_string(r#"{"message":"rate limited"}"#))
+        .mount(&server)
+        .await;
+
+    let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
+    let err = gateway.usage().await.unwrap_err();
+    match err {
+        GatewayError::Server { status, retry_after, .. } => {
+            assert_eq!(status, 429);
+            assert_eq!(retry_after, None);
+        }
+        other => panic!("expected Server{{429}}, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn chat_stream_429_surfaces_retry_after_before_failing() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path(paths::CHAT_COMPLETIONS))
+        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "7").set_body_string(r#"{"message":"rate limited"}"#))
+        .mount(&server)
+        .await;
+
+    let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
+    let request = ChatRequest::new(Vec::new(), 5);
+    let limits = GatewayLimits { max_request_tokens: 10_000, max_tool_calls: 8 };
+    match gateway.chat_stream(request, limits, CancellationToken::new()).await {
+        Err(GatewayError::Server { status, retry_after, .. }) => {
+            assert_eq!(status, 429);
+            assert_eq!(retry_after, Some(std::time::Duration::from_secs(7)));
+        }
+        Err(other) => panic!("expected Server{{429}}, got {other:?}"),
+        Ok(_) => panic!("expected an error, request should have failed with 429"),
+    }
 }
 
 #[tokio::test]
