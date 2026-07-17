@@ -24,8 +24,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -165,9 +164,7 @@ impl MapCache {
         repo_hash: &str,
         runtime_version: &str,
     ) -> io::Result<Option<MapResult>> {
-        let path = self
-            .dir
-            .join(cache_file_name(repo_hash, runtime_version));
+        let path = self.dir.join(cache_file_name(repo_hash, runtime_version));
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
@@ -190,17 +187,29 @@ impl MapCache {
         Ok(self.entries.get(&key).cloned())
     }
 
-    /// Persists `result` to disk and memory. If an identical result (by
+    /// Persists `result` to disk and memory. Results from an unknown schema
+    /// are rejected before touching either memory or disk. If an identical result (by
     /// value) is already cached for this key, the write is skipped
     /// (dedup) so unrelated processes don't observe a spurious mtime bump
     /// or extra disk I/O.
     pub fn put(&mut self, result: MapResult) -> io::Result<()> {
+        if result.schema != MAP_RESULT_SCHEMA_V1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "unsupported map result schema '{}'; expected '{MAP_RESULT_SCHEMA_V1}'",
+                    result.schema
+                ),
+            ));
+        }
         let key = cache_key(&result.repo_hash, &result.runtime_version);
         if self.entries.get(&key) == Some(&result) {
             return Ok(());
         }
         fs::create_dir_all(&self.dir)?;
-        let path = self.dir.join(cache_file_name(&result.repo_hash, &result.runtime_version));
+        let path = self
+            .dir
+            .join(cache_file_name(&result.repo_hash, &result.runtime_version));
         let bytes = serde_json::to_vec_pretty(&result)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         fs::write(path, bytes)?;
@@ -286,18 +295,21 @@ pub fn budgeted_summary(summary: &str, budget_chars: usize) -> String {
 }
 
 /// Derives a stable, non-reversible repository identity from the current
-/// git HEAD ref, branch name, and worktree root path. The hash changes
-/// whenever any of those change (checkout, branch rename, moving to a
-/// different worktree of the same repo), which is exactly the invalidation
-/// trigger the Mapper needs — no filesystem path or file contents are
-/// embedded in the output, so it is safe to log.
+/// git HEAD ref, HEAD object ID, branch name, and worktree root path. The hash
+/// changes whenever any of those change (commit, checkout, branch rename,
+/// moving to a different worktree of the same repo), which is exactly the
+/// invalidation trigger the Mapper needs — no filesystem path or file contents
+/// are embedded in the output, so it is safe to log.
 pub fn compute_repo_hash(repo_root: &Path) -> io::Result<String> {
     let head = read_git_head(repo_root).unwrap_or_default();
+    let head_object_id = read_git_head_object_id(repo_root, &head).unwrap_or_default();
     let branch = read_git_branch(repo_root).unwrap_or_default();
     let worktree = dunce::canonicalize(repo_root).unwrap_or_else(|_| repo_root.to_path_buf());
 
     let mut hasher = blake3::Hasher::new();
     hasher.update(head.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(head_object_id.as_bytes());
     hasher.update(b"\0");
     hasher.update(branch.as_bytes());
     hasher.update(b"\0");
@@ -307,7 +319,9 @@ pub fn compute_repo_hash(repo_root: &Path) -> io::Result<String> {
 
 fn read_git_head(repo_root: &Path) -> Option<String> {
     let git_dir = resolve_git_dir(repo_root)?;
-    fs::read_to_string(git_dir.join("HEAD")).ok().map(|s| s.trim().to_string())
+    fs::read_to_string(git_dir.join("HEAD"))
+        .ok()
+        .map(|s| s.trim().to_string())
 }
 
 fn read_git_branch(repo_root: &Path) -> Option<String> {
@@ -315,6 +329,33 @@ fn read_git_branch(repo_root: &Path) -> Option<String> {
     head.strip_prefix("ref: refs/heads/")
         .map(|branch| branch.trim().to_string())
         .or(Some(head))
+}
+
+/// Reads the object ID currently pointed to by HEAD. Symbolic HEADs resolve
+/// through the corresponding loose ref (or packed-refs fallback), while a
+/// detached HEAD already contains the object ID directly.
+fn read_git_head_object_id(repo_root: &Path, head: &str) -> Option<String> {
+    let git_dir = resolve_git_dir(repo_root)?;
+    if let Some(reference) = head.strip_prefix("ref: ") {
+        let loose_ref = git_dir.join(reference);
+        if let Some(object_id) = fs::read_to_string(loose_ref)
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        {
+            return Some(object_id);
+        }
+
+        let packed_refs = fs::read_to_string(git_dir.join("packed-refs")).ok()?;
+        return packed_refs.lines().find_map(|line| {
+            let mut fields = line.split_whitespace();
+            let object_id = fields.next()?;
+            let packed_ref = fields.next()?;
+            (packed_ref == reference).then(|| object_id.to_string())
+        });
+    }
+
+    (!head.is_empty()).then(|| head.to_string())
 }
 
 /// Resolves the `.git` directory for `repo_root`, following the `gitdir:`
@@ -475,6 +516,22 @@ mod tests {
     }
 
     #[test]
+    fn put_rejects_entries_written_under_a_different_schema_version_before_side_effects() {
+        let dir = temp_cache_dir("put-schema-mismatch");
+        let mut cache = MapCache::new(&dir);
+        let mut result = sample("repo-put-schema", "3.5.2", MapState::Ready);
+        result.schema = "simplicio.map-result/v0".to_string();
+
+        let error = cache.put(result).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(cache.is_empty(), "invalid results must not enter memory");
+        assert!(
+            !dir.exists(),
+            "invalid results must not create the cache directory"
+        );
+    }
+
+    #[test]
     fn put_deduplicates_identical_writes() {
         let dir = temp_cache_dir("dedup");
         let mut cache = MapCache::new(&dir);
@@ -486,7 +543,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         cache.put(result.clone()).unwrap();
         let second_write = fs::metadata(&path).unwrap().modified().unwrap();
-        assert_eq!(first_write, second_write, "dedup must skip the redundant disk write");
+        assert_eq!(
+            first_write, second_write,
+            "dedup must skip the redundant disk write"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -494,8 +554,12 @@ mod tests {
     fn put_overwrites_when_content_actually_changes() {
         let dir = temp_cache_dir("overwrite");
         let mut cache = MapCache::new(&dir);
-        cache.put(sample("repo-5", "3.5.2", MapState::Mapping)).unwrap();
-        cache.put(sample("repo-5", "3.5.2", MapState::Ready)).unwrap();
+        cache
+            .put(sample("repo-5", "3.5.2", MapState::Mapping))
+            .unwrap();
+        cache
+            .put(sample("repo-5", "3.5.2", MapState::Ready))
+            .unwrap();
         assert_eq!(
             cache.get("repo-5", "3.5.2").map(|r| r.state),
             Some(MapState::Ready)
@@ -507,8 +571,12 @@ mod tests {
     fn different_runtime_versions_are_independent_cache_entries() {
         let dir = temp_cache_dir("runtime-version");
         let mut cache = MapCache::new(&dir);
-        cache.put(sample("repo-6", "3.5.2", MapState::Ready)).unwrap();
-        cache.put(sample("repo-6", "3.6.0", MapState::Mapping)).unwrap();
+        cache
+            .put(sample("repo-6", "3.5.2", MapState::Ready))
+            .unwrap();
+        cache
+            .put(sample("repo-6", "3.6.0", MapState::Mapping))
+            .unwrap();
         assert_eq!(cache.len(), 2);
         assert_eq!(
             cache.get("repo-6", "3.5.2").map(|r| r.state),
@@ -525,9 +593,15 @@ mod tests {
     fn invalidate_repo_drops_every_runtime_version_for_that_repo_hash() {
         let dir = temp_cache_dir("invalidate");
         let mut cache = MapCache::new(&dir);
-        cache.put(sample("repo-7", "3.5.2", MapState::Ready)).unwrap();
-        cache.put(sample("repo-7", "3.6.0", MapState::Ready)).unwrap();
-        cache.put(sample("repo-other", "3.5.2", MapState::Ready)).unwrap();
+        cache
+            .put(sample("repo-7", "3.5.2", MapState::Ready))
+            .unwrap();
+        cache
+            .put(sample("repo-7", "3.6.0", MapState::Ready))
+            .unwrap();
+        cache
+            .put(sample("repo-other", "3.5.2", MapState::Ready))
+            .unwrap();
 
         let removed = cache.invalidate_repo("repo-7").unwrap();
         assert_eq!(removed, 2);
@@ -579,7 +653,36 @@ mod tests {
         fs::write(git_dir.join("HEAD"), "ref: refs/heads/feature\n").unwrap();
         let on_feature = compute_repo_hash(&dir).unwrap();
 
-        assert_ne!(on_main, on_feature, "switching branches must change the repo hash");
+        assert_ne!(
+            on_main, on_feature,
+            "switching branches must change the repo hash"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn compute_repo_hash_differs_when_head_object_changes_on_the_same_branch() {
+        let dir = temp_cache_dir("repo-hash-object-id");
+        fs::create_dir_all(dir.join(".git/refs/heads")).unwrap();
+        fs::write(dir.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+        fs::write(
+            dir.join(".git/refs/heads/main"),
+            "1111111111111111111111111111111111111111\n",
+        )
+        .unwrap();
+        let first = compute_repo_hash(&dir).unwrap();
+
+        fs::write(
+            dir.join(".git/refs/heads/main"),
+            "2222222222222222222222222222222222222222\n",
+        )
+        .unwrap();
+        let second = compute_repo_hash(&dir).unwrap();
+
+        assert_ne!(
+            first, second,
+            "a new commit on the same branch must change the repo hash"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

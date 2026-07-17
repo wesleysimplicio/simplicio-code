@@ -9,7 +9,7 @@
 pub mod map_cache;
 
 pub use map_cache::{
-    budgeted_summary, compute_repo_hash, MapCache, MapResult, MapState, MAP_RESULT_SCHEMA_V1,
+    MAP_RESULT_SCHEMA_V1, MapCache, MapResult, MapState, budgeted_summary, compute_repo_hash,
 };
 
 use base64::Engine as _;
