@@ -76,10 +76,16 @@ impl TelemetryClient {
         http_client: reqwest::Client,
     ) -> Self {
         let mixpanel = if config.mixpanel_enabled {
-            config
-                .mixpanel_token
-                .as_ref()
-                .map(|token| Arc::new(Mixpanel::new(token.as_str())))
+            config.mixpanel_token.as_ref().map(|token| {
+                Arc::new(match &config.mixpanel_base_url {
+                    Some(base_url) => Mixpanel::with_client_and_base_url(
+                        token.as_str(),
+                        reqwest::Client::new(),
+                        base_url.as_str(),
+                    ),
+                    None => Mixpanel::new(token.as_str()),
+                })
+            })
         } else {
             None
         };

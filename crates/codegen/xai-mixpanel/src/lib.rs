@@ -8,11 +8,18 @@
 use base64::Engine;
 use std::collections::HashMap;
 
+/// Production Mixpanel ingestion host. This is the only host this crate
+/// contacts unless a caller explicitly overrides it via
+/// [`Mixpanel::with_client_and_base_url`] (used for tests and, in
+/// principle, an enterprise on-prem proxy).
+pub const DEFAULT_BASE_URL: &str = "https://api.mixpanel.com";
+
 /// Mixpanel client for sending track events.
 #[derive(Clone)]
 pub struct Mixpanel {
     token: String,
     client: reqwest::Client,
+    base_url: String,
 }
 
 /// Error type for Mixpanel operations.
@@ -25,19 +32,33 @@ pub enum Error {
 }
 
 impl Mixpanel {
-    /// Create a new Mixpanel client with the given project token.
+    /// Create a new Mixpanel client with the given project token. Posts to
+    /// the production [`DEFAULT_BASE_URL`].
     pub fn new(token: impl Into<String>) -> Self {
-        Self {
-            token: token.into(),
-            client: reqwest::Client::new(),
-        }
+        Self::with_client(token, reqwest::Client::new())
     }
 
-    /// Create a new Mixpanel client with a shared reqwest client.
+    /// Create a new Mixpanel client with a shared reqwest client. Posts to
+    /// the production [`DEFAULT_BASE_URL`].
     pub fn with_client(token: impl Into<String>, client: reqwest::Client) -> Self {
+        Self::with_client_and_base_url(token, client, DEFAULT_BASE_URL)
+    }
+
+    /// Create a new Mixpanel client that posts to `base_url` instead of the
+    /// production Mixpanel host. This exists so tests (and, if ever needed,
+    /// an enterprise on-prem ingestion proxy) can redirect outbound calls
+    /// without touching `api.mixpanel.com` — it is how
+    /// `xai-grok-telemetry`'s network-capture test proves the Mixpanel path
+    /// only ever contacts the host it was configured with.
+    pub fn with_client_and_base_url(
+        token: impl Into<String>,
+        client: reqwest::Client,
+        base_url: impl Into<String>,
+    ) -> Self {
         Self {
             token: token.into(),
             client,
+            base_url: base_url.into(),
         }
     }
 
@@ -73,7 +94,7 @@ impl Mixpanel {
         let encoded = base64::engine::general_purpose::STANDARD.encode(&json_bytes);
 
         self.client
-            .post("https://api.mixpanel.com/track")
+            .post(format!("{}/track", self.base_url))
             .form(&[("data", &encoded)])
             .send()
             .await?;
@@ -104,7 +125,7 @@ impl Mixpanel {
         let encoded = base64::engine::general_purpose::STANDARD.encode(&json_bytes);
 
         self.client
-            .post("https://api.mixpanel.com/engage")
+            .post(format!("{}/engage", self.base_url))
             .form(&[("data", &encoded)])
             .send()
             .await?;
@@ -137,5 +158,28 @@ mod tests {
             !error.contains("abcdef0123456789abcdef"),
             "secret leaked: {error}"
         );
+    }
+
+    /// `new()`/`with_client()` must default to the production Mixpanel host
+    /// — nothing else contacts a different endpoint unless a caller opts in
+    /// via `with_client_and_base_url`.
+    #[test]
+    fn default_constructors_use_production_base_url() {
+        assert_eq!(Mixpanel::new("tok").base_url, DEFAULT_BASE_URL);
+        assert_eq!(
+            Mixpanel::with_client("tok", reqwest::Client::new()).base_url,
+            DEFAULT_BASE_URL
+        );
+    }
+
+    /// The override constructor actually overrides — this is the mechanism
+    /// the `xai-grok-telemetry` network-capture test relies on to redirect
+    /// outbound Mixpanel calls to a loopback test server instead of
+    /// `api.mixpanel.com`.
+    #[test]
+    fn override_constructor_replaces_base_url() {
+        let mp =
+            Mixpanel::with_client_and_base_url("tok", reqwest::Client::new(), "http://127.0.0.1:9");
+        assert_eq!(mp.base_url, "http://127.0.0.1:9");
     }
 }
