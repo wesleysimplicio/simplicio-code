@@ -1,0 +1,278 @@
+{
+  "schema": "simplicio.perf-bench-result/v1",
+  "repeats": 3,
+  "tasks": [
+    {
+      "id": "warm_client_handshake",
+      "path_kind": "runtime_handshake",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 31803.1323,
+        "p95_ms": 31803.1323,
+        "mean_ms": 31803.1323,
+        "stdev_ms": 0.0,
+        "samples": 1
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "One-time warm-client spawn + MCP initialize handshake failed (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); every runtime_attempt_warm call below reuses this cached failure instead of re-attempting the handshake, so warm latency should be near-zero per call even though success_rate stays 0.0."
+    },
+    {
+      "id": "read_small",
+      "path_kind": "direct_read",
+      "expected_success": true,
+      "success_rate": 1.0,
+      "latency": {
+        "p50_ms": 0.2285,
+        "p95_ms": 16.4255,
+        "mean_ms": 5.623633333333333,
+        "stdev_ms": 9.354692739653895,
+        "samples": 3
+      },
+      "approx_tokens": 100.5,
+      "content_bytes": 402,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: native direct_read control/fallback; not evidence of Runtime behavior."
+    },
+    {
+      "id": "read_small",
+      "path_kind": "runtime_attempt",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 22186.374099999997,
+        "p95_ms": 26100.9202,
+        "mean_ms": 23350.62633333333,
+        "stdev_ms": 2391.142789390945,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Cold path: fresh process spawn + MCP handshake every call."
+    },
+    {
+      "id": "read_small",
+      "path_kind": "runtime_attempt_warm",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 0.0,
+        "p95_ms": 0.0005,
+        "mean_ms": 0.00016666666666666666,
+        "stdev_ms": 0.0002886751345948129,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Warm path: single handshake (see warm_client_handshake) reused across all repeats."
+    },
+    {
+      "id": "read_medium",
+      "path_kind": "direct_read",
+      "expected_success": true,
+      "success_rate": 1.0,
+      "latency": {
+        "p50_ms": 0.2369,
+        "p95_ms": 14.7934,
+        "mean_ms": 5.065666666666667,
+        "stdev_ms": 8.42453730856083,
+        "samples": 3
+      },
+      "approx_tokens": 2217.0,
+      "content_bytes": 8868,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: native direct_read control/fallback; not evidence of Runtime behavior."
+    },
+    {
+      "id": "read_medium",
+      "path_kind": "runtime_attempt",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 14355.3163,
+        "p95_ms": 23338.550000000003,
+        "mean_ms": 17335.761800000004,
+        "stdev_ms": 5198.60928272037,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Cold path: fresh process spawn + MCP handshake every call."
+    },
+    {
+      "id": "read_medium",
+      "path_kind": "runtime_attempt_warm",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 0.00009999999999999999,
+        "p95_ms": 0.0003,
+        "mean_ms": 0.00016666666666666666,
+        "stdev_ms": 0.00011547005383792514,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Warm path: single handshake (see warm_client_handshake) reused across all repeats."
+    },
+    {
+      "id": "read_monorepo_nested",
+      "path_kind": "direct_read",
+      "expected_success": true,
+      "success_rate": 1.0,
+      "latency": {
+        "p50_ms": 0.1868,
+        "p95_ms": 14.8706,
+        "mean_ms": 5.0699,
+        "stdev_ms": 8.487672703986647,
+        "samples": 3
+      },
+      "approx_tokens": 88.25,
+      "content_bytes": 353,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: native direct_read control/fallback; not evidence of Runtime behavior."
+    },
+    {
+      "id": "read_monorepo_nested",
+      "path_kind": "runtime_attempt",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 13918.6957,
+        "p95_ms": 18475.0039,
+        "mean_ms": 13650.382566666667,
+        "stdev_ms": 4964.219194865168,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Cold path: fresh process spawn + MCP handshake every call."
+    },
+    {
+      "id": "read_monorepo_nested",
+      "path_kind": "runtime_attempt_warm",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 0.0,
+        "p95_ms": 0.0003,
+        "mean_ms": 0.00009999999999999999,
+        "stdev_ms": 0.00017320508075688773,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Warm path: single handshake (see warm_client_handshake) reused across all repeats."
+    },
+    {
+      "id": "read_large_synthetic",
+      "path_kind": "direct_read",
+      "expected_success": true,
+      "success_rate": 1.0,
+      "latency": {
+        "p50_ms": 2.0933,
+        "p95_ms": 2.1641,
+        "mean_ms": 2.1136666666666666,
+        "stdev_ms": 0.04394500350817283,
+        "samples": 3
+      },
+      "approx_tokens": 1048576.0,
+      "content_bytes": 4194304,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: native direct_read control/fallback; not evidence of Runtime behavior."
+    },
+    {
+      "id": "read_large_synthetic",
+      "path_kind": "runtime_attempt",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 28323.55,
+        "p95_ms": 29920.8709,
+        "mean_ms": 28728.3768,
+        "stdev_ms": 1050.3205920152054,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Cold path: fresh process spawn + MCP handshake every call."
+    },
+    {
+      "id": "read_large_synthetic",
+      "path_kind": "runtime_attempt_warm",
+      "expected_success": true,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 0.00009999999999999999,
+        "p95_ms": 0.00039999999999999996,
+        "mean_ms": 0.00019999999999999998,
+        "stdev_ms": 0.00017320508075688773,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Warm path: single handshake (see warm_client_handshake) reused across all repeats."
+    },
+    {
+      "id": "read_invalid_path",
+      "path_kind": "direct_read",
+      "expected_success": false,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 0.016399999999999998,
+        "p95_ms": 0.062,
+        "mean_ms": 0.0306,
+        "stdev_ms": 0.027234536897109154,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: native direct_read control/fallback; not evidence of Runtime behavior."
+    },
+    {
+      "id": "read_invalid_path",
+      "path_kind": "runtime_attempt",
+      "expected_success": false,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 29072.7522,
+        "p95_ms": 32157.712199999998,
+        "mean_ms": 29703.0781,
+        "stdev_ms": 2208.012648704808,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Cold path: fresh process spawn + MCP handshake every call."
+    },
+    {
+      "id": "read_invalid_path",
+      "path_kind": "runtime_attempt_warm",
+      "expected_success": false,
+      "success_rate": 0.0,
+      "latency": {
+        "p50_ms": 0.00009999999999999999,
+        "p95_ms": 0.00039999999999999996,
+        "mean_ms": 0.00019999999999999998,
+        "stdev_ms": 0.00017320508075688773,
+        "samples": 3
+      },
+      "approx_tokens": null,
+      "content_bytes": null,
+      "content_matches_direct": null,
+      "notes": "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content (spawn/initialize: invalid Simplicio Runtime response: expected `,` or `]` at line 1 column 10181); native direct_read is the fallback. Warm path: single handshake (see warm_client_handshake) reused across all repeats."
+    }
+  ]
+}

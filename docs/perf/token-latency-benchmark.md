@@ -209,6 +209,106 @@ Key takeaways from this run:
   a successful MCP response must populate and compare those fields before any
   token claim is made.
 
+## Update 2026-07-17: repeated sample (N=3) + warm-client-reuse variant
+
+The original [Results](#results) run above was explicitly N=1 (a single
+sample per task/path) and had no warm-client-reuse variant. This update adds
+both, extending the same harness (`crates/codegen/simplicio-perf-bench`) —
+no rewrite:
+
+- **`--repeats 3`** (up from the N=1 run above). 3 repeats, not the harness
+  default of 20: on this machine each cold `runtime_attempt` handshake
+  attempt takes 14-30 seconds (see below), so 20 repeats x 5 tasks x 2 cold
+  paths would take on the order of an hour. 3 repeats is still a real
+  repeated sample (enough to compute a non-degenerate p50/p95/stdev) within a
+  few minutes of wall-clock time. This remains a small sample; do not treat
+  N=3 as statistically robust, only as "more real evidence than N=1."
+- **`LatencyStats` (already in `src/lib.rs` from the original PR)** computes
+  p50/p95/mean/sample-stdev from the actual per-repeat millisecond samples —
+  this update didn't need to add that math, only to actually run with
+  `repeats > 1` so the numbers are non-degenerate.
+- **New `runtime_attempt_warm` path** in `src/bin/bench.rs`: one
+  `RuntimeClient` is spawned via `RuntimeClient::spawn_in` a single time
+  before the golden-task loop (see the new `warm_client_handshake` /
+  `runtime_handshake` entry in the report), and that same client is reused
+  for every task's warm read across all repeats — no re-spawn, no repeated
+  `initialize`/`notifications/initialized` handshake. This directly answers
+  the "no warm-client-reuse" gap called out in the original
+  [Scope and what's blocked](#scope-and-whats-blocked) section. If the
+  handshake itself fails (as it does on this machine, see below), that single
+  failure is cached and returned instantly for every subsequent warm call
+  instead of re-attempting the expensive handshake — this is measured and
+  reported honestly rather than skipped.
+- **Token approximation**: `approx_tokens` (bytes/4, `BYTES_PER_APPROX_TOKEN`
+  in `src/lib.rs`) already existed from the original PR and is unchanged;
+  this update did not need a new heuristic, just confirmed it still populates
+  for any path that returns real content.
+
+### Real, measured numbers (N=3, this run)
+
+Command: `./target/release/simplicio-bench.exe --repeats 3 --out report.json`
+(release build, Windows, this machine, Simplicio Runtime CLI 3.5.2 on
+`PATH`). Full report:
+`crates/codegen/simplicio-perf-bench/baselines/run_2026-07-17-repeats3-warmcold.json`.
+
+**Handshake (paid once for the whole warm run):** `warm_client_handshake`
+took **31.80s** and failed with the same MCP capability gap as the cold path
+(`invalid Simplicio Runtime response: expected ',' or ']' at line 1 column
+10181` — the malformed-JSON issue tracked as Runtime #3298, same as the
+original N=1 run). `success_rate: 0.0` for the handshake itself.
+
+| Task | Path | p50 (ms) | p95 (ms) | mean (ms) | stdev (ms) | success_rate |
+|---|---|---:|---:|---:|---:|---:|
+| `read_small` | `direct_read` | 0.23 | 16.43 | 5.62 | 9.35 | 1.0 |
+| `read_small` | `runtime_attempt` (cold) | 22,186 | 26,101 | 23,351 | 2,391 | 0.0 |
+| `read_small` | `runtime_attempt_warm` | 0.0000 | 0.0005 | 0.00017 | 0.00029 | 0.0 |
+| `read_medium` | `direct_read` | 0.24 | 14.79 | 5.07 | 8.42 | 1.0 |
+| `read_medium` | `runtime_attempt` (cold) | 14,355 | 23,339 | 17,336 | 5,199 | 0.0 |
+| `read_medium` | `runtime_attempt_warm` | 0.0001 | 0.0003 | 0.00017 | 0.00012 | 0.0 |
+| `read_monorepo_nested` | `direct_read` | 0.19 | 14.87 | 5.07 | 8.49 | 1.0 |
+| `read_monorepo_nested` | `runtime_attempt` (cold) | 13,919 | 18,475 | 13,650 | 4,964 | 0.0 |
+| `read_monorepo_nested` | `runtime_attempt_warm` | 0.0000 | 0.0003 | 0.0001 | 0.00017 | 0.0 |
+| `read_large_synthetic` (4MiB) | `direct_read` | 2.09 | 2.16 | 2.11 | 0.04 | 1.0 |
+| `read_large_synthetic` (4MiB) | `runtime_attempt` (cold) | 28,324 | 29,921 | 28,728 | 1,050 | 0.0 |
+| `read_large_synthetic` (4MiB) | `runtime_attempt_warm` | 0.0001 | 0.0004 | 0.0002 | 0.00017 | 0.0 |
+| `read_invalid_path` | `direct_read` | 0.016 | 0.062 | 0.031 | 0.027 | 0.0 (expected fail) |
+| `read_invalid_path` | `runtime_attempt` (cold) | 29,073 | 32,158 | 29,703 | 2,208 | 0.0 |
+| `read_invalid_path` | `runtime_attempt_warm` | 0.0001 | 0.0004 | 0.0002 | 0.00017 | 0.0 |
+
+### What this run actually shows (and doesn't)
+
+- **`direct_read` p50/p95/stdev across 3 repeats** is real, reproducible
+  variance data (previously only a single point estimate): sub-millisecond to
+  low-double-digit-millisecond, consistent with the N=1 run's order of
+  magnitude.
+- **Cold `runtime_attempt` is highly variable across only 3 repeats**: p50
+  ranges 13.9s-29.1s and stdev is 1.0-5.2 *seconds* — i.e. the variance
+  between repeats is itself on the order of the signal. With only 3 samples
+  this is expected; more repeats would be needed to trust these percentiles
+  as anything but a rough order-of-magnitude ("multiple tens of seconds per
+  cold attempt on this machine, on this Runtime build").
+- **Warm reuse changes latency by roughly 5 orders of magnitude per call**
+  (tens of seconds -> sub-millisecond) **once the one-time handshake cost is
+  already paid** — but on this machine the handshake itself never succeeds
+  (same MCP capability gap as the original N=1 run), so this is a real,
+  measured demonstration of *architecture*, not of a working warm Runtime
+  path. It shows that reusing a `RuntimeClient` avoids re-paying spawn+
+  handshake cost per call (cached failure returns near-instantly instead of
+  re-attempting a ~15-30s handshake every time) — the same mechanical benefit
+  would apply once the handshake actually succeeds, but that has not been
+  observed on any run to date. Do not read the warm `success_rate: 0.0` rows
+  as "Runtime reads succeeded quickly"; they mean "the cached failure was
+  returned quickly."
+- **Correctness**: identical to the N=1 run — `direct_read` produced all 5
+  expected outcomes; no `runtime_attempt`/`runtime_attempt_warm` cell ever
+  returned comparable content, so `content_matches_direct` and `approx_tokens`
+  remain `null` for every Runtime-path row in this run, same as before.
+- **Token counting on the Runtime path remains unexercised**: the
+  bytes/4 `approx_tokens` heuristic only populates for a path/task combo that
+  returns real content, and no Runtime call has returned content in any run
+  captured in this document. There is nothing new to report on Runtime-side
+  token counts until the MCP capability gap is fixed.
+
 ## What remains open
 
 - **The CI-reproducible Runtime/Mapper-vs-direct-read comparison** —
@@ -221,11 +321,25 @@ Key takeaways from this run:
 - **Root-causing the Runtime MCP capability failure** (malformed response in
   this run; `tools/list` timeout is tracked as Runtime #3298) before relying on
   any Runtime numbers. The 4MiB fixture path correctness issue is fixed here,
-  but its Runtime result remains unverified until MCP is healthy.
-- **A statistically meaningful sample.** N=1 remains anecdotal and must not
-  become a baseline; use N>=20 after the Runtime path is healthy and cold/warm
-  behavior is explicitly separated.
+  but its Runtime result remains unverified until MCP is healthy — this is
+  still true as of the 2026-07-17 N=3 update above; the same malformed-JSON
+  error recurs verbatim.
+- **A statistically meaningful sample.** The 2026-07-17 update raised this
+  from N=1 to N=3 (real repeated measurements, not fabricated), which is
+  enough to get a non-degenerate p50/p95/stdev but still far short of a
+  trustworthy sample — cold-path stdev was itself 1-5 *seconds* across only 3
+  repeats. N>=20 is still needed once the Runtime path is healthy enough that
+  cold/warm numbers reflect successful reads, not a cached handshake failure.
+- **Warm-vs-cold latency is now measured** (2026-07-17 update): reusing one
+  `RuntimeClient` instead of re-spawning per call cut per-call overhead from
+  ~14-30s to sub-millisecond in this run. But because the handshake itself
+  never succeeds on this machine, this demonstrates the mechanism's overhead
+  savings, not a validated warm-vs-cold comparison of successful Runtime
+  reads. That comparison is still blocked on a healthy MCP handshake.
 - **Wiring `simplicio-bench-check` into CI** against a pinned baseline on a
   dedicated runner.
 - **Macro-level (whole-session, multi-tool-call) benchmarking** — this
   change only covers the single file-read primitive.
+- **Token counting on a successful Runtime read** — the bytes/4 approximation
+  exists and is wired to populate on any content-bearing response, but no run
+  to date (N=1 or N=3) has ever gotten Runtime content to count tokens on.

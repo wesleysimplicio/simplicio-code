@@ -14,9 +14,85 @@ use simplicio_perf_bench::{
     generate_large_synthetic, resolve_fixture_path, time_repeats,
 };
 use std::path::PathBuf;
+use std::time::Instant;
 
 fn fixtures_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
+}
+
+/// Shared scoring logic for a `runtime_attempt`-family path (cold or warm):
+/// a successful MCP call only counts as a correctness success when its bytes
+/// match the direct-read fixture; an invalid-path task is expected to fail
+/// closed with a `read:`-prefixed error. Used identically by the cold
+/// (fresh-handshake-per-call) and warm (single-handshake-reused) variants so
+/// their numbers are directly comparable.
+#[allow(clippy::too_many_arguments)]
+fn build_runtime_task_result(
+    task_id: &str,
+    path_kind: &str,
+    expect_success: bool,
+    samples: Vec<f64>,
+    results: Vec<Result<Vec<u8>, String>>,
+    expected_bytes: Option<&Vec<u8>>,
+    extra_note_suffix: &str,
+) -> TaskResult {
+    let rt_content = results.iter().rev().find_map(|result| result.as_ref().ok());
+    let content_matches_direct = rt_content.map(|runtime| {
+        expected_bytes
+            .map(|direct| runtime == direct)
+            .unwrap_or(false)
+    });
+    let rt_successes = results
+        .iter()
+        .filter(
+            |result| match (expect_success, result.as_ref().ok(), expected_bytes) {
+                (true, Some(runtime), Some(direct)) => runtime == direct,
+                (false, None, _) => result
+                    .as_ref()
+                    .err()
+                    .is_some_and(|error| error.starts_with("read:")),
+                _ => false,
+            },
+        )
+        .count();
+    let rt_success_rate = rt_successes as f64 / results.len().max(1) as f64;
+    let rt_note = if let Some(matches) = content_matches_direct {
+        format!(
+            "Runtime MCP returned content; byte-for-byte comparable={matches}; approx_tokens uses the same bytes/4 heuristic.{extra_note_suffix}"
+        )
+    } else if !expect_success
+        && results.iter().all(|result| {
+            result
+                .as_ref()
+                .err()
+                .is_some_and(|error| error.starts_with("read:"))
+        })
+    {
+        format!(
+            "Runtime MCP correctly rejected the invalid path; no content to compare.{extra_note_suffix}"
+        )
+    } else {
+        let error = results
+            .iter()
+            .find_map(|result| result.as_ref().err())
+            .map(String::as_str)
+            .unwrap_or("unknown Runtime/MCP error");
+        format!(
+            "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content ({error}); native direct_read is the fallback.{extra_note_suffix}"
+        )
+    };
+
+    TaskResult {
+        id: task_id.to_string(),
+        path_kind: path_kind.to_string(),
+        expected_success: expect_success,
+        success_rate: rt_success_rate,
+        latency: LatencyStats::from_samples(samples),
+        approx_tokens: rt_content.map(|bytes| approx_tokens(bytes.len())),
+        content_bytes: rt_content.map(Vec::len),
+        content_matches_direct,
+        notes: Some(rt_note),
+    }
 }
 
 fn main() {
@@ -65,6 +141,49 @@ fn main() {
         .expect("write synthetic large fixture");
 
     let mut tasks_out = Vec::new();
+
+    // Warm-client-reuse variant (issue #12 / PR #20 open gap): spawn one
+    // RuntimeClient up front and reuse it for every `runtime_attempt_warm`
+    // call below, instead of paying a fresh process spawn + MCP
+    // `initialize`/`notifications/initialized` handshake per call the way
+    // `runtime_attempt` (cold path) does. This measures whether warm reuse
+    // meaningfully changes latency. If the handshake itself fails (e.g. the
+    // known MCP capability gap noted in docs/perf/token-latency-benchmark.md),
+    // that single failure is cached and reused too, so every warm attempt
+    // fails fast instead of repeating the expensive failed handshake.
+    let warm_spawn_start = Instant::now();
+    let mut warm_client: Result<simplicio_runtime_client::RuntimeClient, String> =
+        simplicio_runtime_client::RuntimeClient::spawn_in(&fixtures_root)
+            .map_err(|error| format!("spawn/initialize: {error}"));
+    let warm_handshake_ms = warm_spawn_start.elapsed().as_secs_f64() * 1000.0;
+    eprintln!(
+        "warm client handshake: {:.1}ms ({})",
+        warm_handshake_ms,
+        if warm_client.is_ok() { "ok" } else { "failed" }
+    );
+    tasks_out.push(TaskResult {
+        id: "warm_client_handshake".to_string(),
+        path_kind: "runtime_handshake".to_string(),
+        expected_success: true,
+        success_rate: if warm_client.is_ok() { 1.0 } else { 0.0 },
+        latency: LatencyStats::from_samples(vec![warm_handshake_ms]),
+        approx_tokens: None,
+        content_bytes: None,
+        content_matches_direct: None,
+        notes: Some(match &warm_client {
+            Ok(_) => "One-time warm-client spawn + MCP initialize handshake, paid once \
+                 and reused for every runtime_attempt_warm call below (vs \
+                 runtime_attempt's fresh handshake per call)."
+                .to_string(),
+            Err(error) => format!(
+                "One-time warm-client spawn + MCP initialize handshake failed \
+                 ({error}); every runtime_attempt_warm call below reuses this \
+                 cached failure instead of re-attempting the handshake, so warm \
+                 latency should be near-zero per call even though success_rate \
+                 stays 0.0."
+            ),
+        }),
+    });
 
     for task in GOLDEN_TASKS {
         let path = resolve_fixture_path(&fixtures_root, task, &generated_dir);
@@ -124,69 +243,41 @@ fn main() {
                 Err(error) => Err(format!("spawn/initialize: {error}")),
             },
         );
-        let rt_content = rt_results
-            .iter()
-            .rev()
-            .find_map(|result| result.as_ref().ok());
-        let content_matches_direct = rt_content.map(|runtime| {
-            expected_bytes
-                .map(|direct| runtime == direct)
-                .unwrap_or(false)
-        });
-        // A successful MCP call is only a correctness success when its bytes
-        // match the direct fixture. Invalid-path is expected to fail closed.
-        let rt_successes = rt_results
-            .iter()
-            .filter(
-                |result| match (expect_success, result.as_ref().ok(), expected_bytes) {
-                    (true, Some(runtime), Some(direct)) => runtime == direct,
-                    (false, None, _) => result
-                        .as_ref()
-                        .err()
-                        .is_some_and(|error| error.starts_with("read:")),
-                    _ => false,
-                },
-            )
-            .count();
-        let rt_success_rate = rt_successes as f64 / rt_results.len().max(1) as f64;
-        let rt_note = if let Some(matches) = content_matches_direct {
-            format!(
-                "Runtime MCP returned content; byte-for-byte comparable={matches}; approx_tokens uses the same bytes/4 heuristic."
-            )
-        } else if !expect_success
-            && rt_results.iter().all(|result| {
-                result
-                    .as_ref()
-                    .err()
-                    .is_some_and(|error| error.starts_with("read:"))
-            })
-        {
-            "Runtime MCP correctly rejected the invalid path; no content to compare.".to_string()
-        } else {
-            let error = rt_results
-                .iter()
-                .find_map(|result| result.as_ref().err())
-                .map(String::as_str)
-                .unwrap_or("unknown Runtime/MCP error");
-            format!(
-                "UNVERIFIED| runtime capability gap: Runtime MCP returned no readable content ({error}); native direct_read is the fallback."
-            )
-        };
+        tasks_out.push(build_runtime_task_result(
+            task.id,
+            "runtime_attempt",
+            expect_success,
+            rt_samples,
+            rt_results,
+            expected_bytes,
+            " Cold path: fresh process spawn + MCP handshake every call.",
+        ));
 
-        tasks_out.push(TaskResult {
-            id: task.id.to_string(),
-            path_kind: "runtime_attempt".to_string(),
-            // No Runtime binary ships with (or is built by) this repo; whether this
-            // succeeds depends entirely on whatever SIMPLICIO_BIN/PATH resolves to
-            // on the machine running the benchmark. Do not assume either outcome.
-            expected_success: expect_success,
-            success_rate: rt_success_rate,
-            latency: LatencyStats::from_samples(rt_samples),
-            approx_tokens: rt_content.map(|bytes| approx_tokens(bytes.len())),
-            content_bytes: rt_content.map(Vec::len),
-            content_matches_direct,
-            notes: Some(rt_note),
-        });
+        // Path C: warm-client-reuse variant. Same task, same expected bytes,
+        // but every repeat reuses the single `warm_client` spawned once
+        // before this loop instead of paying spawn+handshake per call.
+        let (warm_samples, warm_results): (Vec<f64>, Vec<Result<Vec<u8>, String>>) =
+            time_repeats(repeats, || match warm_client.as_mut() {
+                Ok(client) => client
+                    .read_file(
+                        &repo_root,
+                        &relative,
+                        simplicio_runtime_client::DEFAULT_MAX_FILE_BYTES,
+                    )
+                    .and_then(|read| read.bytes())
+                    .map_err(|error| format!("read: {error}")),
+                Err(error) => Err(error.clone()),
+            });
+
+        tasks_out.push(build_runtime_task_result(
+            task.id,
+            "runtime_attempt_warm",
+            expect_success,
+            warm_samples,
+            warm_results,
+            expected_bytes,
+            " Warm path: single handshake (see warm_client_handshake) reused across all repeats.",
+        ));
     }
 
     let _ = std::fs::remove_dir_all(&generated_dir);
