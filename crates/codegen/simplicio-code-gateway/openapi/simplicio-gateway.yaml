@@ -1,0 +1,294 @@
+openapi: 3.0.3
+info:
+  title: Simplicio Code identity + private inference gateway
+  version: "1.0.0"
+  description: >-
+    Contract implemented by `IdentityClient` (issue #3: device login,
+    rotated refresh tokens, entitlement, revoke) and `PrivateGateway`
+    (issue #4: single private inference gateway). The client only ever
+    talks to a Simplicio-owned domain; every upstream model provider lives
+    server-side and is never named to the client. `simplicio-1` is the
+    only publicly-named model at launch. Authorization is always a
+    Simplicio-issued bearer token, never an upstream provider key — see
+    `src/lib.rs::paths` for the exact path constants this schema mirrors,
+    and `tests/contract.rs` / `tests/wiremock_contract.rs` for
+    schema-conformance and live-HTTP-behavior tests respectively.
+security:
+  - simplicioBearer: []
+paths:
+  /v1/code/auth/device/authorize:
+    post:
+      operationId: beginDeviceAuthorization
+      summary: Start a headless/browserless device-code login.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceAuthorization"
+  /v1/code/auth/device/token:
+    post:
+      operationId: pollDeviceAuthorization
+      summary: Poll for approval of a previously-started device code.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_code]
+              properties:
+                device_code:
+                  type: string
+      responses:
+        "200":
+          description: Approved — a token pair.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "202":
+          description: Still pending; poll again after `interval` seconds.
+        "403":
+          description: Denied.
+  /v1/code/auth/token/refresh:
+    post:
+      operationId: refreshToken
+      summary: >-
+        Exchange a refresh token for a new pair. A compliant backend MUST
+        invalidate the presented refresh token on success (single-use;
+        replay must fail).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/code/auth/session/revoke:
+    post:
+      operationId: revokeSession
+      summary: Remote logout. Idempotent.
+      responses:
+        "204":
+          description: Revoked.
+  /v1/code/entitlement:
+    get:
+      operationId: getEntitlement
+      summary: Plan/limits/validity for the caller. Never names a provider.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Entitlement"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /v1/code/models:
+    get:
+      operationId: listModels
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/GatewayModel"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/UpstreamError"
+  /v1/code/chat/completions:
+    post:
+      operationId: createChatCompletion
+      summary: Streaming (SSE) chat completion. Cancellation is drop/token-based, not a separate RPC.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: 'text/event-stream of GatewayEvent frames, terminated by `"done": true`.'
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "500":
+          $ref: "#/components/responses/UpstreamError"
+  /v1/code/usage:
+    get:
+      operationId: getUsage
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayUsage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    simplicioBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: simplicio-token
+  responses:
+    Unauthorized:
+      description: Missing/expired/revoked Simplicio token.
+    RateLimited:
+      description: Per-user/subscription limit exceeded.
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+    UpstreamError:
+      description: >-
+        Stable Simplicio-side error (`GatewayError::Server`). The message
+        is redacted (`redact_diagnostics`) before it ever reaches this
+        boundary — never a raw upstream provider error body.
+  schemas:
+    DeviceAuthorization:
+      type: object
+      required: [device_code, user_code, verification_uri, expires_in]
+      properties:
+        device_code:
+          type: string
+        user_code:
+          type: string
+        verification_uri:
+          type: string
+        expires_in:
+          type: integer
+        interval:
+          type: integer
+          default: 5
+    TokenResponse:
+      type: object
+      required: [access_token, expires_in]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+        token_type:
+          type: string
+          default: Bearer
+    Entitlement:
+      type: object
+      required: [plan, expires_at, max_request_tokens, max_tool_calls]
+      properties:
+        plan:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        max_request_tokens:
+          type: integer
+        max_tool_calls:
+          type: integer
+    GatewayModel:
+      type: object
+      required: [id, display_name, context_window]
+      properties:
+        id:
+          type: string
+          enum: [simplicio-1]
+          description: The only publicly-named model at launch.
+        display_name:
+          type: string
+        context_window:
+          type: integer
+    GatewayUsage:
+      type: object
+      required: [request_tokens, response_tokens, remaining_tokens, remaining_tool_calls]
+      properties:
+        request_tokens:
+          type: integer
+        response_tokens:
+          type: integer
+        remaining_tokens:
+          type: integer
+        remaining_tool_calls:
+          type: integer
+    ChatMessage:
+      type: object
+      required: [role, content]
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+        tool_call_id:
+          type: string
+    ToolDefinition:
+      type: object
+      required: [name, description, parameters]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+    ChatRequest:
+      type: object
+      required: [model, messages, estimated_tokens]
+      properties:
+        model:
+          type: string
+          enum: [simplicio-1]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatMessage"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolDefinition"
+        stream:
+          type: boolean
+          default: true
+        estimated_tokens:
+          type: integer
+        request_id:
+          type: string
+    GatewayEvent:
+      type: object
+      required: [done]
+      properties:
+        id:
+          type: string
+        text_delta:
+          type: string
+        tool_call:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            arguments:
+              type: string
+        usage:
+          $ref: "#/components/schemas/GatewayUsage"
+        done:
+          type: boolean
