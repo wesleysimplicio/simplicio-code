@@ -29,6 +29,7 @@
 
 pub mod format;
 mod handler;
+pub mod redact;
 pub mod symbolicate;
 pub mod terminal;
 
