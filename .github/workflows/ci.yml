@@ -4,16 +4,36 @@ name: CI
 # push and PR and must be green before merge. Nothing here depends on
 # repository/organization secrets, so it is safe to run on PRs from forks.
 #
-# Known gap (tracked, not silently ignored): crates/build/xai-proto-build
-# hardcodes `--dependency_out=/dev/stdout` / `--descriptor_set_out=/dev/null`
-# when invoking `protoc` (crates/build/xai-proto-build/src/lib.rs:119). Those
-# are POSIX-only device paths, so any crate that transitively depends on a
-# protoc-codegen crate (e.g. xai-grok-tools-api, and everything that depends
-# on it: xai-grok-sampler, xai-grok-telemetry, ...) fails to build natively on
-# windows-latest. Until that's fixed, the `windows` leg of the build/test
-# matrix intentionally scopes to the crates that are provably protoc-free
-# (xai-grok-secrets, the redaction/security crate) instead of claiming full
-# workspace coverage it can't deliver.
+# Windows/protoc history (issue #8, #35 — see docs/windows-build-status.md
+# for the full local verification writeup):
+#
+# `crates/build/xai-proto-build` used to hardcode
+# `--dependency_out=/dev/stdout` / `--descriptor_set_out=/dev/null` when
+# invoking `protoc`. Those are POSIX-only device paths, so any crate that
+# transitively depends on a protoc-codegen crate (e.g. xai-grok-tools-api,
+# and everything that depends on it: xai-grok-sampler, xai-grok-telemetry,
+# ...) failed to build natively on windows-latest. That bug is now FIXED
+# (see the fix(xai-proto-build) commit) and verified locally on native
+# Windows: xai-grok-tools-api and the large majority of the workspace build
+# cleanly there now, given a real `protoc.exe` reachable via `$PROTOC` or
+# `$PATH`.
+#
+# Two smaller items still block flipping `windows-scoped` below to the full
+# `--workspace` matrix used by the Linux/macOS legs:
+#   1. `bin/protoc`'s DotSlash wrapper is a shebang script Windows can't
+#      execute directly (no shim yet, tracked in #35) — this job installs a
+#      real `protoc.exe` via chocolatey and points `$PROTOC` at it instead of
+#      relying on `bin/protoc`.
+#   2. An unrelated compile error (`AgentRebuildSpec` missing the
+#      `search_backend` field at one call site in xai-grok-shell) currently
+#      breaks `cargo check --workspace` on every platform, not just Windows;
+#      it's tracked as a separate follow-up rather than papered over here.
+# Until (2) is fixed, this job is intentionally scoped to
+# `xai-grok-tools-api` (the crate that was the canonical repro for the
+# /dev/stdout bug) plus the previously-covered `xai-grok-secrets`, so it's a
+# real, honest signal instead of a green check that never compiles anything
+# meaningful, or a red check for a reason that has nothing to do with
+# Windows.
 
 on:
   push:
@@ -127,11 +147,17 @@ jobs:
       - name: cargo test
         run: cargo test --workspace --all-targets
 
-  # Windows leg: scoped to the crates that don't transitively need protoc,
-  # so it's a real, honest signal rather than a green check on a build that
-  # never actually compiled the workspace. Extend this list as more crates
-  # are verified protoc-free, and replace with the full matrix once the
-  # xai-proto-build Windows gap above is fixed.
+  # Windows leg: the xai-proto-build /dev/stdout|/dev/null bug (issues #8,
+  # #35) is fixed and locally verified (docs/windows-build-status.md), so
+  # this now also builds xai-grok-tools-api — the crate that was the
+  # canonical repro for that bug — using a real protoc.exe installed via
+  # chocolatey (bin/protoc's DotSlash wrapper still can't run natively on
+  # Windows; that's the separate, still-open part of #35). Still scoped
+  # short of the full `--workspace` matrix used by Linux/macOS because of an
+  # unrelated pre-existing compile error breaking `cargo check --workspace`
+  # on every platform right now (see the header comment above) — extend this
+  # list as more crates are verified clean, and replace with the full matrix
+  # once that's fixed.
   windows-scoped:
     name: lint-build-test (windows-latest, security crates)
     needs: [fmt]
@@ -140,6 +166,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust (from rust-toolchain.toml)
         run: rustup show
+      - name: Install protoc (Windows)
+        run: choco install protoc -y --no-progress
+      - name: Add protoc to PROTOC env var
+        shell: bash
+        run: echo "PROTOC=$(which protoc)" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
@@ -147,6 +178,8 @@ jobs:
         run: cargo clippy -p xai-grok-secrets --all-targets -- -D warnings
       - name: cargo test (xai-grok-secrets)
         run: cargo test -p xai-grok-secrets --all-targets
+      - name: cargo check (xai-grok-tools-api, protoc-dependent, issue #8/#35)
+        run: cargo check -p xai-grok-tools-api --all-targets
 
   # cargo-deny: advisories (known vulns), license allow-list, and duplicate/
   # banned dependency checks. Config lives in deny.toml at the repo root.
