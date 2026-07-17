@@ -57,12 +57,24 @@ const MAX_BUFFER_SIZE: usize = 8 * 1024 * 1024;
 const KEEPALIVE_INTERVAL_SECS: u64 = 15;
 
 /// Configuration for the agent WebSocket server.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ServerConfig {
     /// Address to bind the server to
     pub bind_addr: SocketAddr,
     /// Secret token for client authentication (required)
     pub secret: String,
+}
+
+/// Manual `Debug` impl: `secret` is the raw client-auth token. A derived
+/// `Debug` would print it verbatim on any `{:?}` of the server config
+/// (e.g. a startup log line).
+impl std::fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("bind_addr", &self.bind_addr)
+            .field("secret", &"<redacted>")
+            .finish()
+    }
 }
 
 /// Shared state for the WebSocket server.
@@ -82,10 +94,24 @@ struct NewConnectionChannels {
 }
 
 /// Query parameters for WebSocket connection.
-#[derive(Debug, serde::Deserialize, Default)]
+#[derive(serde::Deserialize, Default)]
 pub struct WsQueryParams {
     #[serde(rename = "server-key")]
     pub server_key: Option<String>,
+}
+
+/// Manual `Debug` impl: `server_key` is the client-auth token echoed back
+/// from the query string; must not be printed verbatim (e.g. request
+/// logging middleware that debug-prints extracted query params).
+impl std::fmt::Debug for WsQueryParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WsQueryParams")
+            .field(
+                "server_key",
+                &self.server_key.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 /// Validate the bearer token from request headers or query parameters.
@@ -484,4 +510,46 @@ pub async fn run_agent_server(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod secret_debug_tests {
+    use super::*;
+
+    /// `ServerConfig::secret` is the raw client-auth token; must never
+    /// appear in `{:?}` output.
+    #[test]
+    fn server_config_debug_never_prints_raw_secret() {
+        const CANARY_SECRET: &str = "canary-server-secret-00000000";
+
+        let config = ServerConfig {
+            bind_addr: "127.0.0.1:8080".parse().unwrap(),
+            secret: CANARY_SECRET.to_string(),
+        };
+
+        let debug_output = format!("{config:?}");
+        assert!(
+            !debug_output.contains(CANARY_SECRET),
+            "ServerConfig Debug leaked the raw secret: {debug_output}"
+        );
+        assert!(debug_output.contains("<redacted>"));
+    }
+
+    /// `WsQueryParams::server_key` is the client-auth token from the query
+    /// string; must never appear in `{:?}` output.
+    #[test]
+    fn ws_query_params_debug_never_prints_raw_server_key() {
+        const CANARY_KEY: &str = "canary-ws-server-key-00000000";
+
+        let params = WsQueryParams {
+            server_key: Some(CANARY_KEY.to_string()),
+        };
+
+        let debug_output = format!("{params:?}");
+        assert!(
+            !debug_output.contains(CANARY_KEY),
+            "WsQueryParams Debug leaked the raw server_key: {debug_output}"
+        );
+        assert!(debug_output.contains("<redacted>"));
+    }
 }

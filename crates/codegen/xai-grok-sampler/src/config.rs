@@ -45,7 +45,7 @@ pub enum AuthScheme {
 /// `SamplerConfig` is handed to the actor. Auth is selected separately
 /// via `auth_scheme`, while `api_backend` controls only the request/response
 /// protocol shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SamplerConfig {
     pub api_key: Option<String>,
     pub base_url: String,
@@ -124,6 +124,60 @@ pub struct SamplerConfig {
     /// Per-request header injector (e.g. OTel traceparent). Called in `post()`.
     #[serde(skip)]
     pub header_injector: Option<SharedHeaderInjector>,
+}
+
+/// Manual `Debug` impl: `SamplerConfig` carries a raw `api_key` and
+/// `extra_headers` may itself carry bearer/proxy-auth secrets injected by
+/// the session (see the field docs above). A derived `Debug` would print
+/// both verbatim on any `{:?}`/`tracing::debug!("{:?}", cfg)` call site;
+/// this redacts them instead so no accidental debug-print can leak a
+/// credential. Keep this in sync when adding new secret-bearing fields.
+impl std::fmt::Debug for SamplerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        struct Redacted;
+        impl std::fmt::Debug for Redacted {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "<redacted>")
+            }
+        }
+
+        let api_key = self.api_key.as_ref().map(|_| Redacted);
+        let extra_headers: IndexMap<&str, Redacted> = self
+            .extra_headers
+            .keys()
+            .map(|k| (k.as_str(), Redacted))
+            .collect();
+
+        f.debug_struct("SamplerConfig")
+            .field("api_key", &api_key)
+            .field("base_url", &self.base_url)
+            .field("model", &self.model)
+            .field("max_completion_tokens", &self.max_completion_tokens)
+            .field("temperature", &self.temperature)
+            .field("top_p", &self.top_p)
+            .field("api_backend", &self.api_backend)
+            .field("auth_scheme", &self.auth_scheme)
+            .field("extra_headers", &extra_headers)
+            .field("context_window", &self.context_window)
+            .field("force_http1", &self.force_http1)
+            .field("max_retries", &self.max_retries)
+            .field("stream_tool_calls", &self.stream_tool_calls)
+            .field("idle_timeout_secs", &self.idle_timeout_secs)
+            .field("reasoning_effort", &self.reasoning_effort)
+            .field("origin_client", &self.origin_client)
+            .field("client_identifier", &self.client_identifier)
+            .field("deployment_id", &self.deployment_id)
+            .field("user_id", &self.user_id)
+            .field("client_version", &self.client_version)
+            .field("attribution_callback", &self.attribution_callback.is_some())
+            .field("bearer_resolver", &self.bearer_resolver.is_some())
+            .field("supports_backend_search", &self.supports_backend_search)
+            .field("compactions_remaining", &self.compactions_remaining)
+            .field("compaction_at_tokens", &self.compaction_at_tokens)
+            .field("doom_loop_recovery", &self.doom_loop_recovery)
+            .field("header_injector", &self.header_injector.is_some())
+            .finish()
+    }
 }
 
 impl Default for SamplerConfig {
@@ -215,6 +269,42 @@ mod tests {
         assert_eq!(
             policy.rate_limit_retry_threshold,
             RATE_LIMIT_RETRY_THRESHOLD
+        );
+    }
+
+    /// `SamplerConfig` derives `Serialize`/`Clone` but must NOT derive
+    /// (or otherwise leak through) `Debug` verbatim: the raw `api_key` and
+    /// any secret-bearing `extra_headers` values must never appear in
+    /// `{:?}` output, since this is the exact struct any accidental
+    /// `tracing::debug!("{:?}", cfg)` or `.expect()`/`.unwrap()` panic
+    /// message would print.
+    #[test]
+    fn debug_never_prints_raw_api_key_or_header_secrets() {
+        const CANARY_API_KEY: &str = "xai-canary-super-secret-api-key-00000000";
+        const CANARY_HEADER_VALUE: &str = "Bearer canary-super-secret-header-token";
+
+        let mut extra_headers = IndexMap::new();
+        extra_headers.insert("Authorization".to_string(), CANARY_HEADER_VALUE.to_string());
+
+        let cfg = SamplerConfig {
+            api_key: Some(CANARY_API_KEY.to_string()),
+            extra_headers,
+            ..Default::default()
+        };
+
+        let debug_output = format!("{cfg:?}");
+
+        assert!(
+            !debug_output.contains(CANARY_API_KEY),
+            "Debug output leaked the raw api_key: {debug_output}"
+        );
+        assert!(
+            !debug_output.contains(CANARY_HEADER_VALUE),
+            "Debug output leaked a raw extra_headers value: {debug_output}"
+        );
+        assert!(
+            debug_output.contains("<redacted>"),
+            "Debug output should show a redacted marker for the secret fields: {debug_output}"
         );
     }
 
