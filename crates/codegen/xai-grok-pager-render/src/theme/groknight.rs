@@ -40,6 +40,11 @@ mod palette {
     pub const DARK5: Color = rgb(120, 120, 120); // #787878 — bright gray
 
     // ── Accent colors (Brazil) ───────────────────────────────────────────
+    // #002776 is the literal Brazil flag navy. Kept for reference/decorative
+    // use, but it is NOT used as a foreground/accent color below: against
+    // this theme's dark backgrounds it measures ~1.4:1 contrast, far under
+    // the WCAG AA minimum of 4.5:1 for text (or 3:1 for UI components).
+    // BLUE1 (#3A95AB, ~5.3-5.7:1) is the accessible stand-in used instead.
     pub const BLUE: Color = rgb(0, 39, 118); // #002776
     pub const BLUE0: Color = rgb(61, 89, 161); // #3d59a1
     pub const BLUE1: Color = rgb(58, 149, 171); // #3A95AB
@@ -77,11 +82,11 @@ impl Theme {
             accent_assistant: GREEN1,
             accent_thinking: YELLOW,
             accent_tool: DARK5,
-            accent_system: BLUE,
+            accent_system: BLUE1,
             accent_error: RED,
             accent_success: GREEN,
             accent_running: GREEN1,
-            accent_skill: BLUE,
+            accent_skill: BLUE1,
 
             text_primary: FG,
             text_secondary: FG_DARK,
@@ -95,11 +100,11 @@ impl Theme {
             running: CYAN,
             warning: YELLOW,
 
-            fuzzy_accent: BLUE,
+            fuzzy_accent: BLUE1,
 
             accent_plan: rgb(255, 219, 141), // #FFDB8D — golden
 
-            accent_verify: BLUE,
+            accent_verify: BLUE1,
 
             accent_feedback: GREEN1, // #73daca
 
