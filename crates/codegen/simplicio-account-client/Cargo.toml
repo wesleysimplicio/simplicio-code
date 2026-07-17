@@ -1,0 +1,13 @@
+[package]
+name = "simplicio-account-client"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Typed client-side contract for the site_simpleti account/subscription backend (see docs/contracts/site-simpleti-api.md); no network I/O yet"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true
