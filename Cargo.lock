@@ -9690,6 +9690,8 @@ dependencies = [
 name = "simplicio-account-client"
 version = "0.1.0"
 dependencies = [
+ "blake3",
+ "dunce",
  "serde",
  "serde_json",
 ]

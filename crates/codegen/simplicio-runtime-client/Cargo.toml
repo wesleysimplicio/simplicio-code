@@ -7,6 +7,8 @@ description = "Typed MCP client for the embedded Simplicio Runtime"
 
 [dependencies]
 base64 = { workspace = true }
+blake3 = { workspace = true }
+dunce = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

@@ -6,6 +6,12 @@
 //! request. This lets older Runtimes keep the already-supported read path
 //! while rejecting newer operations with an actionable incompatibility error.
 
+pub mod map_cache;
+
+pub use map_cache::{
+    budgeted_summary, compute_repo_hash, MapCache, MapResult, MapState, MAP_RESULT_SCHEMA_V1,
+};
+
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
