@@ -5,3 +5,7 @@
 # simplicio-loop local runtime state / mapper cache -- generated, not source
 /.simplicio/
 /.orchestrator/
+
+# Python bytecode cache (scripts/ tooling is plain-file python3, no build step)
+__pycache__/
+*.pyc
