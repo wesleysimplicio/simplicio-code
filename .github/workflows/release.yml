@@ -1,0 +1,196 @@
+name: release
+
+# Part of issue #8 (beta release pipeline). Builds simplicio-code for every
+# target this tree can currently build, generates a checksummed +
+# (placeholder-)signed manifest and a dependency SBOM, and publishes a
+# GitHub prerelease.
+#
+# Scope notes (see the PR description for the full list):
+#   - Windows build is best-effort and allowed to fail (continue-on-error):
+#     bin/protoc (DotSlash) has no windows-x86_64 platform entry, and
+#     crates/build/xai-proto-build/src/lib.rs hardcodes /dev/stdout and
+#     /dev/null as protoc arguments, which native Windows protoc.exe cannot
+#     open. Both are pre-existing, this workflow does not attempt to fix
+#     them.
+#   - Signing uses a keypair generated fresh in this workflow run — a
+#     placeholder for real key management (see scripts/release/sign_manifest.sh
+#     header and RELEASE_NOTES_0.3.0-beta.1.md). It demonstrates the
+#     manifest -> signature -> verification mechanism end-to-end; it is not
+#     a production trust root.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. 0.3.0-beta.1), without the leading v"
+        required: true
+      channel:
+        description: "Release channel"
+        required: true
+        default: "beta"
+        type: choice
+        options: [beta, stable]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            best_effort: false
+          - os: macos-latest
+            platform: macos-aarch64
+            best_effort: false
+          - os: windows-latest
+            platform: windows-x86_64
+            best_effort: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.best_effort }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rust toolchain (pinned by rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install DotSlash
+        uses: facebook/install-dotslash@v2
+
+      - name: Build release binary
+        shell: bash
+        run: cargo build -p xai-grok-pager-bin --bin simplicio-code --release
+
+      - name: Stage artifact
+        id: stage
+        shell: bash
+        run: |
+          mkdir -p dist
+          version="${{ steps.ver.outputs.version }}"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            name="simplicio-code-${version}-${{ matrix.platform }}.exe"
+            cp target/release/simplicio-code.exe "dist/${name}"
+          else
+            name="simplicio-code-${version}-${{ matrix.platform }}"
+            cp target/release/simplicio-code "dist/${name}"
+            chmod +x "dist/${name}"
+          fi
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test (--version)
+        shell: bash
+        run: |
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            "dist/${{ steps.stage.outputs.name }}" --version
+          else
+            "dist/${{ steps.stage.outputs.name }}" --version
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: artifact-${{ matrix.platform }}
+          path: dist/${{ steps.stage.outputs.name }}
+          if-no-files-found: error
+
+  package:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version/channel
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "channel=${{ inputs.channel }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "channel=beta" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: artifact-*
+          merge-multiple: true
+
+      - name: List staged artifacts
+        run: ls -la dist
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS.txt
+
+      - name: Generate SBOM
+        run: |
+          python3 scripts/release/generate_sbom.py \
+            --root-package xai-grok-pager-bin \
+            --version "${{ steps.ver.outputs.version }}" \
+            --out dist/sbom.cdx.json
+
+      - name: Generate signed release manifest
+        run: |
+          python3 scripts/release/generate_manifest.py \
+            --version "${{ steps.ver.outputs.version }}" \
+            --channel "${{ steps.ver.outputs.channel }}" \
+            --artifacts-dir dist \
+            --out dist/manifest.json
+
+          # *** PLACEHOLDER SIGNING KEY — see scripts/release/sign_manifest.sh header. ***
+          # Generated fresh per run; NOT a production trust root. Real key
+          # custody (HSM/CI-secret, rotation, revocation, and how the
+          # trusted public key ships inside simplicio-code) is an org/infra
+          # decision outside this workflow's scope.
+          bash scripts/release/gen_dev_key.sh dist/dev_signing_key
+          bash scripts/release/sign_manifest.sh dist/manifest.json dist/dev_signing_key.pem dist/manifest.json.sig
+          cp dist/dev_signing_key.pub.b64 dist/manifest_signing_public_key.b64
+          rm -f dist/dev_signing_key.pem dist/dev_signing_key.pub.pem dist/manifest.json.raw.sig
+
+      - name: Upload packaged release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: |
+            dist/*
+            !dist/dev_signing_key*
+
+  publish:
+    needs: package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+
+      - name: Create GitHub prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "simplicio-code ${{ github.ref_name }}"
+          prerelease: true
+          body_path: RELEASE_NOTES_0.3.0-beta.1.md
+          files: |
+            dist/*
