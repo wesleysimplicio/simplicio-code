@@ -16,7 +16,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(HERE))
 HOOK_SRC = os.path.join(REPO, "scripts", "git-hooks", "pre-commit")
 ACTION_GATE_SRC = os.path.join(REPO, "hooks", "action_gate.py")
-LEGACY_PRECOMMIT_SRC = os.path.join(REPO, "hooks", "pre-commit.py")
 
 
 def _run(argv, cwd):
@@ -30,8 +29,6 @@ def _make_scratch_repo():
     _run(["git", "config", "user.name", "test"], cwd=scratch)
     os.makedirs(os.path.join(scratch, "hooks"), exist_ok=True)
     shutil.copy(ACTION_GATE_SRC, os.path.join(scratch, "hooks", "action_gate.py"))
-    if os.path.exists(LEGACY_PRECOMMIT_SRC):
-        shutil.copy(LEGACY_PRECOMMIT_SRC, os.path.join(scratch, "hooks", "pre-commit.py"))
     hook_dest = os.path.join(scratch, ".git", "hooks", "pre-commit")
     shutil.copy(HOOK_SRC, hook_dest)
     os.chmod(hook_dest, 0o755)

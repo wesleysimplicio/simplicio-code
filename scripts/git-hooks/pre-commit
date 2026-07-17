@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 """simplicio-code -- tracked pre-commit hook source (issue #9: secret gate).
 
-Fail-closed secret-scan of the staged diff BEFORE the pre-existing plugin/_bundle sync hook,
-so a credential never reaches a commit. Reuses hooks/action_gate.py's `check --staged` (already
-wired as the git pre-push gate, #291) instead of duplicating the SECRETS pattern list.
+Fail-closed secret-scan of the staged diff, so a credential never reaches a commit. Reuses
+hooks/action_gate.py's `check --staged` (already wired as the git pre-push gate, #291) instead
+of duplicating the SECRETS pattern list.
+
+Deliberately does NOT chain hooks/pre-commit.py's plugin/_bundle auto-sync (#98): that mirrors
+simplicio-loop's OWN pip-package tree (plugin/, simplicio_loop/_bundle/) and only makes sense
+inside the simplicio-loop repo itself. Running it here, in a consuming product repo, pulled
+~22k lines of unrelated orchestration-tooling source into an unrelated commit the first time
+this hook ran (see the fixup that removed plugin/ and simplicio_loop/_bundle/) -- a footgun
+this repo's product commits should never hit again.
 
 Install (idempotent, safe to re-run after every clone/checkout):
     python3 scripts/install_git_hooks.sh
@@ -26,12 +33,6 @@ def main():
         if r.returncode != 0:
             print("[pre-commit] BLOCKED by action_gate.py (secret detected in staged diff)")
             return r.returncode  # fail-closed: a secret in the diff blocks the commit
-
-    legacy = os.path.join(REPO, "hooks", "pre-commit.py")
-    if os.path.exists(legacy):
-        # Unchanged, fail-open behavior for the plugin/_bundle sync (#98) -- a failure here
-        # never blocks the commit; scripts/claims_audit.py is the backstop for drift.
-        subprocess.run([sys.executable, legacy], cwd=REPO)
 
     return 0
 
