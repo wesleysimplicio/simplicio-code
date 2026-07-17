@@ -20,7 +20,11 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{LazyLock, Mutex},
+    sync::{
+        Arc, LazyLock, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::{Duration, Instant},
 };
 
 pub const MCP_CONTRACT_SCHEMA: &str = "simplicio.code-mcp/v1";
@@ -31,6 +35,13 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_MAX_SEARCH_FILES: usize = 2_000;
 pub const DEFAULT_MAX_SEARCH_MATCHES: usize = 10_000;
+/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
+/// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
+/// during connection negotiation instead of hanging for tens of seconds.
+pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
+/// Bound on how many raw bytes of an unparsable handshake response are
+/// surfaced in [`Error::InvalidResponse`] diagnostics.
+const RAW_SNIPPET_MAX_BYTES: usize = 200;
 static MAPPED_WORKSPACES: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
@@ -46,6 +57,10 @@ pub enum Error {
     Protocol(String),
     #[error("invalid Simplicio Runtime response: {0}")]
     InvalidResponse(String),
+    #[error(
+        "Simplicio Runtime handshake ('{method}') timed out after {elapsed_ms}ms; the Runtime is unresponsive or misbehaving"
+    )]
+    HandshakeTimeout { method: String, elapsed_ms: u64 },
     #[error("unexpected MCP server '{0}'; expected Simplicio Runtime")]
     IdentityMismatch(String),
     #[error("Simplicio Runtime rejected the operation: {0}")]
@@ -217,13 +232,14 @@ impl RuntimeClient {
                 tools: BTreeSet::new(),
             },
         };
-        let initialized = client.request(
+        let initialized = client.request_with_timeout(
             "initialize",
             json!({
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": { "name": "simplicio-code", "version": env!("CARGO_PKG_VERSION") }
             }),
+            DEFAULT_HANDSHAKE_TIMEOUT_MS,
         )?;
         let server = initialized
             .pointer("/serverInfo/name")
@@ -233,8 +249,9 @@ impl RuntimeClient {
             return Err(Error::IdentityMismatch(server.to_owned()));
         }
         client.notify("notifications/initialized", json!({}))?;
-        client.capabilities =
-            parse_capabilities(&initialized, &client.request("tools/list", json!({}))?)?;
+        let listed =
+            client.request_with_timeout("tools/list", json!({}), DEFAULT_HANDSHAKE_TIMEOUT_MS)?;
+        client.capabilities = parse_capabilities(&initialized, &listed)?;
         Ok(client)
     }
 
@@ -442,8 +459,12 @@ impl RuntimeClient {
         if line.is_empty() {
             return Err(Error::Protocol("runtime closed stdout".into()));
         }
-        let response: Value =
-            serde_json::from_str(&line).map_err(|e| Error::InvalidResponse(e.to_string()))?;
+        let response: Value = serde_json::from_str(&line).map_err(|e| {
+            Error::InvalidResponse(format!(
+                "got non-JSON-RPC output from Runtime for '{method}' ({e}); first bytes: {}",
+                redact_snippet(&line)
+            ))
+        })?;
         if let Some(error) = response.get("error") {
             return Err(Error::Protocol(error.to_string()));
         }
@@ -451,6 +472,52 @@ impl RuntimeClient {
             .get("result")
             .cloned()
             .ok_or_else(|| Error::InvalidResponse("missing result".into()))
+    }
+
+    /// Like [`Self::request`], but bounds the round trip to `timeout_ms`: if
+    /// the Runtime hasn't answered by the deadline, the child process is
+    /// force-killed (unblocking the pending stdout read) and a
+    /// [`Error::HandshakeTimeout`] is returned instead of hanging. Intended
+    /// for the `initialize`/`tools/list` handshake, where a misbehaving or
+    /// wedged Runtime must fail fast rather than block for the much longer
+    /// [`DEFAULT_EXEC_TIMEOUT_MS`] used by ordinary tool calls.
+    fn request_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout_ms: u64,
+    ) -> Result<Value, Error> {
+        let done = Arc::new(AtomicBool::new(false));
+        let timed_out = Arc::new(AtomicBool::new(false));
+        let pid = self.child.id();
+        let watcher = {
+            let done = done.clone();
+            let timed_out = timed_out.clone();
+            std::thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+                while Instant::now() < deadline {
+                    if done.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                if !done.load(Ordering::SeqCst) {
+                    timed_out.store(true, Ordering::SeqCst);
+                    kill_pid(pid);
+                }
+            })
+        };
+        let started = Instant::now();
+        let result = self.request(method, params);
+        done.store(true, Ordering::SeqCst);
+        let _ = watcher.join();
+        match result {
+            Err(_) if timed_out.load(Ordering::SeqCst) => Err(Error::HandshakeTimeout {
+                method: method.to_owned(),
+                elapsed_ms: started.elapsed().as_millis() as u64,
+            }),
+            other => other,
+        }
     }
 
     fn notify(&mut self, method: &str, params: Value) -> Result<(), Error> {
@@ -600,6 +667,63 @@ fn validate_plan_paths(repo: &Path, plan: &Value) -> Result<(), Error> {
 fn contains_shell_metacharacters(arg: &str) -> bool {
     arg.chars()
         .any(|c| matches!(c, '|' | ';' | '&' | '`' | '$' | '>' | '<' | '\n' | '\r'))
+}
+
+/// Force-kills a process by pid, cross-platform, best-effort. Used only to
+/// unblock a hung handshake read after [`DEFAULT_HANDSHAKE_TIMEOUT_MS`]; a
+/// failure to kill is not itself fatal (the caller has already decided to
+/// report a timeout either way).
+fn kill_pid(pid: u32) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F", "/T"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Command::new("kill")
+            .args(["-9", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+}
+
+/// Bounds and redacts a raw response line for inclusion in an error message:
+/// truncates to [`RAW_SNIPPET_MAX_BYTES`] and blanks out anything that looks
+/// like a home-directory path (`/Users/...`, `/home/...`, `C:\Users\...`) so
+/// a malformed-response diagnostic never leaks a local username or absolute
+/// path into logs.
+fn redact_snippet(raw: &str) -> String {
+    let bounded: String = raw.chars().take(RAW_SNIPPET_MAX_BYTES).collect();
+    let truncated = raw.chars().count() > RAW_SNIPPET_MAX_BYTES;
+    let redacted: String = bounded
+        .split_inclusive(char::is_whitespace)
+        .map(|token| {
+            let trimmed = token.trim_end();
+            let lower = trimmed.to_ascii_lowercase();
+            let looks_like_home_path = (trimmed.contains('/') || trimmed.contains('\\'))
+                && (lower.contains("/users/")
+                    || lower.contains("/home/")
+                    || lower.contains(r"c:\users"));
+            if looks_like_home_path {
+                let suffix = &token[trimmed.len()..];
+                format!("<redacted-path>{suffix}")
+            } else {
+                token.to_string()
+            }
+        })
+        .collect();
+    if truncated {
+        format!("{redacted}...")
+    } else {
+        redacted
+    }
 }
 
 fn resolve_binary() -> Result<PathBuf, Error> {
