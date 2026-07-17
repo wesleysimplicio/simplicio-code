@@ -13041,6 +13041,7 @@ version = "0.1.0"
 dependencies = [
  "backtrace",
  "libc",
+ "regex",
  "tempfile",
  "tokio",
  "windows-sys 0.59.0",

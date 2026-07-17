@@ -5,6 +5,7 @@
 //! crash blob into function names and file locations.
 
 use crate::format::CrashBlob;
+use crate::redact::redact_report;
 
 /// A resolved backtrace frame.
 #[derive(Debug, Clone)]
@@ -47,7 +48,22 @@ pub fn resolve_frames(blob: &CrashBlob) -> Vec<ResolvedFrame> {
 }
 
 /// Format a crash report as human-readable text.
+///
+/// The returned text has already been passed through
+/// [`crate::redact::redact_report`] — this is the single choke point that
+/// every crash report produced through the public API goes through before
+/// it can be written to disk, archived, or displayed. Do not skip this by
+/// building report text some other way without also calling
+/// `redact_report` directly.
 pub fn format_report(blob: &CrashBlob, frames: &[ResolvedFrame]) -> String {
+    let out = format_report_raw(blob, frames);
+    redact_report(&out)
+}
+
+/// Build the raw (unredacted) report text. Only exposed within the crate
+/// so tests can compare pre/post redaction; `format_report` is the public
+/// entry point and always redacts.
+fn format_report_raw(blob: &CrashBlob, frames: &[ResolvedFrame]) -> String {
     let mut out = String::with_capacity(4096);
 
     out.push_str("=== Grok Crash Report ===\n\n");
