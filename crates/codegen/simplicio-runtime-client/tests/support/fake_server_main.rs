@@ -8,12 +8,24 @@
 //!
 //! Deliberately tiny: one line of JSON in, one line of JSON out, matching
 //! `RuntimeClient::request`'s framing (`serde_json::to_writer` + `\n`).
+//!
+//! `SIMPLICIO_FAKE_SERVER_MODE` (unset = normal) selects a misbehaving
+//! handshake response, used by `tests/fake_server_malformed_handshake.rs` to
+//! regression-test `RuntimeClient`'s fail-fast diagnostics without needing a
+//! real broken Runtime binary:
+//! - `banner_then_json`: replies to `initialize` with a non-JSON-RPC banner
+//!   line instead of a response, simulating a misbehaving Runtime that prints
+//!   startup noise on stdout before ever speaking JSON-RPC.
+//! - `hang_handshake`: never replies to `initialize`, simulating a wedged
+//!   Runtime process so the handshake timeout (not the normal I/O timeout)
+//!   is what has to fire.
 
 use std::io::{self, BufRead, Write};
 
 use serde_json::{Value, json};
 
 fn main() {
+    let mode = std::env::var("SIMPLICIO_FAKE_SERVER_MODE").unwrap_or_default();
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     for line in stdin.lock().lines() {
@@ -26,6 +38,21 @@ fn main() {
         };
         let method = message.get("method").and_then(Value::as_str).unwrap_or("");
         let id = message.get("id").cloned();
+
+        if method == "initialize" && mode == "banner_then_json" {
+            // Non-JSON-RPC noise on the same stream the client reads its
+            // handshake response from, e.g. a startup banner printed before
+            // the server is ready to speak the protocol.
+            let _ = writeln!(stdout, "Simplicio Runtime booting, please wait...");
+            let _ = stdout.flush();
+            continue;
+        }
+        if method == "initialize" && mode == "hang_handshake" {
+            // Never respond: the client's handshake-timeout watcher must
+            // kill this process, not the caller's normal exec timeout.
+            std::thread::sleep(std::time::Duration::from_secs(3600));
+            continue;
+        }
 
         match method {
             "initialize" => write_response(
