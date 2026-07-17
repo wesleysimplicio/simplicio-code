@@ -1793,6 +1793,12 @@ async fn async_main() -> Result<()> {
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
                 return xai_grok_pager::plugin_cmd::run(plugin_args).await;
             }
+            Command::Privacy(privacy_args) => {
+                // Deliberately no `init_tracing_simple`/`otel_guard` here:
+                // `privacy diagnose` must never itself emit a telemetry
+                // event or span while reporting on telemetry.
+                return xai_grok_pager::privacy_cmd::run(privacy_args).await;
+            }
             Command::Models => {
                 init_tracing_simple("cli");
                 let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();

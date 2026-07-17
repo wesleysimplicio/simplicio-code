@@ -138,11 +138,11 @@ downgrades the confirmed press to a cancel instead of closing.
 binding, the cheatsheet stays reachable via `Ctrl+.` inside the
 details view.)
 
-For the full behavioural specification (including the registry-lookup
-rules and the mouse-event intercept matrix) see plan
-[§3.10](../../plan/agent-dashboard.md) "Keybindings (v1)" — the user
-guide here is intentionally short and cross-references the plan as
-the source of truth.
+The full behavioural specification (registry-lookup rules and the
+mouse-event intercept matrix) lives in an internal planning document that
+is not part of this public tree; the user guide here is intentionally
+short and is the source of truth for anyone building against this
+repository.
 
 All shortcuts are registered under `When::DashboardFocused` and can be
 rebound via `~/.grok/config.toml`.
