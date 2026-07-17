@@ -1,0 +1,160 @@
+name: CI
+
+# Mandatory quality/security gate for this repo (issue #11). Runs on every
+# push and PR and must be green before merge. Nothing here depends on
+# repository/organization secrets, so it is safe to run on PRs from forks.
+#
+# Known gap (tracked, not silently ignored): crates/build/xai-proto-build
+# hardcodes `--dependency_out=/dev/stdout` / `--descriptor_set_out=/dev/null`
+# when invoking `protoc` (crates/build/xai-proto-build/src/lib.rs:119). Those
+# are POSIX-only device paths, so any crate that transitively depends on a
+# protoc-codegen crate (e.g. xai-grok-tools-api, and everything that depends
+# on it: xai-grok-sampler, xai-grok-telemetry, ...) fails to build natively on
+# windows-latest. Until that's fixed, the `windows` leg of the build/test
+# matrix intentionally scopes to the crates that are provably protoc-free
+# (xai-grok-secrets, the redaction/security crate) instead of claiming full
+# workspace coverage it can't deliver.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - run: cargo fmt --all -- --check
+
+  # Fails the build on any secret-shaped string introduced by this push/PR.
+  # This is the CI-side half of issue #9's "block release when the scanner
+  # finds a secret" requirement.
+  #
+  # Deliberately scoped to the new commits (base..head for a PR, before..
+  # after for a push), NOT gitleaks' whole-history mode: a real
+  # `gitleaks detect` full-history run against this repo's actual git log
+  # (19k+ commits, inherited from the pre-Rust-rewrite "opencode" ancestor
+  # project) surfaces ~87 findings, all in files that no longer exist in the
+  # tree (deleted TS/Go source, `.stats.yml` config hashes) and all
+  # entropy-based false positives on hashes/checksums, not real secrets —
+  # see the incident-runbook §6 note. Gating every PR on that pre-existing,
+  # already-public history would make the check permanently red for reasons
+  # unrelated to the change under review. A one-time full-history baseline
+  # scan (and, if any turn out to be real, a history rewrite) is tracked as
+  # separate follow-up, not something this per-PR gate should own.
+  secret-scan:
+    name: secret-scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Determine commit range
+        id: range
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "range=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            before="${{ github.event.before }}"
+            # First push of a new branch reports an all-zero SHA; fall back
+            # to scanning just the pushed commit in that case.
+            if [ -z "$before" ] || [[ "$before" =~ ^0+$ ]]; then
+              echo "range=${{ github.sha }}~1..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            else
+              echo "range=${before}..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: gitleaks (diff-scoped)
+        run: |
+          gitleaks detect --source . -c .gitleaks.toml \
+            --log-opts="${{ steps.range.outputs.range }}" \
+            --redact -v
+
+  # Full workspace lint/build/test on the two platforms where the workspace
+  # is known to build cleanly (see the header note re: Windows/protoc).
+  lint-build-test:
+    name: lint-build-test (${{ matrix.os }})
+    needs: [fmt]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: cargo clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+      - name: cargo test
+        run: cargo test --workspace --all-targets
+
+  # Windows leg: scoped to the crates that don't transitively need protoc,
+  # so it's a real, honest signal rather than a green check on a build that
+  # never actually compiled the workspace. Extend this list as more crates
+  # are verified protoc-free, and replace with the full matrix once the
+  # xai-proto-build Windows gap above is fixed.
+  windows-scoped:
+    name: lint-build-test (windows-latest, security crates)
+    needs: [fmt]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: cargo clippy (xai-grok-secrets, deny warnings)
+        run: cargo clippy -p xai-grok-secrets --all-targets -- -D warnings
+      - name: cargo test (xai-grok-secrets)
+        run: cargo test -p xai-grok-secrets --all-targets
+
+  # cargo-deny: advisories (known vulns), license allow-list, and duplicate/
+  # banned dependency checks. Config lives in deny.toml at the repo root.
+  cargo-deny:
+    name: cargo-deny (advisories, licenses, bans)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check all

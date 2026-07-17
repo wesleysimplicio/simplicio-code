@@ -11,6 +11,28 @@ Version 2.0 (see [`LICENSE`](LICENSE)).
 
 Please report security issues through the process described in
 [`SECURITY.md`](SECURITY.md). Do not open a public issue for vulnerabilities.
+See [`docs/security/incident-runbook.md`](docs/security/incident-runbook.md)
+for the internal response process once a leak is suspected or confirmed.
+
+## Local development gates
+
+CI (`.github/workflows/ci.yml`) runs `cargo fmt --check`, `cargo clippy -D
+warnings`, `cargo test`, a `gitleaks` secret scan, and `cargo-deny` on every
+push/PR — these must pass before merge. To catch the fast ones locally
+before pushing:
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+```
+
+An opt-in pre-commit hook (secret scan + `cargo fmt --check`) is available at
+`.githooks/pre-commit`; enable it once per clone with:
+
+```sh
+git config core.hooksPath .githooks
+```
 
 ## Licensing of this source
 

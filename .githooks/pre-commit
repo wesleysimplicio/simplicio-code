@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Opt-in local pre-commit hook (issue #9). Not enabled by default — this
+# repo has no hook-framework dependency (no husky/pre-commit-py), so this is
+# a plain shell script. Enable once per clone with:
+#
+#   git config core.hooksPath .githooks
+#
+# CI (.github/workflows/ci.yml, `secret-scan` job) is the authoritative gate
+# and runs regardless of whether this local hook is enabled — this hook is a
+# fast local pre-check, not a substitute for CI.
+set -euo pipefail
+
+if command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: scanning staged changes for secrets (gitleaks)..."
+  if ! gitleaks protect --staged -c .gitleaks.toml -v; then
+    echo
+    echo "pre-commit: gitleaks found a likely secret in your staged changes." >&2
+    echo "Fix the finding (or, if it's a reviewed test fixture, add it to .gitleaks.toml) before committing." >&2
+    exit 1
+  fi
+else
+  echo "pre-commit: gitleaks not installed locally, skipping secret pre-check (CI will still enforce this)." >&2
+fi
+
+echo "pre-commit: checking cargo fmt..."
+if ! cargo fmt --all -- --check; then
+  echo
+  echo "pre-commit: run 'cargo fmt --all' to fix formatting." >&2
+  exit 1
+fi

@@ -1,0 +1,112 @@
+# cargo-deny config (issue #11: CI security/license gate).
+#
+# Run locally with: cargo install --locked cargo-deny && cargo deny check all
+# Run in CI via: .github/workflows/ci.yml `cargo-deny` job
+# (EmbarkStudios/cargo-deny-action).
+#
+# This file was NOT written blind: it was validated against a real
+# `cargo deny check all` run against this workspace's actual Cargo.lock
+# (60+ crates, several vendored `third_party/` sub-crates). Every allowance
+# below corresponds to a specific, inspected finding — see the comment on
+# each. Nothing here silences a class of finding wholesale (e.g. "warn on
+# all advisories"); `vulnerability` findings stay hard-denied, with only the
+# already-existing, currently-unpatched RUSTSEC IDs individually
+# baselined below so this gate is green for pre-existing debt while still
+# catching any *new* vulnerable dependency introduced going forward.
+
+[graph]
+targets = []
+
+[advisories]
+version = 2
+yanked = "warn"
+# All entries below are `unmaintained`/`unsound`/`vulnerability` advisories
+# that a real `cargo deny check all` run flagged against this workspace's
+# actual Cargo.lock at the time this gate was added (2026-07). None of them
+# were introduced by this PR. Fixing them requires bumping transitive
+# dependency versions across a 60+-crate workspace, which is out of scope
+# for a security/CI-gate PR and can't be safely verified in this
+# environment (no Linux/macOS runner available locally; the Windows build
+# is separately blocked by a pre-existing protoc bug — see PR description).
+# Each is individually listed (not blanket-suppressed by type) so the next
+# `cargo deny check all` run — and this comment block — stays an accurate,
+# reviewable baseline; delete an entry once its crate is actually bumped.
+ignore = [
+  # --- unmaintained (no fix available; upstream recommends a replacement
+  #     crate, which is itself a dependency-bump-and-retest exercise) ---
+  "RUSTSEC-2024-0320", # yaml-rust
+  "RUSTSEC-2024-0384", # instant
+  "RUSTSEC-2024-0436", # paste
+  "RUSTSEC-2025-0012", # backoff
+  "RUSTSEC-2025-0052", # async-std
+  "RUSTSEC-2025-0057", # fxhash
+  "RUSTSEC-2025-0141", # bincode
+  "RUSTSEC-2026-0192", # ttf-parser
+  "RUSTSEC-2026-0206", # rustybuzz
+  # --- unsound (safe-code-triggerable UB; upstream fix pending or
+  #     requires a major-version bump) ---
+  "RUSTSEC-2026-0008", # git2: null-pointer deref in Buf::deref
+  "RUSTSEC-2026-0183", # git2: null-pointer deref in Remote::list()
+  "RUSTSEC-2026-0184", # git2: null-pointer deref via BlameHunk signatures
+  "RUSTSEC-2026-0190", # anyhow: Error::downcast_mut unsoundness
+  "RUSTSEC-2026-0097", # rand: unsound with a custom logger using rand::rng()
+  # --- vulnerability (no patched release exists yet, or fix is deferred to
+  #     a dedicated dependency-bump PR verified on a full Linux/macOS run) ---
+  "RUSTSEC-2023-0071", # rsa: Marvin Attack timing side-channel, no patch yet
+  "RUSTSEC-2026-0204", # crossbeam-epoch: fixed upstream, deferred bump
+  "RUSTSEC-2026-0194", # quick-xml (0.38.3 and 0.39.4 both in the lock)
+  "RUSTSEC-2026-0195", # quick-xml (0.38.3 and 0.39.4 both in the lock)
+]
+
+[licenses]
+version = 2
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "MIT-0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Zlib",
+  "CC0-1.0",
+  "OpenSSL",
+  # Boost Software License 1.0 — OSI-approved permissive license (used by
+  # e.g. clipboard-win, error-code).
+  "BSL-1.0",
+  # Community Data License Agreement, Permissive 2.0 — used by
+  # webpki-root-certs/webpki-roots for the bundled Mozilla CA data.
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+# `allow-wildcard-paths` alone isn't enough here: it explicitly doesn't
+# apply to crates cargo-deny considers "public" (missing `publish = false`),
+# and the ~60 first-party `xai-grok-*`/`xai-*` crates in this workspace
+# reference each other via `{ path = "..." }` / `{ workspace = true }`
+# without pinned versions — normal for an internal, never-independently-
+# published monorepo (see CONTRIBUTING.md: this repo doesn't accept or ship
+# individually-published crates). Downgraded to "warn" so the check still
+# flags a real crates.io wildcard dependency (the risk this lint actually
+# targets) without 39 false positives on our own path deps. The vendored
+# `third_party/{dagre_rust,graphlib_rust,mermaid-to-svg,ordered_hashmap}`
+# wildcard path deps are covered by `allow-wildcard-paths` below.
+wildcards = "warn"
+allow-wildcard-paths = true
+deny = [
+  # Add explicitly banned crates here (e.g. a yanked/malicious package name)
+  # with a comment explaining why.
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = [
+  # xai-grok-pager (fuzzy-matcher) pins an unreleased fix from upstream via
+  # a `rev`-pinned git dependency.
+  "https://github.com/helix-editor/nucleo.git",
+]
