@@ -46,6 +46,8 @@ pub enum Command {
     Mcp(crate::mcp_cmd::McpArgs),
     /// Manage plugins and marketplace sources
     Plugin(crate::plugin_cmd::PluginArgs),
+    /// Privacy and telemetry controls (see also the `/privacy` slash command)
+    Privacy(crate::privacy_cmd::PrivacyArgs),
     /// Manage cross-session memory
     Memory(crate::memory_cmd::MemoryArgs),
     /// List available models and exit

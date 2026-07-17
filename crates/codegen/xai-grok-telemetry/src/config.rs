@@ -213,6 +213,24 @@ fn env_bool(name: &str) -> Option<bool> {
 pub fn deployment_id_from_key(key: &str) -> String {
     uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, key.as_bytes()).to_string()
 }
+/// Checks the [`DO_NOT_TRACK`](https://consoledonottrack.com/) community
+/// convention. Any non-empty value other than `"0"`/`"false"`/`"no"`/`"off"`
+/// is treated as an opt-out request, so `DO_NOT_TRACK=1 simplicio-code` (or
+/// any other consumer of this crate) disables telemetry without needing a
+/// product-specific env var. This is advisory only: an admin `Requirement`
+/// pin (enterprise-managed config) still wins over it, matching the
+/// precedence documented for `resolve_telemetry_mode` (requirement > env >
+/// config > remote > default-disabled) -- `DO_NOT_TRACK` is layered in at
+/// the "env" tier alongside `GROK_TELEMETRY_ENABLED`.
+pub fn do_not_track_requested() -> bool {
+    match std::env::var("DO_NOT_TRACK") {
+        Ok(value) => {
+            let normalized = value.trim().to_ascii_lowercase();
+            !matches!(normalized.as_str(), "" | "0" | "false" | "no" | "off")
+        }
+        Err(_) => false,
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,6 +241,38 @@ mod tests {
         assert_eq!(build_env_default(Some(" \t ")), None);
         assert_eq!(build_env_default(Some(" key ")), Some("key".to_owned()));
     }
+    #[test]
+    #[allow(unsafe_code)]
+    fn do_not_track_recognizes_opt_out_values() {
+        let _guard = DO_NOT_TRACK_TEST_LOCK.lock().unwrap();
+        for value in ["1", "true", "yes", "on", "TRUE", "anything-nonzero"] {
+            unsafe { std::env::set_var("DO_NOT_TRACK", value) };
+            assert!(
+                do_not_track_requested(),
+                "DO_NOT_TRACK={value} must be treated as an opt-out"
+            );
+        }
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+    }
+    #[test]
+    #[allow(unsafe_code)]
+    fn do_not_track_ignores_falsy_or_unset_values() {
+        let _guard = DO_NOT_TRACK_TEST_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+        assert!(!do_not_track_requested(), "unset DO_NOT_TRACK must not opt out");
+        for value in ["0", "false", "no", "off", "", "  "] {
+            unsafe { std::env::set_var("DO_NOT_TRACK", value) };
+            assert!(
+                !do_not_track_requested(),
+                "DO_NOT_TRACK={value:?} must NOT be treated as an opt-out"
+            );
+        }
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+    }
+    // `DO_NOT_TRACK` env-var tests mutate global process state; serialize them
+    // so they don't race with each other under `cargo test` (which runs unit
+    // tests in the same crate on multiple threads by default).
+    static DO_NOT_TRACK_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     #[test]
     fn default_is_build_env_layer_when_feature_off() {
         let cfg = TelemetryConfig::default();

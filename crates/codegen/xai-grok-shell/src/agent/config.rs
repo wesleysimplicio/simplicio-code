@@ -2039,6 +2039,14 @@ impl Config {
     pub fn is_telemetry_enabled(&self) -> bool {
         self.resolve_telemetry_mode().value.is_enabled()
     }
+    /// Public accessor for the fully-resolved [`TelemetryMode`] (requirement
+    /// pin > `DO_NOT_TRACK` > env > config > remote > default-disabled). Used
+    /// by `simplicio-code privacy diagnose` to report what telemetry mode is
+    /// actually in effect, without exposing the internal `Resolved<T>`
+    /// wrapper or the `pub(crate)` `resolve_telemetry_mode`.
+    pub fn effective_telemetry_mode(&self) -> TelemetryMode {
+        self.resolve_telemetry_mode().value
+    }
     pub fn is_trace_upload_enabled(&self) -> bool {
         self.resolve_trace_upload().value
     }
@@ -2060,6 +2068,15 @@ impl Config {
     pub(crate) fn resolve_telemetry_mode(&self) -> Resolved<TelemetryMode> {
         if let Some(mode) = self.requirements.telemetry.pinned() {
             return Resolved::new(mode, ConfigSource::Requirement);
+        }
+        // `DO_NOT_TRACK` (https://consoledonottrack.com/) is a community
+        // convention, not Simplicio/Grok-specific. Honor it at the same
+        // precedence tier as `GROK_TELEMETRY_ENABLED` so a user who sets it
+        // gets an opt-out before any first event, without needing to learn a
+        // product-specific env var. An admin requirement pin (above) still
+        // wins, matching enterprise-managed policy.
+        if xai_grok_telemetry::config::do_not_track_requested() {
+            return Resolved::new(TelemetryMode::Disabled, ConfigSource::Env);
         }
         if let Some(mode) = env_telemetry_mode("GROK_TELEMETRY_ENABLED") {
             return Resolved::new(mode, ConfigSource::Env);
@@ -2914,20 +2931,26 @@ impl SyncBoolFlag {
 /// Sync slice of [`Config::resolve_telemetry_mode`] for use before the tokio
 /// runtime (e.g. `init_sentry`). `true` only when explicitly off.
 pub fn is_telemetry_disabled_sync() -> bool {
-    !SyncBoolFlag::new(telemetry_enabled_from_toml)
-        .disable_env("DISABLE_TELEMETRY")
-        .enable_env(grok_telemetry_env_enabled)
-        .resolve()
+    // `DO_NOT_TRACK` (community convention, see `do_not_track_requested`) is
+    // an unconditional opt-out signal at this layer -- it must win before
+    // the very first event/span is emitted (`init_sentry`/OTel init run
+    // before the tokio runtime and `Config::resolve_telemetry_mode` exist).
+    xai_grok_telemetry::config::do_not_track_requested()
+        || !SyncBoolFlag::new(telemetry_enabled_from_toml)
+            .disable_env("DISABLE_TELEMETRY")
+            .enable_env(grok_telemetry_env_enabled)
+            .resolve()
 }
 /// Like [`is_telemetry_disabled_sync`] but only `true` when telemetry is
 /// *explicitly* off; absence is not disabled (`.default(true)`) so remote-only
 /// enablement still builds the OTLP exporter (the runtime gate then governs it).
 pub fn is_telemetry_explicitly_disabled_sync() -> bool {
-    !SyncBoolFlag::new(telemetry_enabled_from_toml)
-        .disable_env("DISABLE_TELEMETRY")
-        .enable_env(grok_telemetry_env_enabled)
-        .default(true)
-        .resolve()
+    xai_grok_telemetry::config::do_not_track_requested()
+        || !SyncBoolFlag::new(telemetry_enabled_from_toml)
+            .disable_env("DISABLE_TELEMETRY")
+            .enable_env(grok_telemetry_env_enabled)
+            .default(true)
+            .resolve()
 }
 /// Sync sibling of [`is_telemetry_disabled_sync`] scoped to Sentry. Inherits
 /// from telemetry when no Sentry-specific signal is set.
@@ -10422,6 +10445,49 @@ telemetry = "garbage"
         unsafe { std::env::set_var("DISABLE_TELEMETRY", "1") };
         assert!(is_telemetry_explicitly_disabled_sync());
         unsafe { std::env::remove_var("DISABLE_TELEMETRY") };
+    }
+    /// `DO_NOT_TRACK` must disable telemetry even when `GROK_TELEMETRY_ENABLED=1`
+    /// is set -- it's an unconditional, product-agnostic opt-out signal that
+    /// must be respected before the very first event (issue: telemetria
+    /// mínima e controles de dados).
+    #[test]
+    #[serial]
+    #[allow(unsafe_code)]
+    fn do_not_track_overrides_explicit_enable_in_sync_gates() {
+        unsafe { std::env::remove_var("DISABLE_TELEMETRY") };
+        unsafe { std::env::set_var("GROK_TELEMETRY_ENABLED", "1") };
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+        assert!(!is_telemetry_disabled_sync(), "sanity: enabled without DO_NOT_TRACK");
+        unsafe { std::env::set_var("DO_NOT_TRACK", "1") };
+        assert!(
+            is_telemetry_disabled_sync(),
+            "DO_NOT_TRACK=1 must disable telemetry even with GROK_TELEMETRY_ENABLED=1"
+        );
+        assert!(
+            is_telemetry_explicitly_disabled_sync(),
+            "DO_NOT_TRACK=1 must count as an explicit disable"
+        );
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
+    }
+    /// Mirrors the sync-gate test above for the async `Config::resolve_telemetry_mode`
+    /// path (used once the tokio runtime is up).
+    #[test]
+    #[serial]
+    #[allow(unsafe_code)]
+    fn do_not_track_overrides_resolve_telemetry_mode() {
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+        unsafe { std::env::set_var("GROK_TELEMETRY_ENABLED", "1") };
+        let cfg = Config::default();
+        assert!(cfg.resolve_telemetry_mode().value.is_enabled());
+        unsafe { std::env::set_var("DO_NOT_TRACK", "1") };
+        assert!(
+            cfg.resolve_telemetry_mode().value.is_disabled(),
+            "DO_NOT_TRACK=1 must force TelemetryMode::Disabled regardless of \
+             GROK_TELEMETRY_ENABLED"
+        );
+        unsafe { std::env::remove_var("DO_NOT_TRACK") };
+        unsafe { std::env::remove_var("GROK_TELEMETRY_ENABLED") };
     }
     #[test]
     fn version_overrides_apply_into_typed_config() {

@@ -11,6 +11,7 @@ pub mod client;
 pub mod config;
 pub mod context;
 pub mod debug_log;
+pub mod diagnostic_report;
 pub mod enums;
 pub mod events;
 pub mod external;

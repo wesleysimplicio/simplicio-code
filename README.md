@@ -7,7 +7,7 @@ uma interface terminal/ACP em Rust ao Simplicio Runtime: toda leitura de arquivo
 do projeto feita pelo agente passa pelo contrato MCP do Runtime, com sandbox,
 controle de contexto e economia de tokens.
 
-[Installing the released binary](#installing-the-released-binary) ·
+[Installing the released binary](#instalando-o-binário) ·
 [Building from source](#building-from-source) ·
 [Documentation](#documentation) ·
 [Repository layout](#repository-layout) ·
@@ -90,7 +90,18 @@ e o gateway de inferência serão conectados antes da primeira distribuição.
 
 ## Documentation
 
-Full online documentation is available at
+Simplicio-specific docs (start here for this fork):
+
+- [docs/QUICKSTART.md](docs/QUICKSTART.md) — install and first run, PT + EN
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — client, Runtime, and gateway boundaries
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — login, Runtime, mapa, rede, updater
+- [docs/privacy/telemetry.md](docs/privacy/telemetry.md) — what telemetry exists, opt-out, `privacy diagnose`
+- [docs/migration/legacy-login-migration.md](docs/migration/legacy-login-migration.md) — design for the future login/entitlement migration (pending #3/#4)
+
+Run `python3 scripts/check_doc_links.py` to validate every doc link and
+referenced `cargo -p <crate>` command below and under `docs/`.
+
+Full online documentation for the underlying CLI is available at
 [docs.x.ai/build/overview](https://docs.x.ai/build/overview).
 
 The user guide ships with the pager crate:
