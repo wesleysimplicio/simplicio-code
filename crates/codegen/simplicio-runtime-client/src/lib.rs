@@ -29,6 +29,8 @@ const EXPECTED_SERVER: &str = "simplicio";
 pub const DEFAULT_MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
+pub const DEFAULT_MAX_SEARCH_FILES: usize = 2_000;
+pub const DEFAULT_MAX_SEARCH_MATCHES: usize = 10_000;
 static MAPPED_WORKSPACES: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
@@ -62,6 +64,8 @@ pub enum Error {
     ExecRejected(String),
     #[error("Simplicio Runtime rejected the file read: {0}")]
     ReadRejected(String),
+    #[error("search glob rejected: {0}")]
+    GlobRejected(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -144,6 +148,27 @@ impl FileReadResult {
         }
         Ok(self.content.as_bytes().to_vec())
     }
+}
+
+/// A single match returned by [`RuntimeClient::search`].
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SearchMatch {
+    /// Repo-relative path (forward-slash separated), as returned by the Runtime.
+    pub path: String,
+    #[serde(default)]
+    pub line: u64,
+    #[serde(default)]
+    pub text: String,
+}
+
+/// Typed response contract for `simplicio_search` (`simplicio.search-result/v1`).
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SearchResult {
+    pub schema: String,
+    #[serde(default)]
+    pub matches: Vec<SearchMatch>,
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 pub struct RuntimeClient {
@@ -251,31 +276,49 @@ impl RuntimeClient {
         parse_file_read(&tool_text_or_json(&result))
     }
 
+    /// Searches file contents under `repo`, optionally scoped to a
+    /// repo-relative `path` subdirectory and filtered by `globs`.
+    ///
+    /// Fails closed on any path-escape attempt: `path` (when given) is
+    /// resolved through [`secure_relative_path`] exactly like
+    /// `read`/`write`/`delete`/`list`/`stat`, and every entry in `globs` is
+    /// validated by [`secure_glob`] to reject parent-traversal (`../`) and
+    /// absolute-path segments *before* the request ever reaches the Runtime.
+    /// Without this, a caller-supplied glob like `../../etc/*` would be
+    /// forwarded to the Runtime unchecked — the same class of sandbox bypass
+    /// PR #26 fixed for symlinked read/write/delete targets.
     pub fn search(
         &mut self,
         repo: &Path,
         pattern: &str,
+        path: Option<&Path>,
         globs: &[String],
         case_insensitive: bool,
         literal: bool,
         max_files: usize,
         max_matches: usize,
-    ) -> Result<Value, Error> {
+    ) -> Result<SearchResult, Error> {
         let repo = canonical_repo(repo)?;
-        self.call_tool(
-            "search",
-            "simplicio_search",
-            json!({
-                "repo": repo,
-                "query": pattern,
-                "pattern": pattern,
-                "globs": globs,
-                "case_insensitive": case_insensitive,
-                "literal": literal,
-                "max_files": max_files,
-                "max_matches": max_matches,
-            }),
-        )
+        let relative_path = path.map(|p| secure_relative_path(&repo, p)).transpose()?;
+        let safe_globs = globs
+            .iter()
+            .map(|glob| secure_glob(glob))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut args = json!({
+            "repo": repo,
+            "query": pattern,
+            "pattern": pattern,
+            "globs": safe_globs,
+            "case_insensitive": case_insensitive,
+            "literal": literal,
+            "max_files": max_files.min(DEFAULT_MAX_SEARCH_FILES),
+            "max_matches": max_matches.min(DEFAULT_MAX_SEARCH_MATCHES),
+        });
+        if let Some(relative_path) = relative_path {
+            args["path"] = json!(relative_path);
+        }
+        let result = self.call_tool("search", "simplicio_search", args)?;
+        parse_search_result(&tool_text_or_json(&result))
     }
 
     pub fn list(&mut self, repo: &Path, path: &Path, options: Value) -> Result<Value, Error> {
@@ -513,6 +556,29 @@ fn secure_relative_path(repo: &Path, path: &Path) -> Result<String, Error> {
         })
 }
 
+/// Rejects a search glob that could escape the repository: absolute paths
+/// (Unix `/...`, Windows `\...` or `C:...`) and any `..` path segment.
+/// Globs are otherwise passed through unmodified (wildcards like `*`/`**`
+/// are not path components and are left for the Runtime to interpret).
+fn secure_glob(glob: &str) -> Result<String, Error> {
+    if glob.is_empty() {
+        return Err(Error::GlobRejected("empty glob".into()));
+    }
+    let looks_like_windows_drive =
+        glob.len() >= 2 && glob.as_bytes()[1] == b':' && glob.as_bytes()[0].is_ascii_alphabetic();
+    if glob.starts_with('/') || glob.starts_with('\\') || looks_like_windows_drive {
+        return Err(Error::GlobRejected(format!(
+            "absolute glob rejected: {glob}"
+        )));
+    }
+    if glob.split(['/', '\\']).any(|segment| segment == "..") {
+        return Err(Error::GlobRejected(format!(
+            "parent traversal in glob: {glob}"
+        )));
+    }
+    Ok(glob.to_owned())
+}
+
 fn validate_plan_paths(repo: &Path, plan: &Value) -> Result<(), Error> {
     let files = plan
         .get("files")
@@ -592,6 +658,18 @@ fn parse_file_read(text: &str) -> Result<FileReadResult, Error> {
     Ok(result)
 }
 
+fn parse_search_result(text: &str) -> Result<SearchResult, Error> {
+    let result: SearchResult =
+        serde_json::from_str(text).map_err(|e| Error::InvalidResponse(e.to_string()))?;
+    if result.schema != "simplicio.search-result/v1" {
+        return Err(Error::InvalidResponse(format!(
+            "unsupported schema {}",
+            result.schema
+        )));
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -639,6 +717,68 @@ mod tests {
     fn rejects_truncated_reads_instead_of_returning_partial_source() {
         let error = parse_file_read(r#"{"schema":"simplicio.read-result/v1","path":"large","content":"partial","truncated":true}"#).unwrap_err();
         assert!(matches!(error, Error::ReadRejected(_)));
+    }
+
+    #[test]
+    fn secure_glob_rejects_parent_traversal_and_absolute_patterns() {
+        assert!(secure_glob("../outside/*.rs").is_err());
+        assert!(secure_glob("src/../../etc/*").is_err());
+        assert!(secure_glob("/etc/*").is_err());
+        assert!(secure_glob("C:\\Windows\\*").is_err());
+        assert!(secure_glob("").is_err());
+        assert_eq!(secure_glob("*.rs").unwrap(), "*.rs");
+        assert_eq!(secure_glob("src/**/*.ts").unwrap(), "src/**/*.ts");
+    }
+
+    #[test]
+    fn search_rejects_path_escaping_repo() {
+        let repo = tempfile::tempdir().unwrap();
+        std::fs::write(repo.path().join("inside.txt"), "ok").unwrap();
+        // Mirrors `secure_path_rejects_parent_traversal_and_external_absolute_paths`
+        // above: `search`'s optional `path` scope must fail closed exactly like
+        // read/write/delete/list/stat, not just canonicalize the repo root.
+        assert!(secure_relative_path(repo.path(), Path::new("../outside")).is_err());
+        let outside = repo.path().parent().unwrap().join("outside");
+        assert!(secure_relative_path(repo.path(), &outside).is_err());
+    }
+
+    #[test]
+    fn parses_search_result_contract() {
+        let result = parse_search_result(
+            r#"{"schema":"simplicio.search-result/v1","matches":[{"path":"src/main.rs","line":3,"text":"fn main() {}"}],"truncated":false}"#,
+        )
+        .unwrap();
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].path, "src/main.rs");
+        assert_eq!(result.matches[0].line, 3);
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn parse_search_result_rejects_unknown_schema() {
+        let error =
+            parse_search_result(r#"{"schema":"unexpected/v9","matches":[],"truncated":false}"#)
+                .unwrap_err();
+        assert!(matches!(error, Error::InvalidResponse(_)));
+    }
+
+    #[test]
+    fn spawn_in_fails_closed_when_runtime_binary_is_missing() {
+        // Regression for PR #26's fail-closed guarantee: pointing SIMPLICIO_BIN
+        // at a path that doesn't exist must produce `Error::RuntimeNotFound`,
+        // never spawn a process or fall back to any local search/read.
+        let missing = std::env::temp_dir().join("definitely-not-a-real-simplicio-binary-xyz");
+        let repo = tempfile::tempdir().unwrap();
+        // SAFETY: test-only, single-threaded within this test; no other test in
+        // this process reads `SIMPLICIO_BIN` concurrently with a conflicting value.
+        unsafe {
+            std::env::set_var("SIMPLICIO_BIN", &missing);
+        }
+        let result = RuntimeClient::spawn_in(repo.path());
+        unsafe {
+            std::env::remove_var("SIMPLICIO_BIN");
+        }
+        assert!(matches!(result, Err(Error::RuntimeNotFound)));
     }
 
     #[test]

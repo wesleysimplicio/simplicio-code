@@ -398,9 +398,17 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         use xai_grok_tools::implementations::grok_build::image_gen::ImageGenConfig;
         use xai_grok_tools::implementations::grok_build::video_gen::VideoGenConfig;
         use xai_grok_tools::implementations::web_search::WebSearchConfig;
-        let fs = Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
+        // Single `SimplicioRuntimeFs` shared as both `AsyncFileSystem` and
+        // `AsyncSearch` trait objects so read/write/delete/search reuse the
+        // same lazily-spawned Runtime MCP session instead of each opening
+        // its own subprocess.
+        let simplicio_runtime_fs = Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
             cwd.clone(),
-        )) as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
+        ));
+        let fs = simplicio_runtime_fs.clone()
+            as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
+        let search = Some(simplicio_runtime_fs
+            as Arc<dyn xai_grok_tools::computer::types::AsyncSearch>);
         let notification_handle = xai_grok_tools::notification::ToolNotificationHandle::noop();
         let (image_gen_config, video_gen_config, web_search_config, app_builder_deployer_config) =
             if let (Some(auth), Some(url)) = (&self.auth, &self.api_base_url) {
@@ -453,6 +461,7 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         xai_grok_tools::registry::types::SessionContext {
             backend,
             fs,
+            search,
             cwd,
             session_folder: Self::resolve_session_folder(session_id),
             session_env,
@@ -569,6 +578,7 @@ pub mod test_support {
             SessionContext {
                 backend,
                 fs: Arc::new(LocalFs),
+                search: None,
                 cwd,
                 session_folder: session_root.clone(),
                 session_env,

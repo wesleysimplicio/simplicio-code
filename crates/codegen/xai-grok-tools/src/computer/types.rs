@@ -58,6 +58,51 @@ pub trait AsyncFileSystem: Send + Sync {
 }
 
 // ============================================================================
+// Search trait
+// ============================================================================
+
+/// A single content match returned by an [`AsyncSearch`] backend.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchMatch {
+    /// Path to the matching file, relative to the search root.
+    pub path: String,
+    pub line: u64,
+    pub text: String,
+}
+
+/// Outcome of an [`AsyncSearch::search`] call.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SearchOutcome {
+    pub matches: Vec<SearchMatch>,
+    pub truncated: bool,
+}
+
+/// Content-search abstraction, parallel to [`AsyncFileSystem`].
+///
+/// Implementations that are backed by a fallible external system (e.g. the
+/// Simplicio Runtime MCP adapter) must fail closed: an unavailable or
+/// incompatible backend returns `Err` and must never silently fall back to a
+/// different search implementation. Consumers that want a local fallback do
+/// so explicitly at the call site (e.g. only using a backend when one is
+/// configured), not inside a single implementation.
+#[async_trait::async_trait]
+pub trait AsyncSearch: Send + Sync {
+    /// Searches file contents under the workspace root, optionally scoped to
+    /// a `path` subdirectory and filtered by `globs`.
+    #[allow(clippy::too_many_arguments)]
+    async fn search(
+        &self,
+        pattern: &str,
+        path: Option<&Path>,
+        globs: &[String],
+        case_insensitive: bool,
+        literal: bool,
+        max_files: usize,
+        max_matches: usize,
+    ) -> Result<SearchOutcome, ComputerError>;
+}
+
+// ============================================================================
 // Terminal types
 // ============================================================================
 

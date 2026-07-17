@@ -222,6 +222,15 @@ pub struct SessionContext {
     pub backend: Arc<dyn TerminalBackend>,
     /// Async file system abstraction (read_file, search_replace).
     pub fs: Arc<dyn AsyncFileSystem>,
+    /// Optional content-search backend. When `Some`, injected into
+    /// `Resources` as `SearchBackend` so search tools that look for it (e.g.
+    /// `grep_files`) use it exclusively and fail closed on its errors instead
+    /// of falling back to a local ripgrep/`tokio::fs` search. When `None`
+    /// (the default for callers that don't set it), those tools keep their
+    /// existing local-only behavior — mirroring how `fs` is `LocalFs` at most
+    /// call sites and `SimplicioRuntimeFs` only at the two Runtime-backed
+    /// ones.
+    pub search: Option<Arc<dyn crate::computer::types::AsyncSearch>>,
     /// Working directory for the session.
     pub cwd: PathBuf,
     /// Session-scoped folder for logs, output files, etc.
@@ -966,6 +975,9 @@ impl ToolRegistryBuilder {
         let mut resources = Resources::new();
         resources.insert(crate::types::resources::Terminal(ctx.backend));
         resources.insert(crate::types::resources::FileSystem(ctx.fs));
+        if let Some(search) = ctx.search {
+            resources.insert(crate::types::resources::SearchBackend(search));
+        }
         let cwd = ctx.cwd;
         resources.insert(crate::types::resources::Cwd(cwd.clone()));
         resources.insert(crate::types::resources::SessionFolder(ctx.session_folder));

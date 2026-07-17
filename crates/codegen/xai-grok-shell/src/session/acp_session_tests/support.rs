@@ -83,6 +83,7 @@ async fn test_agent_from_config(
     let ctx = SessionContext {
         backend,
         fs,
+        search: None,
         cwd: std::path::PathBuf::from("/tmp"),
         session_folder: std::env::temp_dir().join("grok-test"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),

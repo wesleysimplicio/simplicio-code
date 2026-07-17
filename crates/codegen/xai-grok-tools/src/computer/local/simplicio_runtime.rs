@@ -5,7 +5,9 @@ use std::{
 
 use simplicio_runtime_client::{DEFAULT_MAX_FILE_BYTES, RuntimeClient, start_workspace_map};
 
-use crate::computer::types::{AsyncFileSystem, ComputerError};
+use crate::computer::types::{
+    AsyncFileSystem, AsyncSearch, ComputerError, SearchMatch, SearchOutcome,
+};
 
 /// Project filesystem whose reads, writes and deletes are all owned by the
 /// Simplicio Runtime.
@@ -82,19 +84,19 @@ impl SimplicioRuntimeFs {
 
     /// Runs `op` against a lazily-initialized, per-workspace Runtime MCP
     /// session, tearing the session down on any error so the next call
-    /// reconnects instead of replaying a wedged connection. Shared by
-    /// read/write/delete so all three fail closed the same way when the
-    /// Runtime is missing, incompatible (see `RuntimeClient`'s capability
-    /// negotiation), or rejects the operation outright.
-    async fn with_client<T: Send + 'static>(
+    /// reconnects instead of replaying a wedged connection. This is the
+    /// fail-closed core shared by every operation: on a missing Runtime,
+    /// incompatible capability (see `RuntimeClient`'s capability
+    /// negotiation), or a rejected call, `op` returns `Err`, the session is
+    /// dropped, and the error propagates — there is no local fallback branch
+    /// anywhere in this function.
+    async fn with_runtime<T: Send + 'static>(
         &self,
-        path: &Path,
-        op: impl FnOnce(&mut RuntimeClient, &Path, &Path) -> Result<T, simplicio_runtime_client::Error>
+        op: impl FnOnce(&mut RuntimeClient, &Path) -> Result<T, simplicio_runtime_client::Error>
         + Send
         + 'static,
     ) -> Result<T, ComputerError> {
         let root = self.root.clone();
-        let relative = self.relative_path(path)?;
         let client = Arc::clone(&self.client);
         tokio::task::spawn_blocking(move || {
             let mut guard = client
@@ -105,11 +107,7 @@ impl SimplicioRuntimeFs {
                     RuntimeClient::spawn_in(&root).map_err(|e| ComputerError::io(e.to_string()))?,
                 );
             }
-            let result = op(
-                guard.as_mut().expect("runtime initialized"),
-                &root,
-                &relative,
-            );
+            let result = op(guard.as_mut().expect("runtime initialized"), &root);
             if result.is_err() {
                 *guard = None;
             }
@@ -117,6 +115,71 @@ impl SimplicioRuntimeFs {
         })
         .await
         .map_err(|e| ComputerError::io(format!("Simplicio Runtime task failed: {e}")))?
+    }
+
+    /// Read/write/delete variant of [`Self::with_runtime`]: resolves and
+    /// sandbox-checks `path` up front (see [`Self::relative_path`]), then
+    /// hands `op` the validated repo root + relative path.
+    async fn with_client<T: Send + 'static>(
+        &self,
+        path: &Path,
+        op: impl FnOnce(&mut RuntimeClient, &Path, &Path) -> Result<T, simplicio_runtime_client::Error>
+        + Send
+        + 'static,
+    ) -> Result<T, ComputerError> {
+        let relative = self.relative_path(path)?;
+        self.with_runtime(move |client, root| op(client, root, &relative))
+            .await
+    }
+}
+
+#[async_trait::async_trait]
+impl AsyncSearch for SimplicioRuntimeFs {
+    /// Searches through the Runtime's `simplicio_search` MCP tool. Fails
+    /// closed exactly like read/write/delete: a missing/incompatible Runtime,
+    /// or a `path` scope that escapes the workspace (checked via the same
+    /// [`Self::relative_path`] sandbox used by every other operation,
+    /// including its symlink-escape hardening), blocks the search with an
+    /// actionable error instead of silently searching local disk.
+    #[tracing::instrument(name = "simplicio_runtime.search", skip_all)]
+    async fn search(
+        &self,
+        pattern: &str,
+        path: Option<&Path>,
+        globs: &[String],
+        case_insensitive: bool,
+        literal: bool,
+        max_files: usize,
+        max_matches: usize,
+    ) -> Result<SearchOutcome, ComputerError> {
+        let relative_scope = path.map(|p| self.relative_path(p)).transpose()?;
+        let pattern = pattern.to_owned();
+        let globs = globs.to_vec();
+        self.with_runtime(move |client, root| {
+            let result = client.search(
+                root,
+                &pattern,
+                relative_scope.as_deref(),
+                &globs,
+                case_insensitive,
+                literal,
+                max_files,
+                max_matches,
+            )?;
+            Ok(SearchOutcome {
+                matches: result
+                    .matches
+                    .into_iter()
+                    .map(|m| SearchMatch {
+                        path: m.path,
+                        line: m.line,
+                        text: m.text,
+                    })
+                    .collect(),
+                truncated: result.truncated,
+            })
+        })
+        .await
     }
 }
 
@@ -192,6 +255,79 @@ mod tests {
         assert!(
             target.exists(),
             "delete must not silently fall back to local disk"
+        );
+    }
+
+    /// New capability, same fail-closed contract as read/write/delete: no
+    /// Runtime on `PATH`/`SIMPLICIO_BIN` means `search` is rejected outright,
+    /// never silently degrading to a local ripgrep/`tokio::fs` walk.
+    #[tokio::test]
+    async fn search_fails_closed_without_local_fallback() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fs = SimplicioRuntimeFs::new(workspace.path());
+        let result = fs
+            .search("needle", None, &[], false, false, 100, 100)
+            .await;
+        assert!(result.is_err(), "search must fail closed without a Runtime");
+    }
+
+    /// Security regression, mirroring `rejects_symlink_escape_to_outside_target`
+    /// below: a search scoped to a `path` that is a symlink escaping the
+    /// workspace root must be denied before ever reaching the Runtime, not
+    /// just when reading/writing/deleting that same path.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn search_rejects_symlink_escape_scope() {
+        use std::os::unix::fs::symlink;
+
+        let workspace = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(outside.path().join("secret_dir")).unwrap();
+        symlink(
+            outside.path().join("secret_dir"),
+            workspace.path().join("escape_dir"),
+        )
+        .unwrap();
+
+        let fs = SimplicioRuntimeFs::new(workspace.path());
+        let error = fs
+            .search(
+                "needle",
+                Some(Path::new("escape_dir")),
+                &[],
+                false,
+                false,
+                100,
+                100,
+            )
+            .await
+            .expect_err("search scoped to a symlink escaping the workspace must be denied");
+        assert!(
+            error.to_string().contains("symlink escape"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// Regression: a search scoped via plain parent-traversal (`../`) must
+    /// still be denied the same way read/write/delete already are.
+    #[tokio::test]
+    async fn search_rejects_parent_traversal_scope() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fs = SimplicioRuntimeFs::new(workspace.path());
+        let result = fs
+            .search(
+                "needle",
+                Some(Path::new("../outside")),
+                &[],
+                false,
+                false,
+                100,
+                100,
+            )
+            .await;
+        assert!(
+            result.is_err(),
+            "search scope must reject parent traversal exactly like read/write/delete"
         );
     }
 

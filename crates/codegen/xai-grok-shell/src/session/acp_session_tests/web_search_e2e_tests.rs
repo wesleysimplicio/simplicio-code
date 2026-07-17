@@ -89,6 +89,7 @@ async fn web_search_uses_model_override_from_config_end_to_end() {
     let ctx = SessionContext {
         backend: terminal,
         fs,
+        search: None,
         cwd: std::env::temp_dir(),
         session_folder: std::env::temp_dir().join("grok-web-search-e2e"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),
@@ -168,6 +169,7 @@ async fn web_search_errors_when_configured_model_cannot_be_resolved() {
     let ctx = SessionContext {
         backend: terminal,
         fs,
+        search: None,
         cwd: std::env::temp_dir(),
         session_folder: std::env::temp_dir().join("grok-web-search-disabled"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),
