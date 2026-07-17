@@ -17,10 +17,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeSet, HashSet},
-    io::{BufRead, BufReader, Write},
+    io::{self, BufRead, BufReader, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
-    sync::{LazyLock, Mutex},
+    sync::{
+        LazyLock, Mutex,
+        mpsc::{self, Receiver},
+    },
+    time::Duration,
 };
 
 pub const MCP_CONTRACT_SCHEMA: &str = "simplicio.code-mcp/v1";
@@ -31,6 +35,17 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_MAX_SEARCH_FILES: usize = 2_000;
 pub const DEFAULT_MAX_SEARCH_MATCHES: usize = 10_000;
+/// Bounded timeout for the `initialize`/`tools/list` startup handshake,
+/// distinct from any later per-call timeout (e.g. `exec`'s `timeout_ms`).
+/// A healthy local Runtime process answers this in milliseconds; a broken
+/// or hung handshake (simplicio-runtime#3319) previously surfaced as a
+/// multi-second-to-30s hang before a low-signal parse error. Bounding it
+/// here makes that failure mode fail fast and diagnosably instead.
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
+/// Maximum number of raw bytes from a malformed handshake response echoed
+/// back in [`Error::InvalidResponse`]/[`Error::Protocol`] diagnostics.
+/// Bounded so a huge or binary response can't blow up an error message.
+const DIAGNOSTIC_SNIPPET_BYTES: usize = 200;
 static MAPPED_WORKSPACES: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
@@ -44,6 +59,10 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("Simplicio Runtime protocol error: {0}")]
     Protocol(String),
+    #[error(
+        "Simplicio Runtime handshake ('{method}') timed out after {timeout:?}; the process may be hung, stuck negotiating, or emitting a malformed/never-terminated response instead of replying (see simplicio-runtime#3319 for one known server-side cause)"
+    )]
+    HandshakeTimeout { method: String, timeout: Duration },
     #[error("invalid Simplicio Runtime response: {0}")]
     InvalidResponse(String),
     #[error("unexpected MCP server '{0}'; expected Simplicio Runtime")]
@@ -174,9 +193,48 @@ pub struct SearchResult {
 pub struct RuntimeClient {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
+    /// Response lines from the Runtime's stdout, produced by a dedicated
+    /// reader thread (see [`spawn_stdout_reader`]). Routing reads through a
+    /// channel lets [`RuntimeClient::request_timed`] bound how long it
+    /// waits for a reply with `Receiver::recv_timeout`, which a raw
+    /// blocking `BufRead::read_line` on `ChildStdout` cannot do portably.
+    stdout_rx: Receiver<io::Result<Vec<u8>>>,
     next_id: u64,
     capabilities: RuntimeCapabilities,
+}
+
+/// Reads newline-delimited responses off `stdout` on a background thread and
+/// forwards each raw line (including a trailing `\n` if present) to the
+/// returned channel. An `Ok(vec![])` marks a clean EOF (mirrors the previous
+/// `line.is_empty()` "runtime closed stdout" check); an `Err` forwards the
+/// underlying I/O error. Reading raw bytes (`read_until`) rather than
+/// `String`-based `read_line` means a non-UTF-8 or binary response is still
+/// captured for diagnostics instead of being silently dropped by a UTF-8
+/// validation error inside `read_line`.
+fn spawn_stdout_reader(stdout: ChildStdout) -> Receiver<io::Result<Vec<u8>>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reader = BufReader::new(stdout);
+        loop {
+            let mut buf = Vec::new();
+            match reader.read_until(b'\n', &mut buf) {
+                Ok(0) => {
+                    let _ = tx.send(Ok(Vec::new()));
+                    break;
+                }
+                Ok(_) => {
+                    if tx.send(Ok(buf)).is_err() {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = tx.send(Err(error));
+                    break;
+                }
+            }
+        }
+    });
+    rx
 }
 
 impl RuntimeClient {
@@ -207,7 +265,7 @@ impl RuntimeClient {
         let mut client = Self {
             child,
             stdin,
-            stdout: BufReader::new(stdout),
+            stdout_rx: spawn_stdout_reader(stdout),
             next_id: 1,
             capabilities: RuntimeCapabilities {
                 schema: MCP_CONTRACT_SCHEMA.into(),
@@ -217,13 +275,20 @@ impl RuntimeClient {
                 tools: BTreeSet::new(),
             },
         };
-        let initialized = client.request(
+        // Both the `initialize` request and the immediately-following
+        // `tools/list` capability probe are part of the startup handshake,
+        // not a regular operation: bound both with `HANDSHAKE_TIMEOUT` so a
+        // hung or malformed-response Runtime fails fast (see
+        // simplicio-runtime#3319) instead of blocking for the multi-second
+        // to 30s range observed before this fix.
+        let initialized = client.request_timed(
             "initialize",
             json!({
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": { "name": "simplicio-code", "version": env!("CARGO_PKG_VERSION") }
             }),
+            Some(HANDSHAKE_TIMEOUT),
         )?;
         let server = initialized
             .pointer("/serverInfo/name")
@@ -233,8 +298,9 @@ impl RuntimeClient {
             return Err(Error::IdentityMismatch(server.to_owned()));
         }
         client.notify("notifications/initialized", json!({}))?;
-        client.capabilities =
-            parse_capabilities(&initialized, &client.request("tools/list", json!({}))?)?;
+        let tools_list =
+            client.request_timed("tools/list", json!({}), Some(HANDSHAKE_TIMEOUT))?;
+        client.capabilities = parse_capabilities(&initialized, &tools_list)?;
         Ok(client)
     }
 
@@ -433,17 +499,56 @@ impl RuntimeClient {
         Ok(result)
     }
 
+    /// Sends a request and waits indefinitely for its response line. Used
+    /// for regular post-handshake operations (`tools/call`), which are
+    /// already bounded by their own request-level timeout (e.g. `exec`'s
+    /// `timeout_ms`, enforced Runtime-side).
     fn request(&mut self, method: &str, params: Value) -> Result<Value, Error> {
+        self.request_timed(method, params, None)
+    }
+
+    /// Sends a request and waits for its response line, optionally bounded
+    /// by `timeout`. When `timeout` elapses before a line arrives, returns
+    /// [`Error::HandshakeTimeout`] rather than blocking further — used by
+    /// [`RuntimeClient::spawn_in`] for the `initialize`/`tools/list`
+    /// handshake so a hung or slow-to-misbehave Runtime fails fast (see
+    /// simplicio-runtime#3319) instead of hanging for seconds-to-30s.
+    ///
+    /// When the response line fails to parse as JSON-RPC, the resulting
+    /// [`Error::InvalidResponse`] includes a bounded, redacted snippet of
+    /// the raw bytes actually received, so callers see e.g. "got non-JSON
+    /// output, first bytes: ..." instead of a bare parse error.
+    fn request_timed(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout: Option<Duration>,
+    ) -> Result<Value, Error> {
         let id = self.next_id;
         self.next_id += 1;
         self.send(&json!({"jsonrpc":"2.0", "id":id, "method":method, "params":params}))?;
-        let mut line = String::new();
-        self.stdout.read_line(&mut line)?;
-        if line.is_empty() {
+        let raw = match timeout {
+            Some(timeout) => {
+                self.stdout_rx
+                    .recv_timeout(timeout)
+                    .map_err(|_| Error::HandshakeTimeout {
+                        method: method.to_owned(),
+                        timeout,
+                    })?
+            }
+            None => self.stdout_rx.recv().map_err(|_| {
+                Error::Protocol("Runtime reader thread stopped unexpectedly".into())
+            })?,
+        }?;
+        if raw.is_empty() {
             return Err(Error::Protocol("runtime closed stdout".into()));
         }
-        let response: Value =
-            serde_json::from_str(&line).map_err(|e| Error::InvalidResponse(e.to_string()))?;
+        let response: Value = serde_json::from_slice(&raw).map_err(|e| {
+            Error::InvalidResponse(format!(
+                "{e}; got non-JSON-RPC output from Runtime, first bytes (redacted, max {DIAGNOSTIC_SNIPPET_BYTES}): {}",
+                redact_snippet(&raw, DIAGNOSTIC_SNIPPET_BYTES)
+            ))
+        })?;
         if let Some(error) = response.get("error") {
             return Err(Error::Protocol(error.to_string()));
         }
@@ -621,6 +726,57 @@ fn resolve_binary() -> Result<PathBuf, Error> {
         .ok_or(Error::RuntimeNotFound)
 }
 
+/// Bounded, redacted snippet of raw bytes received from the Runtime, used in
+/// diagnostics when a handshake response fails to parse as JSON-RPC (see
+/// [`RuntimeClient::request_timed`]).
+///
+/// This is a small, purpose-built redactor rather than a reuse of
+/// `xai-crash-handler`'s `redact_report`: that crate isn't a dependency of
+/// `simplicio-runtime-client`, and pulling in `regex` plus its full
+/// crash-report redaction surface (env-var assignments, vendor secret
+/// prefixes, `Bearer` tokens, `Args:`-labelled lines) just to redact a
+/// 200-byte diagnostic snippet isn't worth the dependency weight. It covers
+/// the same core risk that matters here — an absolute filesystem path
+/// (Windows drive-letter/UNC or Unix `/...`) leaking a home directory or
+/// username into an error message — without the extra dependency.
+fn redact_snippet(raw: &[u8], max_bytes: usize) -> String {
+    let bytes = &raw[..raw.len().min(max_bytes)];
+    let text = String::from_utf8_lossy(bytes);
+    let text = text.trim_end_matches(['\r', '\n']);
+    text.split_inclusive(char::is_whitespace)
+        .map(redact_token_if_path)
+        .collect()
+}
+
+/// Redacts `token` in place if it looks like an absolute filesystem path,
+/// preserving any trailing whitespace captured by `split_inclusive` so
+/// re-joining the tokens reproduces the original spacing.
+fn redact_token_if_path(token: &str) -> String {
+    let trimmed = token.trim_end_matches(char::is_whitespace);
+    let trailing = &token[trimmed.len()..];
+    if looks_like_absolute_path(trimmed) {
+        format!("<REDACTED>{trailing}")
+    } else {
+        token.to_owned()
+    }
+}
+
+/// Heuristic (non-regex) check for an absolute filesystem path: a Windows
+/// UNC path (`\\server\share...`), a Windows drive-letter path (`C:\...` or
+/// `C:/...`), or a Unix path with at least two `/`-separated segments
+/// (`/home/alice`, `/etc/passwd`) — a bare leading `/` alone (e.g. inside
+/// JSON like `"/"`) is left untouched since it carries no identifying info.
+fn looks_like_absolute_path(word: &str) -> bool {
+    if word.starts_with("\\\\") {
+        return true;
+    }
+    let bytes = word.as_bytes();
+    if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+        return word[2..].starts_with(['\\', '/']);
+    }
+    word.starts_with('/') && word.matches('/').count() >= 2
+}
+
 fn tool_text(result: &Value) -> String {
     result
         .get("content")
@@ -779,6 +935,31 @@ mod tests {
             std::env::remove_var("SIMPLICIO_BIN");
         }
         assert!(matches!(result, Err(Error::RuntimeNotFound)));
+    }
+
+    #[test]
+    fn redact_snippet_masks_absolute_paths_but_keeps_the_rest_of_the_message() {
+        let raw = br#"Simplicio Runtime starting up at /home/alice/repos/simplicio banner"#;
+        let out = redact_snippet(raw, 200);
+        assert!(!out.contains("alice"), "username leaked: {out}");
+        assert!(out.contains("Simplicio Runtime starting up at"));
+        assert!(out.contains("<REDACTED>"));
+        assert!(out.contains("banner"));
+    }
+
+    #[test]
+    fn redact_snippet_masks_windows_and_unc_paths() {
+        let raw = br#"loaded C:\Users\alice\config.json and \\server\share\alice\x"#;
+        let out = redact_snippet(raw, 200);
+        assert!(!out.contains("alice"), "leaked: {out}");
+        assert!(out.contains("loaded <REDACTED>"));
+    }
+
+    #[test]
+    fn redact_snippet_truncates_to_max_bytes() {
+        let raw = vec![b'a'; 1000];
+        let out = redact_snippet(&raw, 50);
+        assert_eq!(out.len(), 50);
     }
 
     #[test]

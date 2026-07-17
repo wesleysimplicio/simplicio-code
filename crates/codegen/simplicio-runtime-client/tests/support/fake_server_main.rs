@@ -8,12 +8,54 @@
 //!
 //! Deliberately tiny: one line of JSON in, one line of JSON out, matching
 //! `RuntimeClient::request`'s framing (`serde_json::to_writer` + `\n`).
+//!
+//! `FAKE_RUNTIME_MODE` switches this into one of two misbehaving modes used
+//! by `tests/handshake_diagnostics.rs` (issue #38) to reproduce, without any
+//! real Runtime binary, the two failure shapes simplicio-runtime#3319
+//! exposed: a malformed (non-JSON-RPC) handshake response, and a handshake
+//! that never responds at all.
+//!
+//! - `malformed_handshake`: writes one line of non-JSON-RPC text (as if the
+//!   Runtime process printed a startup banner directly to the MCP stdout
+//!   channel, or emitted corrupted output) in reply to `initialize`, then
+//!   exits. `RuntimeClient::request_timed`'s `serde_json::from_slice` fails
+//!   to parse it, exercising the redacted-snippet diagnostic.
+//! - `hangs_forever`: never writes anything back and never exits on its own,
+//!   simulating a Runtime process stuck mid-handshake. Exercises
+//!   `HANDSHAKE_TIMEOUT`/`Error::HandshakeTimeout`. The test that uses this
+//!   mode kills the child itself (via `RuntimeClient`'s `Drop`); this mode
+//!   never terminates by itself.
 
 use std::io::{self, BufRead, Write};
 
 use serde_json::{Value, json};
 
 fn main() {
+    match std::env::var("FAKE_RUNTIME_MODE").as_deref() {
+        Ok("malformed_handshake") => {
+            // Simulates a corrupted/misbehaving Runtime response: a single
+            // line of plain text (not JSON-RPC) containing something that
+            // looks like an absolute path, so the test can also assert the
+            // diagnostic redacts it. Written promptly (no sleep) since the
+            // point of this mode is the *parse* failure, not a timeout.
+            let mut stdout = io::stdout();
+            let _ = stdout.write_all(
+                b"Simplicio Runtime starting up at /home/testuser/.simplicio/cache banner\n",
+            );
+            let _ = stdout.flush();
+            return;
+        }
+        Ok("hangs_forever") => {
+            // Simulates a Runtime process stuck mid-handshake: never writes
+            // a response and never exits on its own. `RuntimeClient` kills
+            // this process on `Drop`, so parking here is safe for the test.
+            loop {
+                std::thread::park();
+            }
+        }
+        _ => {}
+    }
+
     let stdin = io::stdin();
     let mut stdout = io::stdout();
     for line in stdin.lock().lines() {
