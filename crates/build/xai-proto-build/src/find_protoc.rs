@@ -36,6 +36,25 @@ fn is_github_actions() -> bool {
 /// we fall through to the PATH-based lookup instead.
 ///
 /// Returns `Ok(None)` if not found and not in a strict environment (GitHub Actions).
+///
+/// ## Known gap: native Windows execution of `bin/protoc`
+///
+/// `bin/protoc`'s DotSlash manifest does have a `windows-x86_64` platform entry
+/// (pinned to the same protoc release as the other platforms), but that alone
+/// isn't sufficient for step 2 above to succeed out of the box on Windows:
+/// DotSlash files are shebang scripts (`#!/usr/bin/env dotslash`), and Windows
+/// has no shebang support, so `Command::new("bin/protoc")` fails with "not a
+/// valid Win32 application" (os error 193) unless one of the following is
+/// also in place:
+/// - `dotslash` itself is installed and this path is invoked through it
+///   directly (`dotslash bin/protoc ...`), or
+/// - a DotSlash Windows shim executable (see
+///   <https://dotslash-cli.com/docs/windows/>) is placed alongside `bin/protoc`
+///   as `bin/protoc.exe`, which this function does not currently search for.
+///
+/// Until one of those is wired up, Windows developers should set the
+/// `$PROTOC` env var (step 1) or install `protoc` on `$PATH` (step 3) to
+/// unblock local builds.
 pub fn find_protoc() -> anyhow::Result<Option<PathBuf>> {
     // 1. Check the PROTOC env var first. This is the standard override used by prost-build
     //    and is set by Bazel cargo_build_script build_script_env to point at a hermetic
