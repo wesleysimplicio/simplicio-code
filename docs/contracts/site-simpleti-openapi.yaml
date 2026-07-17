@@ -1,0 +1,380 @@
+openapi: 3.1.0
+info:
+  title: Simplicio Account & Subscription API (site_simpleti backend)
+  version: "1.0.0"
+  description: >
+    Client-facing contract between Simplicio Code (this repository) and the
+    account/subscription backend hosted in site_simpleti. This spec is owned
+    and versioned from simplicio-code because it defines what the CLIENT is
+    allowed to depend on; site_simpleti is free to add server-internal
+    endpoints that never appear here. Any breaking change requires bumping
+    the `version` above and coordinating a matching release in both repos.
+
+    Design invariants (see docs/contracts/site-simpleti-api.md for rationale):
+      - Device codes are short-lived and single-use (device flow, RFC 8628).
+      - Responses never leak upstream/internal provider or model identifiers
+        (e.g. "grok", "openrouter", "opencode"); only Simplicio-branded
+        product/profile names are exposed.
+      - Webhook delivery is at-least-once; the receiver must be idempotent
+        per `event_id`.
+servers:
+  - url: https://api.simplicio.dev/v1
+    description: Production gateway (placeholder host name, TBD by site_simpleti)
+
+tags:
+  - name: device-flow
+  - name: entitlement
+  - name: devices
+  - name: webhooks
+
+paths:
+  /auth/device/authorize:
+    post:
+      tags: [device-flow]
+      summary: Start a device authorization grant (RFC 8628 style).
+      operationId: deviceAuthorize
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceAuthorizeRequest'
+      responses:
+        '200':
+          description: Device code issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceAuthorizeResponse'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /auth/device/token:
+    post:
+      tags: [device-flow]
+      summary: >
+        Poll for a token once the user has approved the device code in the
+        browser. Single-use: a device_code that has already been exchanged
+        (or has expired) MUST return `expired_token` or `access_denied` and
+        MUST NOT be exchangeable again.
+      operationId: deviceToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceTokenRequest'
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Pending, slow-down, or terminal error per RFC 8628 section 3.5.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceTokenError'
+
+  /auth/token/refresh:
+    post:
+      tags: [device-flow]
+      summary: Exchange a refresh token for a new short-lived access token.
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: New access token issued; refresh tokens rotate on use.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '401':
+          description: Refresh token invalid, revoked, or already rotated.
+
+  /auth/token/revoke:
+    post:
+      tags: [device-flow]
+      summary: Revoke a refresh (and its descendant access) token, e.g. on logout.
+      operationId: revokeToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RevokeRequest'
+      responses:
+        '204':
+          description: >
+            Revoked, or already revoked. Idempotent: revoking twice is not
+            an error.
+
+  /entitlement:
+    get:
+      tags: [entitlement]
+      summary: >
+        Current plan, quota, and allowed product profiles for the
+        authenticated identity. Never includes upstream provider/model
+        identifiers -- only Simplicio-branded profile names.
+      operationId: getEntitlement
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Entitlement snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EntitlementResponse'
+        '401':
+          description: Access token missing, expired, or invalid.
+
+  /devices:
+    get:
+      tags: [devices]
+      summary: List devices (client installs) currently authorized for this account.
+      operationId: listDevices
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Device list.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceListResponse'
+
+  /devices/{deviceId}:
+    delete:
+      tags: [devices]
+      summary: Revoke a specific device's session (remote sign-out).
+      operationId: revokeDevice
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: deviceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Revoked, or already revoked (idempotent).
+
+  /webhooks/subscription:
+    post:
+      tags: [webhooks]
+      summary: >
+        Billing/subscription lifecycle events pushed from site_simpleti's
+        payment provider integration. Delivery is at-least-once: the same
+        `event_id` may arrive more than once and MUST be processed at most
+        once (see docs/contracts/site-simpleti-api.md for the idempotency
+        contract implemented client-side in
+        crates/codegen/simplicio-account-client).
+      operationId: subscriptionWebhook
+      security:
+        - webhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebhookEvent'
+      responses:
+        '200':
+          description: >
+            Event accepted (whether newly processed or a recognized
+            duplicate). Receivers must return 200 for duplicates rather
+            than erroring, so the sender does not retry forever.
+        '401':
+          description: Signature missing or invalid.
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Simplicio-Signature
+      description: HMAC-SHA256 over the raw request body, hex-encoded.
+
+  responses:
+    RateLimited:
+      description: Too many device-authorize attempts from this client.
+
+  schemas:
+    DeviceAuthorizeRequest:
+      type: object
+      required: [client_id]
+      properties:
+        client_id:
+          type: string
+          description: Stable identifier for the Simplicio Code build/channel.
+        scope:
+          type: string
+          default: "code:default"
+
+    DeviceAuthorizeResponse:
+      type: object
+      required:
+        [device_code, user_code, verification_uri, expires_in, interval]
+      properties:
+        device_code:
+          type: string
+          description: >
+            Opaque, single-use, short-lived (see expires_in). Never
+            displayed to the user.
+        user_code:
+          type: string
+          description: Short human-entry code shown to the user.
+        verification_uri:
+          type: string
+          format: uri
+        verification_uri_complete:
+          type: string
+          format: uri
+        expires_in:
+          type: integer
+          description: Seconds until device_code and user_code expire.
+          maximum: 900
+        interval:
+          type: integer
+          description: Minimum seconds between /auth/device/token polls.
+          default: 5
+
+    DeviceTokenRequest:
+      type: object
+      required: [device_code, client_id]
+      properties:
+        device_code:
+          type: string
+        client_id:
+          type: string
+
+    DeviceTokenError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum:
+            - authorization_pending
+            - slow_down
+            - expired_token
+            - access_denied
+
+    TokenResponse:
+      type: object
+      required: [access_token, refresh_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_in:
+          type: integer
+          description: Short-lived by design (minutes, not days).
+
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
+
+    RevokeRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+        token_type_hint:
+          type: string
+          enum: [refresh_token, access_token]
+
+    EntitlementResponse:
+      type: object
+      required: [plan, status, profiles]
+      properties:
+        plan:
+          type: string
+          description: e.g. "beta", "pro". Never an upstream provider name.
+        status:
+          type: string
+          enum: [active, past_due, canceled, trialing]
+        renews_at:
+          type: string
+          format: date-time
+          nullable: true
+        profiles:
+          type: array
+          description: Simplicio-branded product profiles allowed for this plan.
+          items:
+            type: string
+          example: ["Simplicio-1"]
+        limits:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Named quota counters, e.g. {"requests_per_day": 500}.
+
+    DeviceListResponse:
+      type: object
+      required: [devices]
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceSummary'
+
+    DeviceSummary:
+      type: object
+      required: [device_id, label, last_seen_at]
+      properties:
+        device_id:
+          type: string
+        label:
+          type: string
+          description: Human-readable install label (hostname/OS), not a secret.
+        last_seen_at:
+          type: string
+          format: date-time
+        current:
+          type: boolean
+          description: True if this is the device making the /devices request.
+
+    WebhookEvent:
+      type: object
+      required: [event_id, type, created_at, data]
+      properties:
+        event_id:
+          type: string
+          description: >
+            Globally unique per logical event. The receiver's idempotency
+            key. Redelivery of the same business event MUST reuse this id.
+        type:
+          type: string
+          enum:
+            - subscription.created
+            - subscription.updated
+            - subscription.canceled
+            - subscription.payment_failed
+        created_at:
+          type: string
+          format: date-time
+        data:
+          type: object
+          description: Event-type-specific payload (opaque to the client contract layer).
