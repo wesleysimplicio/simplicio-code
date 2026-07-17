@@ -25,6 +25,12 @@ prompts/code because that is the product's function, documented separately
 in [docs/ARCHITECTURE.md](../ARCHITECTURE.md). Telemetry, by definition in
 this document, must never carry project content; see §2.
 
+For the full, file:line-cited inventory of every network destination the
+client can contact (core product **and** telemetry), plus the
+machine-checked telemetry-scoped allowlist and the network-capture test
+that exercises it, see
+[docs/privacy/network-destinations.md](network-destinations.md).
+
 ## 2. Allowlist: fields that never leave via telemetry
 
 Regardless of destination or mode, the following are excluded from every

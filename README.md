@@ -113,6 +113,7 @@ Simplicio-specific docs (start here for this fork):
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — client, Runtime, and gateway boundaries
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — login, Runtime, mapa, rede, updater
 - [docs/privacy/telemetry.md](docs/privacy/telemetry.md) — what telemetry exists, opt-out, `privacy diagnose`
+- [docs/privacy/network-destinations.md](docs/privacy/network-destinations.md) — every network destination the client can contact, the telemetry-scoped allowlist, and the network-capture test
 - [docs/migration/legacy-login-migration.md](docs/migration/legacy-login-migration.md) — design for the future login/entitlement migration (pending #3/#4)
 
 Run `python3 scripts/check_doc_links.py` to validate every doc link and

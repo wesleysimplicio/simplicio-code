@@ -98,6 +98,13 @@ pub struct TelemetryConfig {
     pub events_api_key: Option<String>,
     pub mixpanel_token: Option<String>,
     pub mixpanel_enabled: bool,
+    /// Overrides the Mixpanel ingestion host (default:
+    /// [`xai_mixpanel::DEFAULT_BASE_URL`], i.e. `api.mixpanel.com`). `None`
+    /// in production. Exists for tests (see
+    /// `tests/network_destination_allowlist.rs`) and, in principle, an
+    /// enterprise on-prem ingestion proxy; env override
+    /// `GROK_TELEMETRY_MIXPANEL_BASE_URL`.
+    pub mixpanel_base_url: Option<String>,
     /// `None` = inherit from `[features] telemetry`. `Some(false)` = disable GCS uploads only.
     pub trace_upload: Option<bool>,
     /// External OTEL master switch (`= GROK_EXTERNAL_OTEL`, env wins).
@@ -143,6 +150,7 @@ impl Default for TelemetryConfig {
             events_api_key,
             mixpanel_token,
             mixpanel_enabled,
+            mixpanel_base_url: None,
             trace_upload: None,
             otel_enabled: None,
             otel_metrics_exporter: None,
@@ -166,6 +174,9 @@ impl TelemetryConfig {
         if let Some(value) = Self::env_override("GROK_TELEMETRY_MIXPANEL_TOKEN") {
             self.mixpanel_token = value;
         }
+        if let Some(value) = Self::env_override("GROK_TELEMETRY_MIXPANEL_BASE_URL") {
+            self.mixpanel_base_url = value;
+        }
         if let Some(value) = env_bool("GROK_TELEMETRY_MIXPANEL_ENABLED") {
             self.mixpanel_enabled = value;
         }
@@ -177,6 +188,7 @@ impl TelemetryConfig {
         self.events_url = Self::normalize_optional_string(self.events_url.take());
         self.events_api_key = Self::normalize_optional_string(self.events_api_key.take());
         self.mixpanel_token = Self::normalize_optional_string(self.mixpanel_token.take());
+        self.mixpanel_base_url = Self::normalize_optional_string(self.mixpanel_base_url.take());
     }
     fn env_override(name: &str) -> Option<Option<String>> {
         match std::env::var(name) {
