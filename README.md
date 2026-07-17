@@ -52,7 +52,24 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.
 
 ## Instalando o binário
 
-Os instaladores públicos serão publicados após a primeira release privada:
+A partir da `0.3.0-beta.1`, releases assinadas (prerelease no GitHub) passam
+a ser publicadas por [`.github/workflows/release.yml`](.github/workflows/release.yml),
+com checksum, SBOM e manifest assinado — veja
+[`RELEASE_NOTES_0.3.0-beta.1.md`](RELEASE_NOTES_0.3.0-beta.1.md) para o que
+já funciona e o que ainda falta (chave de assinatura de produção, build
+Windows, rollout gradual). Instale com:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wesleysimplicio/simplicio-code/main/install.sh | bash
+```
+
+```powershell
+irm https://raw.githubusercontent.com/wesleysimplicio/simplicio-code/main/install.ps1 | iex
+```
+
+Ambos os scripts baixam apenas releases publicadas por **este** repositório
+(não a infraestrutura x.ai herdada em `crates/codegen/xai-grok-pager/scripts/`)
+e recusam a instalação se o checksum não bater.
 
 ```sh
 simplicio-code --version

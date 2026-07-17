@@ -1,0 +1,104 @@
+# simplicio-code 0.3.0-beta.1 (prerelease)
+
+This is a **beta** prerelease of Simplicio Code. It is published for early
+testing and feedback, not for production/unattended use.
+
+## Runtime requirement
+
+simplicio-code's file-reading path is hard-gated behind the Simplicio
+Runtime MCP handshake: every project file read goes through
+`simplicio_file_read`, and the agent verifies the connected process really
+is the Simplicio Runtime before trusting it. **Without a running, genuine
+Simplicio Runtime, the agent will not read project files directly from
+disk** (fail-closed by design). Write and delete operations still use the
+existing local backend in this beta — Runtime-mediated writes are planned
+for a later release.
+
+## Login / auth status
+
+This beta does **not** yet include the Simplicio-branded login/subscription
+flow. For local development, supply your own OpenRouter credential via the
+`OPENROUTER_API_KEY` environment variable — never commit it or bake it into
+a binary. Simplicio's own authenticated gateway integration lands in a
+follow-up beta.
+
+## What's new in this release's pipeline (issue #8, this change)
+
+- `.github/workflows/release.yml`: builds `simplicio-code` for Linux
+  (x86_64) and macOS (aarch64) on tag push, generates `SHA256SUMS.txt`, a
+  dependency SBOM (`sbom.cdx.json`, CycloneDX-shaped), and a signed release
+  manifest (`manifest.json` + `manifest.json.sig` +
+  `manifest_signing_public_key.b64`), then publishes everything as a GitHub
+  **prerelease**.
+- `install.sh` / `install.ps1` at the repo root: install *this* repo's
+  releases (github.com/wesleysimplicio/simplicio-code), verifying the
+  downloaded artifact's checksum before installing anything, and — when a
+  signed manifest is present and its Ed25519 signature verifies — cross-
+  checking the manifest's checksum against the artifact too, so a
+  checksums-file-only substitution attack is caught.
+- `crates/codegen/xai-grok-update/src/manifest_verify.rs`: the Ed25519
+  signature + SHA-256 checksum verification primitives behind the above,
+  with unit tests covering a valid manifest, a tampered manifest body, a
+  corrupted signature, a signature made with the wrong key, a checksum
+  match/mismatch, and a truncated artifact.
+
+## Known limitations of this beta (be honest with yourself before relying on it)
+
+- **Windows build is best-effort and currently fails in CI.** `bin/protoc`
+  (the DotSlash-managed protoc used for build-time codegen) has no
+  `windows-x86_64` platform entry, and
+  `crates/build/xai-proto-build/src/lib.rs` hardcodes `/dev/stdout` /
+  `/dev/null` as protoc arguments — paths native Windows `protoc.exe`
+  cannot open. Until that's fixed, this release will not include a
+  Windows artifact even though the release workflow attempts the build.
+- **Signing key is a CI-generated placeholder, not a production trust
+  root.** `scripts/release/sign_manifest.sh` and `gen_dev_key.sh` generate
+  a fresh Ed25519 keypair on every workflow run and discard the private
+  key afterward. This proves the manifest→signature→verification mechanism
+  works end-to-end (see the PR description for how it was tested), but it
+  is **not** a durable, attacker-resistant trust root: anyone who can see a
+  given run's signed manifest could not forge a *different* one (the key
+  is discarded), but there is no cross-release continuity of trust and no
+  key-compromise/rotation story yet. Real key custody (HSM or a carefully
+  access-controlled long-lived CI secret) is an org/infra decision outside
+  this change's scope.
+- **The existing in-app auto-updater (`xai-grok-update` /
+  `crates/codegen/xai-grok-pager/scripts/install.sh`) still points at the
+  upstream x.ai / grok-build infrastructure** (GCS bucket
+  `grok-build-public-artifacts`, GitHub repo `xai-org-shared/grok-build`,
+  npm package `@xai-official/grok`). It was **not** repointed at
+  simplicio-code's own releases in this change — that's a large, separately
+  entangled ~5,800-line subsystem with its own test suite, and rewiring it
+  safely needs its own dedicated pass. `install.sh` / `install.ps1` (new,
+  at the repo root) are the simplicio-code-specific install path for now;
+  running `grok update` / the in-app updater still tracks x.ai's channel.
+- **No gradual rollout or automated rollback.** The release workflow
+  publishes directly as a GitHub prerelease with no percentage-based
+  rollout or automatic rollback-on-failure; that requires the updater
+  rewiring above plus a rollout-state store, which is out of scope here.
+- **CI only exercises Linux and macOS build hosts**, matching the
+  `README.md` statement that "macOS and Linux are supported build hosts;
+  Windows builds are best-effort." No CI has actually been run for this
+  workflow yet (it hasn't been merged/executed by GitHub Actions) — the
+  build steps were validated locally against this same toolchain instead
+  (see the PR description).
+- **SBOM is a minimal, dependency-list-only CycloneDX-shaped document**
+  generated by a small stdlib-only Python script
+  (`scripts/release/generate_sbom.py`), not a full tool like
+  `cargo-cyclonedx` or `syft` (neither was available in this session's
+  environment). It lists every resolved crate reachable from
+  `xai-grok-pager-bin` with name/version/purl/license — good enough for a
+  first pass, not a substitute for a proper SBOM tool later.
+
+## Installing this beta
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wesleysimplicio/simplicio-code/main/install.sh | bash -s 0.3.0-beta.1
+```
+
+```powershell
+irm https://raw.githubusercontent.com/wesleysimplicio/simplicio-code/main/install.ps1 | iex -Version 0.3.0-beta.1
+```
+
+Both scripts refuse to install if the checksum doesn't match, and print a
+clear error rather than silently falling back to an unverified install.
