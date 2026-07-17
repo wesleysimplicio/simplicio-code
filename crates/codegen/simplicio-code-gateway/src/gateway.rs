@@ -21,7 +21,16 @@ pub enum GatewayError {
     #[error("private gateway limit exceeded: {0}")]
     LimitExceeded(String),
     #[error("private gateway returned {status}: {message}")]
-    Server { status: StatusCode, message: String },
+    Server {
+        status: StatusCode,
+        message: String,
+        /// Caller-facing backoff hint parsed from a `Retry-After` response
+        /// header, when the upstream sent one (typically on 429/503).
+        /// `None` means either the response had no such header or its value
+        /// wasn't a plain delay-seconds integer — callers must not treat
+        /// `None` as "retry immediately", only as "no hint was given".
+        retry_after: Option<std::time::Duration>,
+    },
     #[error("private gateway stream is malformed: {0}")]
     Protocol(String),
     #[error("private gateway request was cancelled")]
@@ -160,9 +169,10 @@ impl<S: SecretStore + 'static> PrivateGateway<S> {
         let response = self.http.post(self.url(paths::CHAT_COMPLETIONS)).bearer_auth(self.token().await?).json(&request).send().await?;
         if !response.status().is_success() {
             let status = response.status();
+            let retry_after = parse_retry_after(&response);
             let body = response.text().await.unwrap_or_default();
             let _diagnostics = redact_diagnostics(&serde_json::json!({"error_body": body}));
-            return Err(GatewayError::Server { status, message: "private gateway request failed".into() });
+            return Err(GatewayError::Server { status, message: "private gateway request failed".into(), retry_after });
         }
         let mut bytes = response.bytes_stream();
         let stream = async_stream::try_stream! {
@@ -240,11 +250,32 @@ fn find_sse_frame_end(input: &[u8]) -> Option<(usize, usize)> {
 async fn decode_json<T: for<'de> Deserialize<'de>>(response: reqwest::Response) -> Result<T, GatewayError> {
     let status = response.status();
     if !status.is_success() {
+        let retry_after = parse_retry_after(&response);
         let body = response.text().await.unwrap_or_default();
         let _diagnostics = redact_diagnostics(&serde_json::json!({"error_body": body}));
-        return Err(GatewayError::Server { status, message: "private gateway request failed".into() });
+        return Err(GatewayError::Server { status, message: "private gateway request failed".into(), retry_after });
     }
     response.json().await.map_err(|e| GatewayError::Protocol(e.to_string()))
+}
+
+/// Parses a `Retry-After` response header as a plain delay-seconds integer
+/// (e.g. `Retry-After: 12`), the only form the private gateway's own OpenAPI
+/// contract emits. The HTTP-date form (`Retry-After: Wed, 21 Oct ...`) is
+/// intentionally not parsed here — it's legal HTTP but not something this
+/// server sends, and guessing at clock-skew-sensitive date arithmetic for a
+/// form we don't expect would trade a small feature for a real correctness
+/// risk. Any header we can't parse as delay-seconds yields `None`, which
+/// callers must treat as "no hint", never as "retry immediately".
+fn parse_retry_after(response: &reqwest::Response) -> Option<std::time::Duration> {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(std::time::Duration::from_secs)
 }
 
 /// In-process fake used when staging is unavailable. It exposes the same
