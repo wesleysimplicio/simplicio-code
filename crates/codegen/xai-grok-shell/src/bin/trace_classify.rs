@@ -27,7 +27,7 @@ use std::path::PathBuf;
 use clap::Parser;
 use xai_grok_shell::trace_classifier::{RunArgs, run, validate_min_confidence};
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(
     name = "trace_classify",
     about = "Replay a session trace against the TodoGate + Laziness classifier"
@@ -81,6 +81,25 @@ struct Cli {
     grok_home: Option<PathBuf>,
 }
 
+/// Manual `Debug` impl: `api_key` accepts a raw API key from `--api-key`.
+/// `clap::Parser` does not require `Debug`; this just avoids ever printing
+/// it verbatim if something logs the parsed args of this offline replay
+/// tool.
+impl std::fmt::Debug for Cli {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Cli")
+            .field("trace", &self.trace)
+            .field("output", &self.output)
+            .field("model", &self.model)
+            .field("api_base_url", &self.api_base_url)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("min_confidence", &self.min_confidence)
+            .field("include_reasoning", &self.include_reasoning)
+            .field("grok_home", &self.grok_home)
+            .finish()
+    }
+}
+
 /// `current_thread` flavour: the replay is strictly sequential
 /// (one turn at a time), and a multi-threaded runtime would force
 /// every writer (including `StdoutLock`) to be `Send` — which it
@@ -121,6 +140,29 @@ mod tests {
         assert!(cli.min_confidence.is_none());
         assert!(cli.include_reasoning.is_none());
         assert!(cli.grok_home.is_none());
+    }
+
+    /// `--api-key` must never appear in `{:?}` output of the parsed args.
+    #[test]
+    fn cli_debug_never_prints_raw_api_key() {
+        const CANARY_API_KEY: &str = "canary-super-secret-api-key-00000000";
+        let cli = Cli::try_parse_from([
+            "trace_classify",
+            "--trace",
+            "foo.json",
+            "--model",
+            "bar",
+            "--api-key",
+            CANARY_API_KEY,
+        ])
+        .expect("parse");
+
+        let debug_output = format!("{cli:?}");
+        assert!(
+            !debug_output.contains(CANARY_API_KEY),
+            "Cli Debug leaked the raw api_key: {debug_output}"
+        );
+        assert!(debug_output.contains("<redacted>"));
     }
 
     /// Per-model knob (mirrored as a CLI override on the offline tool):

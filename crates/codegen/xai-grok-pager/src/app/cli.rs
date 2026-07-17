@@ -347,7 +347,7 @@ pub struct HeadlessArgs {
     pub grok_ws_url: Option<String>,
 }
 /// Arguments for the `agent serve` subcommand.
-#[derive(Debug, clap::Args, Clone)]
+#[derive(clap::Args, Clone)]
 pub struct ServeArgs {
     /// Address for the server to listen on
     #[arg(long, default_value = "127.0.0.1:2419")]
@@ -362,6 +362,23 @@ pub struct ServeArgs {
     #[command(flatten)]
     pub headless: HeadlessArgs,
 }
+
+/// Manual `Debug` impl: `secret` is the raw client-auth token (also
+/// accepted via `GROK_AGENT_SECRET` env var). `clap::Args` does not
+/// require `Debug`, so this simply avoids ever printing it verbatim if
+/// something logs the parsed args (a common CLI startup-diagnostics
+/// pattern).
+impl std::fmt::Debug for ServeArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServeArgs")
+            .field("bind", &self.bind)
+            .field("secret", &self.secret.as_ref().map(|_| "<redacted>"))
+            .field("remote", &self.remote)
+            .field("headless", &self.headless)
+            .finish()
+    }
+}
+
 impl ServeArgs {
     /// Get the secret, generating a random one if not provided.
     pub fn get_secret(&self) -> String {

@@ -1,9 +1,9 @@
 pub mod find_protoc;
 
 use anyhow::Context;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::{fs, iter};
 
 /// Find the protoc well-known types include directory.
 ///
@@ -114,10 +114,30 @@ impl XaiProtoBuilder {
 
         // Can only process one input file when using --dependency_out=FILE.
         for proto in protos {
+            // protoc requires real, platform-native paths here: `/dev/stdout` and
+            // `/dev/null` are Unix-only and don't exist on Windows. Use paths inside
+            // a fresh temp dir instead (rather than pre-opened temp files) so protoc
+            // itself creates the files — this avoids file-sharing conflicts with an
+            // already-open handle on Windows.
+            let scratch_dir =
+                tempfile::TempDir::new().context("failed to create temp dir for protoc output")?;
+            let dependency_out_path = scratch_dir.path().join("deps.d");
+            let descriptor_set_out_path = scratch_dir.path().join("descriptor_set.bin");
+
             let mut command = Command::new(protoc.unwrap_or(Path::new("protoc")));
             command
-                .arg("--dependency_out=/dev/stdout")
-                .arg("--descriptor_set_out=/dev/null");
+                .arg(format!(
+                    "--dependency_out={}",
+                    dependency_out_path
+                        .to_str()
+                        .context("dependency_out temp path not UTF-8")?
+                ))
+                .arg(format!(
+                    "--descriptor_set_out={}",
+                    descriptor_set_out_path
+                        .to_str()
+                        .context("descriptor_set_out temp path not UTF-8")?
+                ));
 
             // Add protoc's well-known types include directory first (if found).
             // This is needed for Bazel sandboxed builds where protoc and its
@@ -137,22 +157,33 @@ impl XaiProtoBuilder {
 
             command.stdin(Stdio::null());
             command.stderr(Stdio::inherit());
+            // Discard protoc's own stdout; the dependency info we care about is
+            // written to `dependency_out`'s temp file via --dependency_out above.
+            command.stdout(Stdio::null());
 
-            let output = command.output().context("protoc command failed")?;
-            if !output.status.success() {
+            let status = command.status().context("protoc command failed")?;
+            if !status.success() {
                 return Err(anyhow::anyhow!("protoc command failed"));
             }
 
-            let output =
-                String::from_utf8(output.stdout).context("protoc command output not UTF-8")?;
+            let output = fs::read_to_string(&dependency_out_path)
+                .context("failed to read protoc --dependency_out temp file")?;
 
-            let mut lines = output.lines();
-            let first_line = lines.next().context("protoc command output is empty")?;
-            let prefix = "/dev/null:";
-            let rem = first_line.strip_prefix(prefix).with_context(|| {
-                format!("protoc command output must start with /dev/null: {output:?}")
-            })?;
-            for line in iter::once(rem).chain(lines) {
+            // The dependency file is a Makefile rule: `target: dep1 dep2 ...`,
+            // possibly continued across lines with trailing `\`. The target is
+            // our own descriptor_set_out temp path, which we don't need to
+            // re-validate here (unlike the old /dev/null sentinel check, since
+            // we generated the path ourselves). Split off everything after the
+            // first Makefile-rule separator (`: `) to get the dependency list.
+            // Note this is not confused by Windows drive-letter colons (e.g.
+            // `C:\...`), since those are never followed by a space.
+            let rem = output
+                .split_once(": ")
+                .map(|(_, rest)| rest)
+                .with_context(|| {
+                    format!("protoc command output is not a valid Makefile rule: {output:?}")
+                })?;
+            for line in rem.lines() {
                 let line = line.trim();
                 let line = line.strip_suffix("\\").unwrap_or(line);
                 // Depending on absolute paths like
