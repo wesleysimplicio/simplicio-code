@@ -300,4 +300,3 @@ pub fn func_059(x: i64, y: i64) -> i64 {
     let intermediate = x.wrapping_mul(59 + 1).wrapping_add(y);
     intermediate.wrapping_sub(59)
 }
-

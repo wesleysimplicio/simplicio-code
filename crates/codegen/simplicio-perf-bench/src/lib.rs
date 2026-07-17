@@ -10,10 +10,10 @@
 //! It is **not implemented inside this repository** — only the MCP client that
 //! talks to it lives here (`crates/codegen/simplicio-runtime-client`). So the
 //! "Runtime cold/warm/incremental" comparison called for by issue #12 cannot be
-//! executed end-to-end from this workspace alone; every `runtime_attempt` task
-//! below fails closed with `Error::RuntimeNotFound` (or whatever the resolver
-//! finds first), and that failure is measured and reported honestly rather than
-//! faked.
+//! executed end-to-end from this workspace alone. `runtime_attempt` uses the
+//! external binary when one resolves, but any unavailable/malformed MCP result
+//! is measured and reported as `UNVERIFIED| runtime capability gap` rather than
+//! faked as a Runtime success.
 //!
 //! What *is* real and reproducible here: the direct-read baseline (equivalent
 //! to `LocalFs::read_file`, the code path `SimplicioRuntimeFs` wraps) measured
@@ -160,6 +160,13 @@ pub struct TaskResult {
     pub success_rate: f64,
     pub latency: LatencyStats,
     pub approx_tokens: Option<f64>,
+    /// Number of bytes returned by the path, when it returned content.
+    #[serde(default)]
+    pub content_bytes: Option<usize>,
+    /// For Runtime reads, whether returned bytes exactly match the direct
+    /// fixture bytes. `None` means no content was returned to compare.
+    #[serde(default)]
+    pub content_matches_direct: Option<bool>,
     pub notes: Option<String>,
 }
 
@@ -315,6 +322,8 @@ mod tests {
                 samples: 20,
             },
             approx_tokens: Some(tokens),
+            content_bytes: None,
+            content_matches_direct: None,
             notes: None,
         }
     }

@@ -39,15 +39,16 @@ fn main() {
         std::process::exit(2);
     });
 
-    let baseline: BenchReport =
-        serde_json::from_str(&std::fs::read_to_string(&baseline_path).unwrap_or_else(|e| {
+    let baseline: BenchReport = serde_json::from_str(
+        &std::fs::read_to_string(&baseline_path).unwrap_or_else(|e| {
             eprintln!("failed to read baseline {}: {e}", baseline_path.display());
             std::process::exit(2);
-        }))
-        .unwrap_or_else(|e| {
-            eprintln!("failed to parse baseline {}: {e}", baseline_path.display());
-            std::process::exit(2);
-        });
+        }),
+    )
+    .unwrap_or_else(|e| {
+        eprintln!("failed to parse baseline {}: {e}", baseline_path.display());
+        std::process::exit(2);
+    });
     let current: BenchReport =
         serde_json::from_str(&std::fs::read_to_string(&current_path).unwrap_or_else(|e| {
             eprintln!("failed to read current {}: {e}", current_path.display());
@@ -64,7 +65,10 @@ fn main() {
         return;
     }
 
-    eprintln!("regressions detected vs baseline {}:", baseline_path.display());
+    eprintln!(
+        "regressions detected vs baseline {}:",
+        baseline_path.display()
+    );
     for r in &regressions {
         eprintln!(
             "  {} / {}: {:.4} -> {:.4} ({:+.1}%)",

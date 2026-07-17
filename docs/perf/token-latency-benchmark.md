@@ -1,10 +1,11 @@
 # Token / latency benchmark (issue #12)
 
 Status: **partial**. This document covers what is measurable inside this repo
-today, plus one real (small-sample) run against a Simplicio Runtime binary
-that happened to be installed on the machine that produced this document. It
-is not the full, CI-reproducible "Runtime cold/warm/incremental vs direct
-read" comparison the issue asks for — see
+today, plus a deliberately non-statistical N=1 attempt against the Simplicio
+Runtime CLI/MCP. The installed CLI was found, but MCP content was not usable in
+this run, so native reads are explicitly marked
+`UNVERIFIED| runtime capability gap`. It is not the full, CI-reproducible
+"Runtime cold/warm/incremental vs direct read" comparison the issue asks for — see
 [Scope and what's blocked](#scope-and-whats-blocked).
 
 ## Goal
@@ -39,7 +40,10 @@ So the two code paths this repo can drive *end to end* are:
    `initialize`/`notifications/initialized` handshake + one `tools/call` per
    attempt — i.e. a cold path every time, since this harness does not reuse a
    warm client the way `SimplicioRuntimeFs` does across multiple reads),
-   against whatever Runtime binary `resolve_binary()` finds.
+   against whatever Runtime binary `resolve_binary()` finds. When it returns
+   content, the harness now computes `approx_tokens`, byte length, and exact
+   byte-for-byte equality with `direct_read`; otherwise it emits the required
+   `UNVERIFIED| runtime capability gap` marker.
 
 ## Scope and what's blocked
 
@@ -91,13 +95,12 @@ synthetic — no real repository content, no captured prompts:
 ### Golden-task correctness gate
 
 Every task has a documented expected outcome (`read_invalid_path` is
-*expected* to fail; the other four are *expected* to succeed for
-`direct_read`). The harness reports `success_rate` per task/path so
-correctness is checked before any token/latency number is trusted, per the
-issue's acceptance criteria. `expected_success` for `runtime_attempt` is
-deliberately not asserted against a fixed value in code (see
-[Scope and what's blocked](#scope-and-whats-blocked)) — the observed
-success/failure itself is the data point.
+*expected* to fail; the other four are *expected* to succeed). The harness
+reports `success_rate` per task/path so correctness is checked before any
+token/latency number is trusted, per the issue's acceptance criteria. For a
+valid Runtime read, success means that returned bytes match the direct fixture
+byte-for-byte; a Runtime call that returns no content or mismatched content is
+not counted as a correctness success.
 
 ### Metrics
 
@@ -109,8 +112,11 @@ success/failure itself is the data point.
   `BYTES_PER_APPROX_TOKEN` in `crates/codegen/simplicio-perf-bench/src/lib.rs`.
   Treat it as a relative trend line, not an absolute token count for any
   specific model.
-- **Success rate**: fraction of repeats that returned the expected
-  (`direct_read`) or observed (`runtime_attempt`) outcome.
+- **Success rate**: fraction of repeats that returned the expected outcome;
+  valid Runtime reads must also match direct bytes exactly.
+- **Content comparability**: `content_bytes`, `content_matches_direct`, and
+  `approx_tokens` are populated from the Runtime response when MCP returns
+  readable content. `null` means no comparable content was returned.
 
 ### Repeats / variance
 
@@ -157,55 +163,51 @@ repo actually controls. Running it locally/manually is supported today.
 ## Results
 
 Real, measured output, single sample per task/path
-(`./target/debug/simplicio-bench.exe --repeats 1`, debug build, Windows).
-Full JSON: `crates/codegen/simplicio-perf-bench/baselines/run_2026-07-17.json`.
+(`cargo run -q -p simplicio-perf-bench --bin simplicio-bench -- --repeats 1`,
+debug build, Windows; Runtime CLI 3.5.2 on `PATH`). The committed JSON under
+`baselines/` is historical evidence from the original harness and is not a
+statistical baseline; this N=1 run must not be used as one.
 
 **Honesty note on sample size**: this is N=1 per cell, not the 20+ repeats
-the harness defaults to and that a trustworthy p50/p95/stdev needs. Each
-`runtime_attempt` call spawns a fresh process and does a full MCP handshake
-against a real installed Runtime binary, which took 4–10 seconds *per call*
-in this environment — running the default 20 repeats across all 5 tasks
-(200 process spawns) did not complete in the time available for this change.
-Treat every number below as a single anecdotal data point, not a trend.
+the harness defaults to and that a trustworthy p50/p95/stdev needs. Treat
+every number below as a single anecdotal data point, not a trend or baseline.
+Each `runtime_attempt` pays a fresh process and MCP handshake. The installed
+Runtime CLI was reachable, but the MCP capability exchange/read path returned
+an invalid JSON response (JSON delimiter error at line 1 column 10181) in this
+run; the known `tools/list` timeout after 30 seconds is tracked separately as
+Runtime #3298.
 
-| Task | Path | Success | Latency (ms) | approx tokens |
-|---|---|---|---|---|
-| `read_small` (~460B) | `direct_read` | 1/1 | 0.60 | 94.25 |
-| `read_small` (~460B) | `runtime_attempt` | 1/1 | 6439.19 | n/a |
-| `read_medium` (~10.6KB) | `direct_read` | 1/1 | 0.22 | 2217.5 |
-| `read_medium` (~10.6KB) | `runtime_attempt` | 1/1 | 6198.29 | n/a |
-| `read_monorepo_nested` | `direct_read` | 1/1 | 0.43 | 84.5 |
-| `read_monorepo_nested` | `runtime_attempt` | 1/1 | 5020.66 | n/a |
-| `read_large_synthetic` (4MiB) | `direct_read` | 1/1 | 2.01 | 1,048,576 |
-| `read_large_synthetic` (4MiB) | `runtime_attempt` | 0/1 | 10457.63 | n/a |
-| `read_invalid_path` | `direct_read` | 0/1 (expected) | 0.06 | n/a |
-| `read_invalid_path` | `runtime_attempt` | 0/1 (expected) | 4456.98 | n/a |
+| Task | Path | Expected | Correct | Latency (ms) | approx tokens | Content comparable |
+|---|---|---:|---:|---:|---:|---|
+| `read_small` (402B) | `direct_read` | success | 1/1 | 0.44 | 100.5 | baseline |
+| `read_small` (402B) | `runtime_attempt` | success | 0/1 | 3190.61 | n/a | no; MCP invalid JSON |
+| `read_medium` (8.7KB) | `direct_read` | success | 1/1 | 1.78 | 2217.5 | baseline |
+| `read_medium` (8.7KB) | `runtime_attempt` | success | 0/1 | 3015.58 | n/a | no; MCP invalid JSON |
+| `read_monorepo_nested` (353B) | `direct_read` | success | 1/1 | 1.74 | 88.25 | baseline |
+| `read_monorepo_nested` (353B) | `runtime_attempt` | success | 0/1 | 3053.55 | n/a | no; MCP invalid JSON |
+| `read_large_synthetic` (4MiB) | `direct_read` | success | 1/1 | 8.55 | 1,048,576 | baseline |
+| `read_large_synthetic` (4MiB) | `runtime_attempt` | success | 0/1 | 2991.28 | n/a | no; MCP invalid JSON |
+| `read_invalid_path` | `direct_read` | fail | 1/1 | 0.07 | n/a | n/a |
+| `read_invalid_path` | `runtime_attempt` | fail | 0/1 | 2912.62 | n/a | n/a |
 
 Key takeaways from this run:
 
-- **Correctness**: `direct_read` matched its expected outcome on all 5 tasks
-  (succeeded on 4, correctly failed on the invalid path).
-  `runtime_attempt` against the installed Runtime binary **succeeded** on
-  `read_small`, `read_medium`, and `read_monorepo_nested` (a real Runtime did
-  answer `simplicio_file_read` correctly for those three), and **failed** on
-  `read_large_synthetic` and (expectedly) `read_invalid_path`. This repo's
-  own `RuntimeClient` doesn't currently surface *why* the 4MiB read failed
-  (only that it did); it's plausibly a size/config limit inside that
-  specific installed Runtime build. That's worth root-causing before relying
-  on it, but is out of scope for this benchmark change.
-- **Latency**: every `direct_read` was sub-3ms; every `runtime_attempt` was
-  4.4–10.5 **seconds** — three to four orders of magnitude slower. This is
-  expected given the harness pays full process-spawn + MCP-handshake cost on
-  every single call (no client reuse), so it is not a fair "steady-state"
-  comparison — it's a worst-case cold-path number. A real cold/warm
-  comparison (reusing one client across repeats, the way
-  `SimplicioRuntimeFs` actually does in the agent) is exactly the
-  [blocked work](#scope-and-whats-blocked) above.
-- `approx_tokens` is only computed for `direct_read`, since that's the only
-  path that returns content to the harness process today (the Runtime
-  client's `read_file` result content isn't currently threaded back out of
-  `main.rs` — a straightforward follow-up, not done here to keep this change
-  scoped to latency + the correctness gate).
+- **Correctness**: `direct_read` matched all five expected outcomes (four
+  successes and one fail-closed invalid path). The Runtime path returned no
+  readable content in any task, so all five Runtime cells are
+  `UNVERIFIED| runtime capability gap`; even the invalid path is unverified
+  because MCP failed before the tool call. The 4MiB case now really addresses
+  `.generated/large_synthetic.bin` inside the Runtime workspace; its failure is
+  MCP capability failure, not an accidentally-invalid fixture path.
+- **Latency**: direct-read values are local native fallback measurements and
+  must not be compared as Runtime performance because MCP was unavailable.
+  Runtime attempts took roughly 2.9–3.2 seconds while paying process spawn and
+  MCP handshake cost, so they are cold-attempt observations only.
+- **Tokens/content**: Runtime `approx_tokens`, `content_bytes`, and
+  `content_matches_direct` are all `null` here. Therefore this run provides no
+  evidence that the Runtime path returns content comparable for token counts;
+  a successful MCP response must populate and compare those fields before any
+  token claim is made.
 
 ## What remains open
 
@@ -216,18 +218,13 @@ Key takeaways from this run:
   happened to be on a developer machine's `PATH`; it is not reproducible from
   a clean checkout of this repo and should not be treated as a committed
   baseline.
-- **A statistically meaningful sample.** This change's committed baseline is
-  N=1 per cell because 20-repeat runs did not finish in the available time
-  (each `runtime_attempt` costs several seconds of real process-spawn +
-  handshake time). Re-running `scripts/bench/run.sh --repeats 20` (or higher)
-  on a machine with time to spare, and replacing
-  `crates/codegen/simplicio-perf-bench/baselines/run_2026-07-17.json`, is the
-  immediate next step before trusting p50/p95/stdev from this harness.
-- **Root-causing the `read_large_synthetic` runtime_attempt failure** instead
-  of just recording that it happened.
-- **Threading Runtime response content back out** so `approx_tokens` can be
-  computed for `runtime_attempt` too, enabling an actual token-savings
-  comparison (today only latency and success/failure are comparable).
+- **Root-causing the Runtime MCP capability failure** (malformed response in
+  this run; `tools/list` timeout is tracked as Runtime #3298) before relying on
+  any Runtime numbers. The 4MiB fixture path correctness issue is fixed here,
+  but its Runtime result remains unverified until MCP is healthy.
+- **A statistically meaningful sample.** N=1 remains anecdotal and must not
+  become a baseline; use N>=20 after the Runtime path is healthy and cold/warm
+  behavior is explicitly separated.
 - **Wiring `simplicio-bench-check` into CI** against a pinned baseline on a
   dedicated runner.
 - **Macro-level (whole-session, multi-tool-call) benchmarking** — this
