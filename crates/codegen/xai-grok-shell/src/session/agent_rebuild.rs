@@ -82,6 +82,10 @@ pub(crate) struct AgentRebuildSpec {
     pub working_directory: PathBuf,
     pub terminal_backend: Arc<dyn TerminalBackend>,
     pub fs_backend: Arc<dyn AsyncFileSystem>,
+    /// Optional content-search backend threaded to `AgentBuilder::with_search`
+    /// alongside `fs_backend`/`with_fs`. `None` for callers that don't set a
+    /// Runtime-backed search adapter (test harnesses, non-Runtime sessions).
+    pub search_backend: Option<Arc<dyn xai_grok_tools::computer::types::AsyncSearch>>,
     pub tools_notification_handle: ToolNotificationHandle,
     pub bridge_state_path: PathBuf,
     pub session_env: Arc<HashMap<String, String>>,
@@ -178,6 +182,7 @@ impl AgentRebuildSpec {
             working_directory,
             terminal_backend,
             fs_backend,
+            search_backend,
             tools_notification_handle,
             bridge_state_path,
             session_env,
@@ -271,6 +276,9 @@ impl AgentRebuildSpec {
         .with_mcp_max_output_bytes(
             crate::util::config::resolve_max_mcp_output_bytes_for_cwd(working_directory),
         );
+        if let Some(search_backend) = search_backend.clone() {
+            builder = builder.with_search(search_backend);
+        }
         if let Some(owner_session_id) = owner_session_id.clone() {
             builder = builder.with_owner_session_id(owner_session_id);
         }
@@ -380,6 +388,7 @@ pub(crate) fn test_rebuild_spec_default() -> Arc<AgentRebuildSpec> {
             ),
         ),
         fs_backend: Arc::new(xai_grok_tools::computer::local::LocalFs),
+        search_backend: None,
         tools_notification_handle: ToolNotificationHandle::noop(),
         bridge_state_path: std::env::temp_dir().join("test_tool_state.json"),
         session_env: Arc::new(HashMap::new()),

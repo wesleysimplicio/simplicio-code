@@ -52,6 +52,10 @@ pub struct AgentBuilder {
     prompt_working_directory: Option<String>,
     terminal_backend: Arc<dyn TerminalBackend>,
     fs_backend: Arc<dyn AsyncFileSystem>,
+    /// Optional content-search backend, injected into `Resources` as
+    /// `SearchBackend` (see `with_search`). `None` (the default) leaves
+    /// search tools on their existing local (ripgrep/`tokio::fs`) behavior.
+    search_backend: Option<Arc<dyn xai_grok_tools::computer::types::AsyncSearch>>,
     notification_handle: ToolNotificationHandle,
     owner_session_id: Option<String>,
     parent_scheduler_handle:
@@ -187,6 +191,7 @@ impl AgentBuilder {
             prompt_working_directory: None,
             terminal_backend,
             fs_backend: Arc::new(xai_grok_tools::computer::local::LocalFs),
+            search_backend: None,
             notification_handle,
             owner_session_id: None,
             parent_scheduler_handle: None,
@@ -395,6 +400,20 @@ impl AgentBuilder {
     /// `clientCapabilities.fs.readTextFile` and `writeTextFile`.
     pub fn with_fs(mut self, fs: Arc<dyn AsyncFileSystem>) -> Self {
         self.fs_backend = fs;
+        self
+    }
+    /// Set a content-search backend for the ToolBridge (e.g. the Runtime MCP
+    /// adapter's `search`, alongside `with_fs`'s read/write/delete).
+    ///
+    /// When `None` (default), search tools that look for a `SearchBackend`
+    /// resource find none and keep their existing local (ripgrep/`tokio::fs`)
+    /// behavior unchanged. When `Some`, those tools use it exclusively and
+    /// fail closed on its errors — no silent fallback to local search.
+    pub fn with_search(
+        mut self,
+        search: Arc<dyn xai_grok_tools::computer::types::AsyncSearch>,
+    ) -> Self {
+        self.search_backend = Some(search);
         self
     }
     /// Set the session ID that owns processes spawned by this session's tools.
@@ -1012,6 +1031,7 @@ impl AgentBuilder {
             SessionContext {
                 backend: self.terminal_backend,
                 fs: self.fs_backend,
+                search: self.search_backend,
                 cwd: self.working_directory.clone(),
                 session_folder: state_path
                     .parent()

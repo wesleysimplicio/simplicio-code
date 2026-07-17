@@ -16,7 +16,7 @@ use crate::implementations::grok_build::grep::ripgrep::rg_path;
 use crate::types::output::CodexGrepFilesOutput;
 use crate::types::requirements::Expr;
 #[allow(unused_imports)]
-use crate::types::resources::Cwd;
+use crate::types::resources::{Cwd, SearchBackend};
 use crate::types::tool::{ToolKind, ToolNamespace};
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -234,6 +234,57 @@ impl xai_tool_runtime::Tool for CodexGrepFilesTool {
             }
         });
 
+        // A `SearchBackend` resource (currently: the Simplicio Runtime MCP
+        // adapter, see `SimplicioRuntimeFs::search`) is only present when the
+        // session was explicitly constructed with one — mirroring how
+        // `SimplicioRuntimeFs` only replaces `LocalFs` at specific call
+        // sites, not everywhere. When present it is used exclusively and
+        // fails closed on its own errors: there is no fallback to
+        // `run_rg_search` below in that branch, matching the fail-closed
+        // contract `SimplicioRuntimeFs::read_file`/`write_file`/`delete_file`
+        // already established. When absent, behavior is unchanged from
+        // before this backend existed.
+        let search_backend = resources.lock().await.get::<SearchBackend>().map(|b| b.0.clone());
+        if let Some(backend) = search_backend {
+            let globs = include.iter().cloned().collect::<Vec<_>>();
+            return match backend
+                .search(
+                    &pattern,
+                    Some(search_path.as_path()),
+                    &globs,
+                    false,
+                    false,
+                    limit,
+                    limit,
+                )
+                .await
+            {
+                Ok(outcome) => {
+                    let mut files: Vec<String> = Vec::new();
+                    for m in outcome.matches {
+                        if !files.contains(&m.path) {
+                            files.push(m.path);
+                        }
+                        if files.len() == limit {
+                            break;
+                        }
+                    }
+                    if files.is_empty() {
+                        Ok(CodexGrepFilesOutput::NoMatches("No matches found.".to_string()))
+                    } else {
+                        let file_count = files.len();
+                        Ok(CodexGrepFilesOutput::Matches {
+                            content: files.join("\n"),
+                            file_count,
+                        })
+                    }
+                }
+                Err(err) => Ok(CodexGrepFilesOutput::Error(format!(
+                    "Simplicio Runtime search failed: {err}"
+                ))),
+            };
+        }
+
         // Run rg
         let results = run_rg_search(&pattern, include.as_deref(), &search_path, limit, &cwd).await;
 
@@ -256,6 +307,7 @@ impl xai_tool_runtime::Tool for CodexGrepFilesTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::computer::types::{AsyncSearch, ComputerError, SearchMatch, SearchOutcome};
     use crate::types::resources::Resources;
     use std::process::Command as StdCommand;
     use tempfile::TempDir;
@@ -267,6 +319,65 @@ mod tests {
         let mut ctx = xai_tool_runtime::ToolCallContext::default();
         ctx.extensions.insert(resources.into_shared());
         ctx
+    }
+
+    /// Build a `ToolCallContext` with a `SearchBackend` resource injected
+    /// alongside `Cwd`, so `run()` takes the Runtime-search branch instead of
+    /// shelling out to local `rg`.
+    fn test_ctx_with_search_backend(
+        cwd: &Path,
+        backend: std::sync::Arc<dyn AsyncSearch>,
+    ) -> xai_tool_runtime::ToolCallContext {
+        let mut resources = Resources::new();
+        resources.insert(Cwd(cwd.to_path_buf()));
+        resources.insert(SearchBackend(backend));
+        let mut ctx = xai_tool_runtime::ToolCallContext::default();
+        ctx.extensions.insert(resources.into_shared());
+        ctx
+    }
+
+    /// Test double for [`AsyncSearch`] that returns a fixed outcome (or
+    /// error) and records the last call's arguments, so tests can assert
+    /// both "the tool used the backend, not local rg" and "the backend saw
+    /// the arguments the tool was supposed to pass".
+    #[derive(Default)]
+    struct FakeSearchBackend {
+        outcome: std::sync::Mutex<Option<Result<SearchOutcome, String>>>,
+        last_call: std::sync::Mutex<Option<(String, Option<PathBuf>, Vec<String>)>>,
+    }
+
+    impl FakeSearchBackend {
+        fn with_outcome(outcome: Result<SearchOutcome, String>) -> Self {
+            Self {
+                outcome: std::sync::Mutex::new(Some(outcome)),
+                last_call: std::sync::Mutex::new(None),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncSearch for FakeSearchBackend {
+        async fn search(
+            &self,
+            pattern: &str,
+            path: Option<&Path>,
+            globs: &[String],
+            _case_insensitive: bool,
+            _literal: bool,
+            _max_files: usize,
+            _max_matches: usize,
+        ) -> Result<SearchOutcome, ComputerError> {
+            *self.last_call.lock().unwrap() = Some((
+                pattern.to_owned(),
+                path.map(Path::to_path_buf),
+                globs.to_vec(),
+            ));
+            match self.outcome.lock().unwrap().take() {
+                Some(Ok(outcome)) => Ok(outcome),
+                Some(Err(msg)) => Err(ComputerError::io(msg)),
+                None => panic!("FakeSearchBackend::search called more than once in this test"),
+            }
+        }
     }
     fn rg_available() -> bool {
         StdCommand::new("rg")
@@ -543,6 +654,153 @@ mod tests {
                 assert_eq!(file_count, 1);
             }
             other => panic!("Expected Matches, got: {other:?}"),
+        }
+    }
+
+    // ── SearchBackend (Runtime MCP search) wiring ───────────────
+
+    /// When a `SearchBackend` resource is present, the tool must use it
+    /// instead of shelling out to local `rg` — even if `rg` is installed and
+    /// would have produced different results. Also asserts the backend
+    /// receives a deduplicated, limit-respecting file list.
+    #[tokio::test]
+    async fn uses_search_backend_when_present_instead_of_local_rg() {
+        let tmp = TempDir::new().unwrap();
+        let backend = std::sync::Arc::new(FakeSearchBackend::with_outcome(Ok(SearchOutcome {
+            matches: vec![
+                SearchMatch {
+                    path: "src/a.rs".into(),
+                    line: 1,
+                    text: "needle".into(),
+                },
+                SearchMatch {
+                    path: "src/a.rs".into(),
+                    line: 5,
+                    text: "needle again".into(),
+                },
+                SearchMatch {
+                    path: "src/b.rs".into(),
+                    line: 2,
+                    text: "needle".into(),
+                },
+            ],
+            truncated: false,
+        })));
+        let tool = CodexGrepFilesTool;
+        let input = CodexGrepFilesInput {
+            pattern: "needle".to_string(),
+            include: Some("*.rs".to_string()),
+            path: None,
+            limit: 100,
+        };
+
+        let result = xai_tool_runtime::Tool::run(
+            &tool,
+            test_ctx_with_search_backend(tmp.path(), backend.clone()),
+            input,
+        )
+        .await
+        .unwrap();
+
+        match result {
+            CodexGrepFilesOutput::Matches {
+                file_count,
+                content,
+            } => {
+                // Two distinct files, even though `src/a.rs` matched twice.
+                assert_eq!(file_count, 2);
+                assert!(content.contains("src/a.rs"));
+                assert!(content.contains("src/b.rs"));
+            }
+            other => panic!("Expected Matches, got: {other:?}"),
+        }
+
+        let (pattern, path, globs) = backend.last_call.lock().unwrap().clone().unwrap();
+        assert_eq!(pattern, "needle");
+        assert_eq!(path, Some(tmp.path().to_path_buf()));
+        assert_eq!(globs, vec!["*.rs".to_string()]);
+    }
+
+    /// Fail-closed regression: when the `SearchBackend` resource is present
+    /// but the backend itself errors (Runtime missing/incompatible/rejected),
+    /// the tool must surface that error and must NOT fall back to local
+    /// `rg` — even when `rg` is installed and would find real matches on
+    /// disk. This is the same fail-closed guarantee
+    /// `SimplicioRuntimeFs::read_file`/`write_file`/`delete_file` already
+    /// provide; this test proves the `grep_files` consumer inherits it too.
+    #[tokio::test]
+    async fn search_backend_failure_does_not_fall_back_to_local_rg() {
+        let tmp = TempDir::new().unwrap();
+        // A file that a local rg search WOULD match, proving that if the
+        // tool fell back to rg after the backend error, we'd see a
+        // `Matches` result instead of the expected `Error`.
+        std::fs::write(tmp.path().join("real_match.rs"), "needle in a haystack").unwrap();
+
+        let backend = std::sync::Arc::new(FakeSearchBackend::with_outcome(Err(
+            "Simplicio Runtime capability 'search' is unavailable".to_string(),
+        )));
+        let tool = CodexGrepFilesTool;
+        let input = CodexGrepFilesInput {
+            pattern: "needle".to_string(),
+            include: None,
+            path: None,
+            limit: 100,
+        };
+
+        let result = xai_tool_runtime::Tool::run(
+            &tool,
+            test_ctx_with_search_backend(tmp.path(), backend),
+            input,
+        )
+        .await
+        .unwrap();
+
+        match result {
+            CodexGrepFilesOutput::Error(msg) => {
+                assert!(
+                    msg.contains("Simplicio Runtime search failed"),
+                    "unexpected error message: {msg}"
+                );
+                assert!(
+                    msg.contains("capability 'search' is unavailable"),
+                    "underlying backend error should be surfaced: {msg}"
+                );
+            }
+            other => panic!(
+                "expected a fail-closed Error, got a result that implies local rg fallback ran: {other:?}"
+            ),
+        }
+    }
+
+    /// Regression: with no `SearchBackend` resource at all (the default for
+    /// every existing call site), behavior must be byte-for-byte unchanged
+    /// from before this backend existed — local `rg` still runs.
+    #[tokio::test]
+    async fn falls_back_to_local_rg_when_no_search_backend_configured() {
+        if !rg_available() {
+            return;
+        }
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("match.rs"), "needle in haystack").unwrap();
+
+        let tool = CodexGrepFilesTool;
+        let input = CodexGrepFilesInput {
+            pattern: "needle".to_string(),
+            include: None,
+            path: None,
+            limit: 100,
+        };
+
+        // `test_ctx` (no `SearchBackend`) — same helper the pre-existing
+        // tests above use.
+        let result = xai_tool_runtime::Tool::run(&tool, test_ctx(tmp.path()), input)
+            .await
+            .unwrap();
+        match result {
+            CodexGrepFilesOutput::Matches { file_count, .. } => {
+                assert_eq!(file_count, 1);
+            }
+            other => panic!("Expected Matches via local rg, got: {other:?}"),
         }
     }
 }

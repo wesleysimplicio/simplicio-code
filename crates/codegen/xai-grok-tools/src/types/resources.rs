@@ -795,6 +795,21 @@ impl std::fmt::Debug for FileSystem {
         f.debug_struct("FileSystem").finish()
     }
 }
+/// Content-search abstraction (see [`crate::computer::types::AsyncSearch`]).
+///
+/// Only present in `Resources` when the session was constructed with a
+/// search-capable backend (currently: Simplicio Runtime sessions). Search
+/// tools that find this resource absent keep their existing local
+/// (ripgrep/`tokio::fs`) behavior unchanged; tools that find it present must
+/// use it exclusively and fail closed on its errors — mirroring how
+/// `SimplicioRuntimeFs` is opted into `FileSystem` at only two call sites
+/// rather than replacing `LocalFs` everywhere.
+pub struct SearchBackend(pub Arc<dyn crate::computer::types::AsyncSearch>);
+impl std::fmt::Debug for SearchBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchBackend").finish()
+    }
+}
 /// Terminal backend abstraction.
 pub struct Terminal(pub Arc<dyn TerminalBackend>);
 /// Session ID that owns processes spawned by this session's tools.

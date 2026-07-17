@@ -584,10 +584,18 @@ pub(crate) async fn spawn_session_actor(
     // never delegates project reads to the editor. Runtime ownership is
     // fail-closed and identical across TUI, headless, workspace and ACP.
     let _ = client_fs_capable;
-    let fs_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem> =
+    // Single `SimplicioRuntimeFs` shared as both `AsyncFileSystem` and
+    // `AsyncSearch` trait objects so read/write/delete/search reuse the same
+    // lazily-spawned Runtime MCP session instead of each opening its own
+    // subprocess (mirrors the workspace session context factory).
+    let simplicio_runtime_fs =
         std::sync::Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
             tool_context.cwd.as_path().to_path_buf(),
         ));
+    let fs_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem> =
+        simplicio_runtime_fs.clone();
+    let search_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncSearch> =
+        simplicio_runtime_fs;
     let bridge_state_path =
         crate::session::persistence::session_dir(&session_info).join("tool_state.json");
     let initial_agent_type = Some(agent_definition.name.clone());

@@ -16,5 +16,15 @@ thiserror = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 
+# Fake stdio MCP server used only by the integration tests in `tests/`, spawned
+# in place of a real Simplicio Runtime binary via `SIMPLICIO_BIN`. Not part of
+# the crate's public API/dependencies; `test = false` keeps it out of the
+# normal `cargo test` binary set, and `doc = false` keeps it out of docs.
+[[bin]]
+name = "simplicio-fake-runtime-server"
+path = "tests/support/fake_server_main.rs"
+test = false
+doc = false
+
 [lints]
 workspace = true

@@ -33,10 +33,23 @@ conexão após falha recuperável.
 `simplicio-runtime-client` já expõe contratos tipados para `search`, `list`,
 `stat`, `edit` (com plano atômico/rollback) e `exec` (argv direto, sem shell,
 com bloqueio de metacaracteres) além de `read`/`write`/`delete`, cada um
-verificando a capability do Runtime antes de enviar a requisição. Apenas
-`read`, `write` e `delete` estão hoje ligados a `SimplicioRuntimeFs` (usado
-por TUI/headless/workspace/ACP); `search`/`list`/`stat`/`edit`/`exec` ainda
-não têm um consumidor no agente — essa é a próxima fatia.
+verificando a capability do Runtime antes de enviar a requisição. `read`,
+`write`, `delete` e `search` estão ligados a `SimplicioRuntimeFs` (usado por
+TUI/headless/workspace/ACP), que agora implementa também `AsyncSearch` — o
+mesmo padrão fail-closed dos três primeiros: Runtime ausente, incompatível ou
+um escopo de busca (`path`) que escape do workspace (mesma checagem
+canonicalize-based de symlink usada por `relative_path`) bloqueia a operação
+com erro acionável, sem fallback local. `search` também valida cada `glob`
+contra path traversal/absolute antes de enviar ao Runtime
+(`secure_glob`/`Error::GlobRejected`), fechando a mesma classe de bypass que a
+correção de symlink do PR anterior fechou para os alvos de leitura/escrita.
+Um único `SearchBackend` (recurso em `Resources`, ao lado de `FileSystem`) é
+injetado apenas nos dois pontos de construção que já usam
+`SimplicioRuntimeFs` — nenhum tool passa a exigi-lo: ausente, o tool mantém
+seu comportamento local (ripgrep) inalterado; presente, o tool usa o backend
+exclusivamente e falha fechado nos erros dele. `CodexGrepFilesTool`
+(`grep_files`) é o primeiro consumidor real. `list`/`stat`/`edit`/`exec`
+continuam sem consumidor no agente — essa é a próxima fatia.
 
 O Runtime é um processo acoplado ao binário na experiência do usuário, mas
 continua sendo um componente independente e testável. Isso evita duplicar mapa,
@@ -61,14 +74,18 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
 - Concluído: leitura, escrita e exclusão de arquivos do agente via Runtime
   (`SimplicioRuntimeFs`), com sandbox rígido (path traversal + escape via
   symlink) e sem fallback local.
+- Concluído: `search` ligado via `AsyncSearch`/`SimplicioRuntimeFs` e
+  consumido por `grep_files` (namespace Codex) através do recurso opcional
+  `SearchBackend`, com o mesmo sandbox fail-closed (path/glob traversal,
+  escape via symlink) e sem fallback local quando o backend está presente.
 - Concluído no cliente, pendente de ligação: contratos MCP tipados de
-  `search`/`list`/`stat`/`edit`/`exec` com capability negotiation e rejeição
+  `list`/`stat`/`edit`/`exec` com capability negotiation e rejeição
   fail-closed de Runtime incompatível — nenhum tool do agente os consome
   ainda.
-- Próximo: ligar `grep`/`grep_files`/`hashline_grep`/`list_dir` (que hoje
-  chamam `ripgrep`/`tokio::fs` diretamente, fora de `AsyncFileSystem`) aos
-  contratos de `search`/`list` acima, e o executor de `bash` ao contrato de
-  `exec`.
+- Próximo: ligar `grep`/`hashline_grep`/`list_dir` (que hoje chamam
+  `ripgrep`/`tokio::fs`/`ignore::WalkBuilder` diretamente, fora de
+  `AsyncSearch`/`AsyncFileSystem`) ao mesmo `SearchBackend`/contrato de
+  `list`, e o executor de `bash` ao contrato de `exec`.
 - Depois: identidade/entitlement Simplicio e gateway único de inferência.
 - Por último: instaladores assinados, atualização automática e release privada.
 
