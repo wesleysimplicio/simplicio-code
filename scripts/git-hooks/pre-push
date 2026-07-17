@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+"""simplicio-code -- tracked pre-push hook source (issue #9: secret gate on push).
+
+Fail-closed secret-scan of the actual push range (HEAD vs. upstream, via
+hooks/action_gate.py's own `_push_diff`/`scan_secret_text`), reusing the same SECRETS pattern
+set as the pre-commit gate (scripts/git-hooks/pre-commit) instead of duplicating it.
+
+Deliberately does NOT run `scripts/check.py --core-gate` the way action_gate.py's own
+`pre-push` subcommand does: that suite (claims_audit, bundle/plugin mirror parity, the
+repository-size and token-budget baselines) validates simplicio-loop's OWN pip-package tree
+(pyproject.toml, plugin/, simplicio_loop/_bundle/) and is not applicable to this repo's actual
+product (a Rust workspace) -- wiring it here blocked the very first push with failures that
+have nothing to do with simplicio-code (see the #9 fixup commit for the pre-commit analogue of
+this same mismatch). Only the portable part -- the secret scan -- is reused.
+
+Install (idempotent, safe to re-run after every clone/checkout):
+    python3 scripts/install_git_hooks.sh
+"""
+import os
+import sys
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(os.path.dirname(HERE))
+HOOKS_DIR = os.path.join(REPO, "hooks")
+if HOOKS_DIR not in sys.path:
+    sys.path.insert(0, HOOKS_DIR)
+
+
+def main():
+    try:
+        from action_gate import _push_diff, scan_secret_text
+    except Exception as exc:  # hooks/action_gate.py missing or broken -- never silently pass
+        print("[pre-push] BLOCKED — cannot load hooks/action_gate.py secret scanner (%s)" % exc)
+        return 2
+
+    diff = _push_diff()
+    if diff is None:
+        print("[pre-push] BLOCKED — cannot read the push diff to secret-scan (fail-closed)")
+        return 2
+
+    hits = scan_secret_text(diff)
+    if hits:
+        labels = ", ".join(sorted({h[0] for h in hits}))
+        print("[pre-push] BLOCKED — secret in pushed commits (%s); remove it (or rewrite "
+              "history) before pushing" % labels)
+        return 2
+
+    print("[pre-push] allow (no secret found in push range)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
