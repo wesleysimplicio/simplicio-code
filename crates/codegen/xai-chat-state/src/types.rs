@@ -114,7 +114,7 @@ pub enum AuthType {
 /// These are fields from the shell's full `Config` that aren't part of
 /// `xai_grok_sampling_types::SamplingConfig` (which is secret-free).
 /// The actor just stores and returns them — it never interprets them.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct Credentials {
     /// API key for authentication.
     pub api_key: Option<String>,
@@ -125,6 +125,25 @@ pub struct Credentials {
     pub alpha_test_key: Option<String>,
     /// Client version string.
     pub client_version: Option<String>,
+}
+
+/// Manual `Debug` impl: `api_key`/`alpha_test_key` are raw secrets. A
+/// derived `Debug` would print them verbatim, and since [`ChatStateSnapshot`]
+/// embeds `Credentials` and also derives `Debug`, any `{:?}` on a snapshot
+/// (used throughout the actor, e.g. in logs/panics) would leak them too.
+impl std::fmt::Debug for Credentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn redacted(opt: &Option<String>) -> Option<&'static str> {
+            opt.as_ref().map(|_| "<redacted>")
+        }
+
+        f.debug_struct("Credentials")
+            .field("api_key", &redacted(&self.api_key))
+            .field("auth_type", &self.auth_type)
+            .field("alpha_test_key", &redacted(&self.alpha_test_key))
+            .field("client_version", &self.client_version)
+            .finish()
+    }
 }
 
 /// The messages captured during a single conversation turn.
@@ -253,5 +272,67 @@ mod tests {
         assert_eq!(deserialized.stream_start_ms, Some(1234567890));
         assert_eq!(deserialized.turn_start_ms, Some(1234567800));
         assert_eq!(deserialized.last_compaction_prompt_index, Some(2));
+    }
+
+    /// `Credentials::api_key`/`alpha_test_key` are raw secrets. Neither may
+    /// appear in `{:?}` output of `Credentials` directly, nor transitively
+    /// via `ChatStateSnapshot` (which embeds `credentials` and also derives
+    /// `Debug`).
+    #[test]
+    fn credentials_debug_never_prints_raw_secrets() {
+        const CANARY_API_KEY: &str = "xai-canary-super-secret-api-key-00000000";
+        const CANARY_ALPHA_KEY: &str = "canary-alpha-test-key-11111111";
+
+        let credentials = Credentials {
+            api_key: Some(CANARY_API_KEY.to_string()),
+            auth_type: AuthType::ApiKey,
+            alpha_test_key: Some(CANARY_ALPHA_KEY.to_string()),
+            client_version: Some("1.0.0".to_string()),
+        };
+
+        let direct_debug = format!("{credentials:?}");
+        assert!(
+            !direct_debug.contains(CANARY_API_KEY),
+            "Credentials Debug leaked api_key: {direct_debug}"
+        );
+        assert!(
+            !direct_debug.contains(CANARY_ALPHA_KEY),
+            "Credentials Debug leaked alpha_test_key: {direct_debug}"
+        );
+        assert!(direct_debug.contains("<redacted>"));
+
+        let snapshot = ChatStateSnapshot {
+            conversation: vec![],
+            sampling_config: SamplingConfig {
+                base_url: "https://api.example.com".to_string(),
+                model: "test-model".to_string(),
+                max_completion_tokens: None,
+                temperature: None,
+                top_p: None,
+                api_backend: Default::default(),
+                extra_headers: Default::default(),
+                context_window: NonZeroU64::new(128_000).unwrap(),
+                reasoning_effort: None,
+                stream_tool_calls: None,
+            },
+            prompt_index: 0,
+            total_tokens: 0,
+            estimate_at_last_response: 0,
+            agent_edited_paths: BTreeSet::new(),
+            prompt_texts: vec![],
+            stream_start_ms: None,
+            turn_start_ms: None,
+            last_compaction_prompt_index: None,
+            credentials,
+        };
+        let snapshot_debug = format!("{snapshot:?}");
+        assert!(
+            !snapshot_debug.contains(CANARY_API_KEY),
+            "ChatStateSnapshot Debug leaked api_key transitively: {snapshot_debug}"
+        );
+        assert!(
+            !snapshot_debug.contains(CANARY_ALPHA_KEY),
+            "ChatStateSnapshot Debug leaked alpha_test_key transitively: {snapshot_debug}"
+        );
     }
 }

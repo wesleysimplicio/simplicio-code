@@ -10,7 +10,7 @@ use crate::visibility::HttpAuth;
 /// Snapshot of the currently effective credentials. Used by callers
 /// that build their own header maps (the OTel OTLP exporter) or that
 /// need the bearer prefix for 401-attribution telemetry.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct CredentialSnapshot {
     /// Bearer token. `None` when no auth is configured (CI / `--api-key` headless).
     pub token: Option<String>,
@@ -28,6 +28,23 @@ pub struct CredentialSnapshot {
     pub api_key_id: Option<String>,
     /// Org id from the OIDC `organizationId` claim; `None` for personal / deployment-key auth.
     pub organization_id: Option<String>,
+}
+
+/// Manual `Debug` impl: `token` is the raw bearer sent on the wire. A
+/// derived `Debug` would print it verbatim on any `{:?}` of a snapshot
+/// (e.g. in a log line or panic message), defeating the redaction
+/// elsewhere in the auth/telemetry pipeline.
+impl std::fmt::Debug for CredentialSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CredentialSnapshot")
+            .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .field("user_id", &self.user_id)
+            .field("team_id", &self.team_id)
+            .field("deployment_id", &self.deployment_id)
+            .field("api_key_id", &self.api_key_id)
+            .field("organization_id", &self.organization_id)
+            .finish()
+    }
 }
 
 /// Source of truth for outbound auth on data-collector requests.
@@ -114,5 +131,31 @@ impl AuthCredentialProvider for StaticAuthCredentialProvider {
 
     async fn refresh_after_unauthorized(&self) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `CredentialSnapshot::token` is the raw bearer sent on the wire; it
+    /// must never appear in `{:?}` output.
+    #[test]
+    fn credential_snapshot_debug_never_prints_raw_token() {
+        const CANARY_TOKEN: &str = "canary-super-secret-bearer-token-00000000";
+
+        let snapshot = CredentialSnapshot {
+            token: Some(CANARY_TOKEN.to_string()),
+            user_id: Some("user-1".to_string()),
+            ..Default::default()
+        };
+
+        let debug_output = format!("{snapshot:?}");
+        assert!(
+            !debug_output.contains(CANARY_TOKEN),
+            "CredentialSnapshot Debug leaked the raw token: {debug_output}"
+        );
+        assert!(debug_output.contains("<redacted>"));
+        assert!(debug_output.contains("user-1"));
     }
 }
