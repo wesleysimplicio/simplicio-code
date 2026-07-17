@@ -405,8 +405,13 @@ impl SamplingClient {
             match config.auth_scheme {
                 AuthScheme::XApiKey => {
                     let header_value = HeaderValue::from_str(api_key).map_err(|_| {
+                        // Never log the raw key: only its length and whether it's
+                        // ASCII, which is enough to diagnose a malformed value
+                        // without leaking the secret to stderr/telemetry sinks
+                        // that don't run the redaction pass.
                         tracing::debug!(
-                            api_key = %api_key,
+                            api_key_len = api_key.len(),
+                            api_key_is_ascii = api_key.is_ascii(),
                             "Invalid api_key: cannot be converted to a valid HTTP header"
                         );
                         SamplingError::Auth(
@@ -419,8 +424,11 @@ impl SamplingClient {
                 AuthScheme::Bearer => {
                     let bearer = format!("Bearer {}", api_key);
                     let header_value = HeaderValue::from_str(&bearer).map_err(|_| {
+                        // See the XApiKey arm above: length/ASCII only, never the
+                        // raw key or bearer string.
                         tracing::debug!(
-                            api_key = %api_key,
+                            api_key_len = api_key.len(),
+                            api_key_is_ascii = api_key.is_ascii(),
                             "Invalid api_key: cannot be converted to a valid HTTP Authorization header"
                         );
                         SamplingError::Auth(
@@ -2043,6 +2051,84 @@ mod tests {
             doom_loop_recovery: None,
             header_injector: None,
         }
+    }
+
+    /// Minimal `tracing::Subscriber` that stringifies every field of every
+    /// event it sees into a shared buffer, so tests can assert a secret
+    /// never reaches a log sink even via `Debug`/`Display` formatting.
+    /// Kept local to this test module to avoid adding a `tracing-subscriber`
+    /// dev-dependency just for one regression test.
+    struct CapturingSubscriber {
+        events: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    struct FieldCapture<'a>(&'a mut Vec<String>);
+
+    impl tracing::field::Visit for FieldCapture<'_> {
+        fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+            self.0.push(format!("{}={value:?}", field.name()));
+        }
+    }
+
+    impl tracing::Subscriber for CapturingSubscriber {
+        fn enabled(&self, _metadata: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _span: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _span: &tracing::span::Id, _values: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _span: &tracing::span::Id, _follows: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            let mut fields = Vec::new();
+            event.record(&mut FieldCapture(&mut fields));
+            self.events.lock().unwrap().push(fields.join(" "));
+        }
+        fn enter(&self, _span: &tracing::span::Id) {}
+        fn exit(&self, _span: &tracing::span::Id) {}
+    }
+
+    /// Regression test for the raw-API-key log leak: constructing a
+    /// `SamplingClient` with an api_key that can't become a valid HTTP
+    /// header value (contains a control character) must log shape metadata
+    /// only (length/ASCII-ness), never the raw secret, on both the
+    /// `XApiKey` and `Bearer` auth-scheme error paths.
+    #[test]
+    fn invalid_api_key_error_path_never_logs_raw_secret() {
+        let secret = "super-secret-value-\u{0007}-should-not-leak";
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+
+        for scheme in [AuthScheme::XApiKey, AuthScheme::Bearer] {
+            let mut config = minimal_config();
+            config.api_key = Some(secret.to_string());
+            config.auth_scheme = scheme;
+
+            let subscriber = CapturingSubscriber {
+                events: events.clone(),
+            };
+            let result = tracing::subscriber::with_default(subscriber, || {
+                SamplingClient::new(config.clone())
+            });
+            assert!(result.is_err(), "expected invalid header value to error");
+        }
+
+        let captured = events.lock().unwrap();
+        assert!(!captured.is_empty(), "expected the debug! log to fire");
+        for line in captured.iter() {
+            assert!(
+                !line.contains(secret),
+                "raw api_key leaked into a tracing event: {line}"
+            );
+            assert!(
+                !line.contains("super-secret-value"),
+                "partial api_key leaked into a tracing event: {line}"
+            );
+        }
+        // Shape metadata should still be present so the log stays useful.
+        assert!(
+            captured.iter().any(|l| l.contains("api_key_len")),
+            "expected api_key_len field in captured events: {captured:?}"
+        );
     }
 
     /// Verify the serialized shape of StreamingChatRequest matches the
