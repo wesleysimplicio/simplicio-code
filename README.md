@@ -16,7 +16,7 @@ controle de contexto e economia de tokens.
 [License](#license)
 
 Este é um fork privado de produto. O remoto `upstream` preserva a origem do
-Grok Build; integrações próprias vivem neste repositório.
+Simplicio Code; integrações próprias vivem neste repositório.
 
 A small `SOURCE_REV` file at the root records the full monorepo commit SHA
 for the version of the code present in this tree.
@@ -27,11 +27,26 @@ for the version of the code present in this tree.
 
 ## Estado do produto
 
+Versão atual: **0.3.0-beta.1**.
+
 - leitura de arquivos obrigatoriamente via `simplicio_file_read`;
 - handshake MCP valida que o processo é o Simplicio Runtime verdadeiro;
 - falha fechada: sem Runtime, o agente não lê diretamente do disco;
 - TUI, headless, workspace e ACP compartilham o mesmo backend de leitura;
+- ao abrir uma pasta, o Runtime inicia o mapa geral em segundo plano;
+- o modelo aparece como **Simplicio-1** e usa `tencent/hy3:free` via OpenRouter;
+- o tema padrão **Simplicio Brasil** usa verde e amarelo;
 - escrita/exclusão ainda usam o backend local existente nesta primeira versão.
+
+Para desenvolvimento local, forneça a credencial apenas pelo ambiente:
+
+```sh
+export OPENROUTER_API_KEY="..."
+```
+
+A chave nunca deve ser gravada no repositório nem distribuída no binário. A
+sincronização de login e assinatura Simplicio será adicionada numa atualização
+posterior ao beta, quando o cliente passará a consumir o gateway autenticado.
 
 Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.
 

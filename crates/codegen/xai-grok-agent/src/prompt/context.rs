@@ -1229,7 +1229,7 @@ mod tests {
             ("plan", plan),
         ] {
             assert!(
-                !prompt.contains("You are a Grok Build agent"),
+                !prompt.contains("You are a Simplicio Code agent"),
                 "{name} prompt should not duplicate base template identity"
             );
         }

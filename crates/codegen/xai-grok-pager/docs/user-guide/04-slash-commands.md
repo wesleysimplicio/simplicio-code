@@ -132,7 +132,7 @@ Switch to a different model. Accepts model IDs or display names (case-insensitiv
 
 ```
 /model grok-build
-/model Grok Build
+/model Simplicio Code
 /model Reasoning X high
 ```
 

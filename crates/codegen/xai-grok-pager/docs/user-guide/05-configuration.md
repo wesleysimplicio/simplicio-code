@@ -590,7 +590,7 @@ default = "company-grok"
 [model.company-grok]
 model = "grok-build"
 base_url = "https://grok-proxy.acme.com/"
-name = "Grok Build Latest (Proxy)"
+name = "Simplicio Code Latest (Proxy)"
 context_window = 128000
 
 [features]

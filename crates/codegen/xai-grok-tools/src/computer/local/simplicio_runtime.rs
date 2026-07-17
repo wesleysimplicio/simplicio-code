@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use simplicio_runtime_client::{DEFAULT_MAX_FILE_BYTES, RuntimeClient};
+use simplicio_runtime_client::{DEFAULT_MAX_FILE_BYTES, RuntimeClient, start_workspace_map};
 
 use crate::computer::{
     local::LocalFs,
@@ -21,8 +21,12 @@ pub struct SimplicioRuntimeFs {
 
 impl SimplicioRuntimeFs {
     pub fn new(root: impl Into<PathBuf>) -> Self {
+        let root = root.into();
+        if let Err(error) = start_workspace_map(&root) {
+            tracing::warn!(%error, workspace = %root.display(), "Simplicio Mapper bootstrap failed");
+        }
         Self {
-            root: root.into(),
+            root,
             client: Arc::new(Mutex::new(None)),
             local_writes: LocalFs,
         }
@@ -69,8 +73,7 @@ impl AsyncFileSystem for SimplicioRuntimeFs {
                 .map_err(|_| ComputerError::io("Simplicio Runtime client lock poisoned"))?;
             if guard.is_none() {
                 *guard = Some(
-                    RuntimeClient::spawn_in(&root)
-                        .map_err(|e| ComputerError::io(e.to_string()))?,
+                    RuntimeClient::spawn_in(&root).map_err(|e| ComputerError::io(e.to_string()))?,
                 );
             }
             let result = guard.as_mut().expect("runtime initialized").read_file(

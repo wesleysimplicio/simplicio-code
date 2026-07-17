@@ -1,18 +1,22 @@
 {
-  "default": "grok-build",
-  "web_search": "grok-4.20-multi-agent",
-  "image_description": "grok-build",
-  "session_summary": "grok-build",
+  "default": "simplicio-1",
+  "web_search": "simplicio-1",
+  "image_description": "simplicio-1",
+  "session_summary": "simplicio-1",
   "models": [
     {
-      "model": "grok-build",
-      "name": "Grok Build",
-      "description": "Best for advanced coding tasks",
-      "context_window": 500000,
+      "id": "simplicio-1",
+      "model": "tencent/hy3:free",
+      "name": "Simplicio-1",
+      "description": "Simplicio Code beta, powered through OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "env_key": "OPENROUTER_API_KEY",
+      "context_window": 262144,
       "temperature": 0.7,
       "top_p": 0.95,
-      "api_backend": "responses",
-      "supported_in_api": false
+      "api_backend": "chat_completions",
+      "supported_in_api": true,
+      "use_concise": true
     }
   ]
 }

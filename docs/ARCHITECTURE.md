@@ -53,5 +53,5 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
 - Depois: identidade/entitlement Simplicio e gateway único de inferência.
 - Por último: instaladores assinados, atualização automática e release privada.
 
-O remoto Git `upstream` continuará apontando para o Grok Build para permitir
+O remoto Git `upstream` continuará apontando para o Simplicio Code para permitir
 absorver correções de segurança e compatibilidade sem perder a camada Simplicio.

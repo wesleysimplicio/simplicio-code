@@ -410,7 +410,7 @@ fn version_with_channel() -> &'static str {
 #[command(
     name = "grok",
     version = version_with_channel(),
-    about = "Grok Build TUI",
+    about = "Simplicio Code TUI",
     disable_version_flag = true,
     next_display_order = None,
     help_template = "\
