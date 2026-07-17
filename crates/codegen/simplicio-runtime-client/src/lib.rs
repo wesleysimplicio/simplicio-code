@@ -3,14 +3,18 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
+    collections::HashSet,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
+    sync::{LazyLock, Mutex},
 };
 
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const EXPECTED_SERVER: &str = "simplicio";
 pub const DEFAULT_MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
+static MAPPED_WORKSPACES: LazyLock<Mutex<HashSet<PathBuf>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -28,6 +32,45 @@ pub enum Error {
     IdentityMismatch(String),
     #[error("Simplicio Runtime rejected the file read: {0}")]
     ReadRejected(String),
+}
+
+/// Starts the Runtime-owned repository map once per workspace and process.
+///
+/// Mapping runs in the background so selecting a large folder never blocks the UI.
+pub fn start_workspace_map(workspace: &Path) -> Result<bool, Error> {
+    let workspace = workspace
+        .canonicalize()
+        .unwrap_or_else(|_| workspace.to_path_buf());
+    let binary = resolve_binary()?;
+    let mut mapped = MAPPED_WORKSPACES
+        .lock()
+        .map_err(|_| Error::Spawn("workspace map lock poisoned".into()))?;
+    if !mapped.insert(workspace.clone()) {
+        return Ok(false);
+    }
+    drop(mapped);
+
+    let child = Command::new(&binary)
+        .args(["runtime", "map", "--json", "--repo"])
+        .arg(&workspace)
+        .current_dir(&workspace)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+    let mut child = match child {
+        Ok(child) => child,
+        Err(error) => {
+            if let Ok(mut mapped) = MAPPED_WORKSPACES.lock() {
+                mapped.remove(&workspace);
+            }
+            return Err(Error::Spawn(format!("{}: {error}", binary.display())));
+        }
+    };
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(true)
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]

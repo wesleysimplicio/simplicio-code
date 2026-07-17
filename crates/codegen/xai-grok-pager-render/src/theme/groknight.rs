@@ -1,4 +1,4 @@
-//! GrokNight theme — neutral gray base with TokyoNight accent colors.
+//! Simplicio Brasil theme — dark base with Brazilian green and yellow accents.
 //!
 //! The canonical palette is defined in RGB (`Color::Rgb`). At startup the
 //! theme is run through [`Theme::quantized`] which downgrades every color
@@ -39,20 +39,20 @@ mod palette {
     pub const DARK3: Color = rgb(90, 90, 90); //  #5a5a5a — medium gray
     pub const DARK5: Color = rgb(120, 120, 120); // #787878 — bright gray
 
-    // ── Accent colors (TokyoNight Night) ─────────────────────────────────
-    pub const BLUE: Color = rgb(122, 162, 247); // #7aa2f7
+    // ── Accent colors (Brazil) ───────────────────────────────────────────
+    pub const BLUE: Color = rgb(0, 39, 118); // #002776
     pub const BLUE0: Color = rgb(61, 89, 161); // #3d59a1
     pub const BLUE1: Color = rgb(58, 149, 171); // #3A95AB
     pub const CYAN: Color = rgb(125, 207, 255); // #7dcfff
-    pub const GREEN: Color = rgb(158, 206, 106); // #9ece6a
-    pub const GREEN1: Color = rgb(115, 218, 202); // #73daca
-    pub const MAGENTA: Color = rgb(187, 154, 247); // #bb9af7
+    pub const GREEN: Color = rgb(0, 151, 57); // #009739
+    pub const GREEN1: Color = rgb(0, 200, 83); // #00c853
+    pub const MAGENTA: Color = rgb(0, 151, 57); // compatibility alias
     pub const ORANGE: Color = rgb(255, 158, 100); // #ff9e64
     pub const PURPLE: Color = rgb(157, 124, 216); // #9d7cd8
     pub const RED: Color = rgb(247, 118, 142); // #f7768e
     pub const RED1: Color = rgb(219, 75, 75); // #db4b4b
-    pub const TEAL: Color = rgb(26, 188, 156); // #1abc9c
-    pub const YELLOW: Color = rgb(224, 175, 104); // #e0af68
+    pub const TEAL: Color = rgb(0, 200, 83); // bright Brazil green
+    pub const YELLOW: Color = rgb(255, 223, 0); // #ffdf00
 
     pub const RED_DARK: Color = rgb(66, 14, 20); // #420e14 — quantizes to 256-color red, not gray
     pub const GREEN_DARK: Color = rgb(6, 56, 6); // #063806 — quantizes to 256-color green, not gray
@@ -74,13 +74,13 @@ impl Theme {
             bg_terminal: BG,
 
             accent_user: FG_DARK,
-            accent_assistant: MAGENTA,
-            accent_thinking: MAGENTA,
+            accent_assistant: GREEN1,
+            accent_thinking: YELLOW,
             accent_tool: DARK5,
             accent_system: BLUE,
             accent_error: RED,
             accent_success: GREEN,
-            accent_running: MAGENTA,
+            accent_running: GREEN1,
             accent_skill: BLUE,
 
             text_primary: FG,
@@ -99,7 +99,7 @@ impl Theme {
 
             accent_plan: rgb(255, 219, 141), // #FFDB8D — golden
 
-            accent_verify: rgb(187, 154, 247), // #bb9af7 — violet
+            accent_verify: BLUE,
 
             accent_feedback: GREEN1, // #73daca
 
@@ -107,7 +107,7 @@ impl Theme {
 
             selection_border: rgb(60, 60, 65),
             prompt_border: rgb(50, 50, 55), // #323237 — dimmer prompt chrome
-            prompt_border_active: rgb(80, 80, 88), // #505058 — brighter when focused
+            prompt_border_active: GREEN,
             hover_border: rgb(30, 30, 34),
 
             accent_model: TEAL,
@@ -128,9 +128,9 @@ impl Theme {
             paste_fg: FG_DARK,
             paste_dim: FG_GUTTER,
 
-            md_heading_h1: TEAL,
+            md_heading_h1: GREEN1,
             md_heading_h1_mod: Modifier::BOLD,
-            md_heading_h2: BLUE,
+            md_heading_h2: YELLOW,
             md_heading_h2_mod: Modifier::BOLD,
             md_heading_h3: PURPLE,
             md_heading_h3_mod: Modifier::BOLD,

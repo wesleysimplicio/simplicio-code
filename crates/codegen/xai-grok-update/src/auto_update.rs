@@ -66,7 +66,7 @@ pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<
 
     if let Some(error) = status.error.as_deref() {
         println!(
-            "Grok Build - v{} [{}]",
+            "Simplicio Code - v{} [{}]",
             status.current_version, status.channel
         );
         println!("Update check failed: {error}");
@@ -78,24 +78,27 @@ pub fn print_update_status(status: &UpdateStatus, json: bool) -> anyhow::Result<
     if status.update_available {
         if let Some(latest_version) = status.latest_version.as_deref() {
             println!(
-                "A new version of Grok Build is available: {} -> {}{}",
+                "A new version of Simplicio Code is available: {} -> {}{}",
                 status.current_version, latest_version, channel_label
             );
         } else {
-            println!("A new version of Grok Build is available.");
+            println!("A new version of Simplicio Code is available.");
         }
         return Ok(());
     }
 
     if let Some(latest_version) = status.latest_version.as_deref() {
         println!(
-            "Grok Build - v{} (latest: {}){}",
+            "Simplicio Code - v{} (latest: {}){}",
             status.current_version, latest_version, channel_label
         );
         return Ok(());
     }
 
-    println!("Grok Build - v{}{}", status.current_version, channel_label);
+    println!(
+        "Simplicio Code - v{}{}",
+        status.current_version, channel_label
+    );
     Ok(())
 }
 
@@ -523,7 +526,7 @@ pub async fn run_update_if_available(
     let channel_label = format!(" [{}]", update_config.channel);
     if auto_update {
         eprintln!(
-            "A new version of Grok Build is available: {} -> {}{}",
+            "A new version of Simplicio Code is available: {} -> {}{}",
             current_version, latest_version, channel_label
         );
         if interactive {
@@ -551,7 +554,7 @@ pub async fn run_update_if_available(
             return Ok(false);
         }
         eprintln!(
-            "A new version of Grok Build is available: {} -> {}{}",
+            "A new version of Simplicio Code is available: {} -> {}{}",
             current_version, latest_version, channel_label
         );
         if interactive {

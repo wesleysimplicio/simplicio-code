@@ -2064,7 +2064,7 @@
 - **Directly waited** background tasks no longer trigger extra notifications.
 - **Loop indicators** are now properly removed when subagents shut down.
 - **run_terminal_cmd** tool name restored; background parameter rename preserved.
-- **Model picker** now recovers automatically after sleep/resume or temporary network issues instead of staying stuck on Grok Build.
+- **Model picker** now recovers automatically after sleep/resume or temporary network issues instead of staying stuck on Simplicio Code.
 - **MCP server connections** now succeed for servers that enforce audience binding on OAuth tokens.
 - **read_file** now accesses gitignored files by default (grep/list_dir/search_replace still block them unless configured).
 - **--no-ask-user** flag now correctly disables the ask_user_question tool in both TUI and headless modes.
@@ -3000,7 +3000,7 @@
 
 ## Features
 
-- **X Premium and Premium+** tiers now grant access to Grok Build.
+- **X Premium and Premium+** tiers now grant access to Simplicio Code.
 
 ## Bug Fixes
 

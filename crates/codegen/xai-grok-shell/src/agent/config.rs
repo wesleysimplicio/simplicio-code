@@ -3341,6 +3341,8 @@ pub fn effective_classifier_supports_re(
 struct DefaultModelJson {
     id: Option<String>,
     model: String,
+    base_url: Option<String>,
+    env_key: Option<EnvKeys>,
     name: Option<String>,
     description: Option<String>,
     context_window: Option<NonZeroU64>,
@@ -3368,6 +3370,8 @@ struct DefaultModelJson {
     compaction_at_tokens: Option<CompactionAtTokens>,
     #[serde(default)]
     show_model_fingerprint: bool,
+    #[serde(default)]
+    use_concise: bool,
 }
 fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryConfig> {
     let root: serde_json::Value = serde_json::from_str(crate::models::DEFAULT_MODELS_JSON)
@@ -3397,8 +3401,10 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
             let config = ModelEntryConfig {
                 id: m.id,
                 model: m.model,
-                base_url: endpoints.resolve_inference_base_url(),
-                api_base_url: Some(endpoints.xai_api_base_url.clone()),
+                base_url: m
+                    .base_url
+                    .unwrap_or_else(|| endpoints.resolve_inference_base_url()),
+                api_base_url: None,
                 name: m.name,
                 description: m.description,
                 context_window,
@@ -3413,9 +3419,9 @@ fn default_models(endpoints: &EndpointsConfig) -> IndexMap<String, ModelEntryCon
                 inference_idle_timeout_secs: m.inference_idle_timeout_secs,
                 max_retries: None,
                 api_key: None,
-                env_key: None,
+                env_key: m.env_key,
                 extra_headers: IndexMap::new(),
-                use_concise: false,
+                use_concise: m.use_concise,
                 hidden: m.hidden,
                 supported_in_api: m.supported_in_api,
                 reasoning_effort: m.reasoning_effort,
