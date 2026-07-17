@@ -6,6 +6,7 @@ members = [
     "crates/build/xai-proto-build",
     "crates/codegen/ptyctl",
     "crates/codegen/ptyctl-cli",
+    "crates/codegen/simplicio-code-gateway",
     "crates/codegen/simplicio-runtime-client",
     "crates/codegen/xai-acp-lib",
     "crates/codegen/xai-agent-lifecycle",
@@ -215,6 +216,7 @@ scraper = "0.23"
 semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+simplicio-code-gateway = { path = "crates/codegen/simplicio-code-gateway" }
 simplicio-runtime-client = { path = "crates/codegen/simplicio-runtime-client" }
 serde_path_to_error = "0.1"
 serde_yaml = "0.9"

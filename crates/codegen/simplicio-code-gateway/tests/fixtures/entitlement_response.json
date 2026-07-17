@@ -1,0 +1,1 @@
+{ "plan": "simplicio-pro", "expires_at": "2030-01-01T00:00:00Z", "max_request_tokens": 100000, "max_tool_calls": 32 }
