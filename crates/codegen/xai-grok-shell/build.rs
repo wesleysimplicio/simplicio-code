@@ -75,6 +75,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
+    // No explicit override: fall back to an `rg` already installed on the
+    // system PATH before attempting a network download. This keeps offline /
+    // egress-restricted builds working when the host already has ripgrep
+    // installed (common in CI containers and dev sandboxes).
+    if let Some(path) = find_rg_on_path() {
+        let dest = gen_dir.join(format!("rg-{}-path.bin", RG_VER));
+        println!("cargo:rustc-env=GROK_SHELL_RG_TARGET=path");
+        let _ = fs::remove_file(&dest);
+        fs::copy(&path, &dest).map_err(|e| {
+            format!(
+                "Failed copying rg found on PATH: {e} from path {} to dest {}",
+                path.display(),
+                dest.display()
+            )
+        })?;
+        return Ok(());
+    }
+
     // Determine supported ripgrep asset triple for auto-download.
     let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
 
@@ -163,4 +181,18 @@ fn is_bazel_build(manifest_dir: &Path) -> bool {
         || env::var_os("BAZEL_OUTPUT_BASE").is_some()
         || manifest_dir_str.contains("/execroot/")
         || manifest_dir_str.contains("/bazel-out/")
+}
+
+/// Look for an `rg` binary on the system `PATH`, mirroring `which rg` without
+/// pulling in a `which`-crate dependency. Returns the first match found.
+fn find_rg_on_path() -> Option<PathBuf> {
+    let path_var = env::var_os("PATH")?;
+    let exe_name = if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+        "rg.exe"
+    } else {
+        "rg"
+    };
+    env::split_paths(&path_var)
+        .map(|dir| dir.join(exe_name))
+        .find(|candidate| candidate.is_file())
 }

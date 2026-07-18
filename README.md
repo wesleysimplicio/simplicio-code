@@ -93,6 +93,16 @@ Requirements:
 
 - **protoc** — proto codegen resolves [`bin/protoc`](bin/protoc) via DotSlash,
   or falls back to a `protoc` on `PATH` / `$PROTOC`.
+- **ripgrep (`rg`)** — release builds of `xai-grok-tools` and `xai-grok-shell`
+  bundle a static `rg` binary for the in-app search/shell tools. Resolution
+  order: (1) an explicit override env var always wins if set —
+  `GROK_TOOLS_BUNDLE_RG_PATH` for `xai-grok-tools`, `GROK_SHELL_BUNDLE_RG_PATH`
+  for `xai-grok-shell` — pointing at a local `rg` binary to bundle; (2) an
+  `rg` already on `PATH` is detected automatically and bundled, no network
+  access needed; (3) otherwise the build script downloads a pinned `rg`
+  release from GitHub Releases, which requires outbound network access and
+  fails on egress-restricted hosts/proxies. On such hosts, either install
+  `ripgrep` so it's on `PATH` before building, or set the override env var.
 - macOS and Linux are supported build hosts; Windows builds are best-effort
   and not currently tested from this tree.
 
