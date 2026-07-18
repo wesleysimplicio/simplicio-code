@@ -827,6 +827,7 @@ pub(crate) async fn spawn_session_actor(
         working_directory: tool_context.cwd.as_path().to_path_buf(),
         terminal_backend: terminal_backend.clone(),
         fs_backend: fs_backend.clone(),
+        search_backend: Some(search_backend.clone()),
         tools_notification_handle: tools_notification_handle.clone(),
         bridge_state_path: bridge_state_path.clone(),
         session_env: tool_context.session_env.clone(),
