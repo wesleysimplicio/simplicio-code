@@ -1,9 +1,9 @@
 //! Pure shared token-estimation primitives.
 //!
-//! This crate is the single source of truth for the bytes/4 heuristic and the
+//! This crate is the single source of truth for local BPE estimation and the
 //! derived-display arithmetic that `/context`, `/session-info`, the auto-compact
 //! gates, the preflight overflow check, and every client renderer use to talk
-//! about context-window usage.
+//! about context-window usage. Provider-reported usage remains authoritative.
 
 /// Bytes per token under the rough character-based heuristic.
 pub const BYTES_PER_TOKEN: u64 = 4;
@@ -12,10 +12,16 @@ pub const BYTES_PER_TOKEN: u64 = 4;
 /// low-resolution image patches.
 pub const IMAGE_TOKEN_ESTIMATE: u64 = 765;
 
-/// Bytes/4 estimate of a string's token count.
+/// BPE estimate using OpenAI's o200k_base encoding. The established bytes/4
+/// heuristic remains a fail-open fallback if the tokenizer cannot initialize.
 #[inline]
 pub fn estimate_tokens(s: &str) -> u64 {
-    (s.len() as u64) / BYTES_PER_TOKEN
+    if s.is_empty() {
+        return 0;
+    }
+    tiktoken_rs::o200k_base()
+        .map(|encoding| encoding.encode_with_special_tokens(s).len() as u64)
+        .unwrap_or_else(|_| (s.len() as u64) / BYTES_PER_TOKEN)
 }
 
 /// Inverse of [`estimate_tokens`]: convert a token budget into a character
@@ -108,11 +114,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn estimate_tokens_is_bytes_over_four() {
+    fn estimate_tokens_uses_bpe_and_handles_empty() {
         assert_eq!(estimate_tokens(""), 0);
-        assert_eq!(estimate_tokens("abc"), 0);
-        assert_eq!(estimate_tokens("abcd"), 1);
-        assert_eq!(estimate_tokens(&"x".repeat(4000)), 1000);
+        assert!(estimate_tokens("Olá 👋\nconst value = { key: 1 };") > 0);
+        assert!(estimate_tokens(&"x".repeat(4000)) > 0);
     }
 
     #[test]
