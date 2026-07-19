@@ -1720,10 +1720,12 @@ async fn async_main() -> Result<()> {
         args.cwd.as_deref(),
     );
     flag_dashboard_at_startup_if_requested(&mut args)?;
+    let positional_prompt_is_headless = args.positional_prompt_is_headless();
     let is_interactive = args.command.is_none()
         && args.single.is_none()
         && args.prompt_json.is_none()
-        && args.prompt_file.is_none();
+        && args.prompt_file.is_none()
+        && !positional_prompt_is_headless;
     xai_grok_shell::http::set_client_name(if is_interactive {
         xai_grok_workspace::permission::ClientType::GrokPager
     } else {
@@ -1921,11 +1923,19 @@ async fn async_main() -> Result<()> {
             }
         }
     }
-    let headless_prompt = xai_grok_pager::headless::HeadlessPrompt::from_args(
-        args.single.as_deref(),
-        args.prompt_json.as_deref(),
-        args.prompt_file.as_deref(),
-    )?;
+    let headless_prompt = if positional_prompt_is_headless {
+        args.prompt
+            .as_deref()
+            .map(xai_grok_pager::headless::HeadlessPrompt::from_text)
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("positional prompt: {e}"))?
+    } else {
+        xai_grok_pager::headless::HeadlessPrompt::from_args(
+            args.single.as_deref(),
+            args.prompt_json.as_deref(),
+            args.prompt_file.as_deref(),
+        )?
+    };
     if let Some(prompt) = headless_prompt {
         init_tracing_simple(HEADLESS_ENTRYPOINT);
         let _otel_guard = xai_grok_telemetry::otel_layer::otel_guard();
