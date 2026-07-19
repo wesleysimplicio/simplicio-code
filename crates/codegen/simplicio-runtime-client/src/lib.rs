@@ -797,6 +797,7 @@ fn parse_search_result(text: &str) -> Result<SearchResult, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use std::fs;
 
     #[test]
@@ -852,6 +853,48 @@ mod tests {
         assert!(secure_glob("").is_err());
         assert_eq!(secure_glob("*.rs").unwrap(), "*.rs");
         assert_eq!(secure_glob("src/**/*.ts").unwrap(), "src/**/*.ts");
+    }
+
+    proptest! {
+        /// Generalizes the example-based traversal checks to arbitrary path
+        /// prefixes. The Runtime client must reject every generated path that
+        /// contains a parent component before canonicalization can resolve it.
+        #[test]
+        fn secure_relative_path_rejects_generated_parent_segments(
+            prefix in prop::collection::vec("[a-zA-Z0-9_-]{1,16}", 0..5),
+        ) {
+            let repo = tempfile::tempdir().unwrap();
+            let mut path = PathBuf::new();
+            for segment in prefix {
+                path.push(segment);
+            }
+            path.push("..");
+            path.push("outside");
+            prop_assert!(secure_relative_path(repo.path(), &path).is_err());
+        }
+
+        /// A safe single-segment path stays within the repository and is
+        /// returned in normalized repository-relative form.
+        #[test]
+        fn secure_relative_path_accepts_generated_safe_segments(
+            segment in "[a-zA-Z0-9_-]{1,32}",
+        ) {
+            let repo = tempfile::tempdir().unwrap();
+            let path = PathBuf::from(&segment);
+            let result = secure_relative_path(repo.path(), &path).unwrap();
+            prop_assert_eq!(result, segment);
+        }
+
+        /// No glob containing a parent segment may reach the Runtime search
+        /// contract, regardless of the surrounding wildcard/text content.
+        #[test]
+        fn secure_glob_rejects_generated_parent_segments(
+            left in "[a-zA-Z0-9_*?/]{0,24}",
+            right in "[a-zA-Z0-9_*?]{0,24}",
+        ) {
+            let glob = format!("{left}/../{right}");
+            prop_assert!(secure_glob(&glob).is_err());
+        }
     }
 
     #[test]
