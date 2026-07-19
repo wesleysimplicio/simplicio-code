@@ -196,6 +196,7 @@ portable-pty = "0.9"
 pprof = "0.15"
 pretty_assertions = "1"
 prometheus = { version = "0.14", features = ["process"] }
+proptest = "1"
 prost = "0.14"
 prost-build = "0.14"
 pulldown-cmark = "0.13"
