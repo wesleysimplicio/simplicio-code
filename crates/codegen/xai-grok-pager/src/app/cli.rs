@@ -919,6 +919,18 @@ impl PagerArgs {
             .map(str::trim)
             .filter(|s| !s.is_empty())
     }
+
+    /// Whether a positional prompt explicitly requests the single-turn runner.
+    ///
+    /// Positional prompts normally seed the interactive TUI for backwards
+    /// compatibility.  An explicit non-interactive permission flag changes
+    /// the intent, however: automation users commonly write
+    /// `grok --always-approve "task"` and must not be routed into a TUI that
+    /// waits for terminal input forever.  Keep the default positional form
+    /// interactive while making the automation form equivalent to `-p`.
+    pub fn positional_prompt_is_headless(&self) -> bool {
+        self.prompt.is_some() && (self.yolo || self.permission_mode_flag.is_some())
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -1188,6 +1200,25 @@ mod tests {
         let err = PagerArgs::try_parse_from(["grok", "-p", "headless", "interactive"])
             .expect_err("positional prompt + --single must conflict");
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+    #[test]
+    fn explicit_permission_flags_route_positional_prompt_to_headless() {
+        let yolo = PagerArgs::try_parse_from(["grok", "--always-approve", "task"])
+            .expect("always-approve + positional prompt parses");
+        assert!(yolo.positional_prompt_is_headless());
+
+        let permission_mode = PagerArgs::try_parse_from([
+            "grok",
+            "--permission-mode",
+            "bypassPermissions",
+            "task",
+        ])
+        .expect("permission-mode + positional prompt parses");
+        assert!(permission_mode.positional_prompt_is_headless());
+
+        let interactive = PagerArgs::try_parse_from(["grok", "task"])
+            .expect("plain positional prompt parses");
+        assert!(!interactive.positional_prompt_is_headless());
     }
     #[test]
     fn worktree_flag_and_initial_prompt_combine() {

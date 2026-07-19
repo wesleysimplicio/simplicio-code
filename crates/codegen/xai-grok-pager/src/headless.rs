@@ -88,7 +88,7 @@ impl HeadlessPrompt {
         }
     }
 
-    fn from_text(text: &str) -> anyhow::Result<Self> {
+    pub fn from_text(text: &str) -> anyhow::Result<Self> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
             anyhow::bail!("prompt is empty");
