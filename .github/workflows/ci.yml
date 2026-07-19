@@ -62,6 +62,26 @@ jobs:
         run: rustup show
       - run: cargo fmt --all -- --check
 
+  simplicio-owned-reports:
+    name: Simplicio invariant and invocation reports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run scoped struct-initializer review report
+        continue-on-error: true
+        run: python3 scripts/check_unused_struct_locals.py --json > struct-initializer-report.json
+      - name: Generate offline headless invocation matrix
+        run: python3 scripts/headless_invocation_matrix.py --json > headless-invocation-matrix.json
+      - name: Run gate self-tests
+        run: python3 scripts/tests/test_issue_68_gates.py
+      - name: Upload Simplicio reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplicio-owned-reports
+          path: |
+            struct-initializer-report.json
+            headless-invocation-matrix.json
+
   # Fails the build on any secret-shaped string introduced by this push/PR.
   # This is the CI-side half of issue #9's "block release when the scanner
   # finds a secret" requirement.
