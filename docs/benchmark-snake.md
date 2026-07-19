@@ -11,7 +11,7 @@ From the Simplicio Code checkout:
 
     python3 scripts/benchmark_snake.py \
       --model openrouter/<model> \
-      --simplicio-cmd 'simplicio-code run {prompt} --repo {workspace} --json' \
+      --simplicio-cmd 'simplicio-code -p {prompt} --output-format json' \
       --hermes-cmd 'hermes --model {model} --accept-hooks --prompt {prompt}' \
       --repetitions 3 \
       --timeout 900 \
