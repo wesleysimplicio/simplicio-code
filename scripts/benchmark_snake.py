@@ -21,7 +21,7 @@ def ms() -> int:
 
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 def command(template: str, workspace: Path, model: str) -> list[str]:
     return [x.format(workspace=str(workspace), model=model, prompt=PROMPT)
@@ -42,7 +42,7 @@ def proc_stats(pid: int) -> tuple[int, int]:
 
 def usage(text: str) -> dict[str, int] | None:
     found: dict[str, int] = {}
-    for raw in re.findall(r"\\{[^{}]{0,3000}\\}", text, re.S):
+    for raw in re.findall(r"\{[^{}]{0,3000}\}", text, re.S):
         try:
             stack = [json.loads(raw)]
         except json.JSONDecodeError:
@@ -162,7 +162,7 @@ def run_agent(name: str, template: str, root: Path, model: str, timeout: int,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--simplicio-cmd", default="simplicio-code run {prompt} --repo {workspace} --json")
+    ap.add_argument("--simplicio-cmd", default="simplicio-code -p {prompt} --output-format json")
     ap.add_argument("--hermes-cmd", default="hermes --model {model} --accept-hooks --prompt {prompt}")
     ap.add_argument("--model", default=os.environ.get("MODEL", ""))
     ap.add_argument("--workspace", type=Path)
@@ -201,7 +201,7 @@ def main() -> int:
     }
     write_json(output / "benchmark-result.json", report)
     (output / "events.jsonl").write_text(
-        "\\n".join(json.dumps(x, sort_keys=True) for x in events) + "\\n", encoding="utf-8")
+        "\n".join(json.dumps(x, sort_keys=True) for x in events) + "\n", encoding="utf-8")
     write_json(output / "cost-ledger.json", {
         "schema": "simplicio.cost-ledger/v1", "model": args.model,
         "rows": [{"agent": r["agent"], "tokens": r.get("tokens"),
@@ -219,7 +219,7 @@ def main() -> int:
             rss=r.get("rss_peak_bytes") or "UNAVAILABLE",
             tokens=(r.get("tokens") or {}).get("total_tokens", "UNAVAILABLE"),
             runtime=r.get("runtime_gate", {}).get("status", "N/A")))
-    (output / "benchmark-report.md").write_text("\\n".join(lines) + "\\n", encoding="utf-8")
+    (output / "benchmark-report.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(json.dumps({"status": status, "output": str(output)}, indent=2))
     return 0 if status == "PASS" else 1
 
