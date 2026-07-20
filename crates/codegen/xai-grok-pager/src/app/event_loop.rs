@@ -1974,9 +1974,9 @@ pub(crate) async fn run(
 
             _ = agent_attention_poll => {
                 agent_attention_poll_at = None;
-                if let Some(cursor) = app.agent_attention.begin_poll() {
+                if let Some(request) = app.agent_attention.begin_poll() {
                     let effect = Effect::PollAgentAttention {
-                        cursor,
+                        request,
                         cancel: agent_attention_lifecycle.token(),
                     };
                     if process_effects(vec![effect], &mut tasks, &mut app, &progress_tx) {

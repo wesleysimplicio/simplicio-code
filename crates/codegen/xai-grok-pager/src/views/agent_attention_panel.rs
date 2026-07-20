@@ -1,6 +1,8 @@
 //! Non-focusable side panel for the Simplicio Agent host projection.
 
-use crate::app::agent_attention::{AgentAttentionPanelState, AgentHostStatus};
+use crate::app::agent_attention::{
+    AgentAttentionPanelState, AgentAttentionResyncState, AgentHostStatus,
+};
 use crate::theme::Theme;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -96,13 +98,20 @@ pub fn render_agent_attention_panel(
                 format!("reason: {}", reason.code()),
                 Style::default().fg(theme.gray),
             )));
-            if state.attention.is_some() {
+            if state.attention().is_some() {
                 lines.push(Line::from(Span::styled(
                     "showing last known data",
                     Style::default().fg(theme.gray),
                 )));
             }
         }
+    }
+
+    if state.resync == AgentAttentionResyncState::RestartResync {
+        lines.push(Line::from(Span::styled(
+            "↻ restart_resync",
+            Style::default().fg(theme.accent_system),
+        )));
     }
 
     lines.push(Line::default());
@@ -112,7 +121,7 @@ pub fn render_agent_attention_panel(
             .fg(theme.text_primary)
             .add_modifier(Modifier::BOLD),
     )));
-    if let Some(attention) = &state.attention {
+    if let Some(attention) = state.attention() {
         lines.push(Line::from(Span::styled(
             format!("{} captured", attention.unread),
             Style::default().fg(theme.gray_bright),
@@ -176,7 +185,27 @@ pub fn render_agent_attention_panel(
 mod tests {
     use super::*;
     use crate::app::agent_attention::AgentAttentionPollResult;
-    use simplicio_agent_client::AgentAttentionState;
+    use simplicio_agent_client::{AgentAttentionState, HostInstanceId};
+
+    const HOST_A: &str = "panel-host-instance-aaaa";
+    const HOST_B: &str = "panel-host-instance-bbbb";
+
+    fn complete_ready(
+        state: &mut AgentAttentionPanelState,
+        host: &str,
+        replayed_from_cursor: u64,
+        profile: crate::app::agent_attention::AgentHostProfile,
+        attention: AgentAttentionState,
+    ) {
+        let request = state.begin_poll().unwrap();
+        state.complete_poll(AgentAttentionPollResult::Ready {
+            request,
+            host_instance_id: HostInstanceId::from_untrusted(host).unwrap(),
+            replayed_from_cursor,
+            profile,
+            attention,
+        });
+    }
 
     fn buffer_text(buf: &Buffer) -> String {
         let area = buf.area;
@@ -210,9 +239,11 @@ mod tests {
     #[test]
     fn degraded_state_is_explicit_and_passive() {
         let mut state = AgentAttentionPanelState::default();
-        state.complete_poll(AgentAttentionPollResult::Degraded(
-            crate::app::agent_attention::AgentHostDegradedReason::AgentUnavailable,
-        ));
+        let request = state.begin_poll().unwrap();
+        state.complete_poll(AgentAttentionPollResult::Degraded {
+            request,
+            reason: crate::app::agent_attention::AgentHostDegradedReason::AgentUnavailable,
+        });
         let area = Rect::new(0, 0, 32, 12);
         let mut buf = Buffer::empty(area);
         render_agent_attention_panel(area, &mut buf, &state);
@@ -226,17 +257,20 @@ mod tests {
     #[test]
     fn advisory_action_is_labeled_as_not_run() {
         let mut state = AgentAttentionPanelState::default();
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: crate::app::agent_attention::AgentHostProfile::Desktop,
-            attention: AgentAttentionState {
+        complete_ready(
+            &mut state,
+            HOST_A,
+            0,
+            crate::app::agent_attention::AgentHostProfile::Desktop,
+            AgentAttentionState {
                 cursor: 7,
                 unread: 1,
                 highest_severity: Some(AdvisorySeverity::Warning),
                 latest_summary: Some("Agent host is saturated.".into()),
                 suggested_action: Some("retry".into()),
-                history_truncated: false,
+                history_truncated: true,
             },
-        });
+        );
         let area = Rect::new(0, 0, 32, 18);
         let mut buf = Buffer::empty(area);
         render_agent_attention_panel(area, &mut buf, &state);
@@ -253,7 +287,11 @@ mod tests {
         ));
         let safe_reason = crate::app::agent_attention::safe_reason(&raw_error);
         let mut degraded = AgentAttentionPanelState::default();
-        degraded.complete_poll(AgentAttentionPollResult::Degraded(safe_reason));
+        let request = degraded.begin_poll().unwrap();
+        degraded.complete_poll(AgentAttentionPollResult::Degraded {
+            request,
+            reason: safe_reason,
+        });
         let area = Rect::new(0, 0, 32, 12);
         let mut degraded_buf = Buffer::empty(area);
         render_agent_attention_panel(area, &mut degraded_buf, &degraded);
@@ -264,9 +302,12 @@ mod tests {
         let profile =
             crate::app::agent_attention::AgentHostProfile::from_untrusted(&hostile_profile);
         let mut state = AgentAttentionPanelState::default();
-        state.complete_poll(AgentAttentionPollResult::Ready {
+        complete_ready(
+            &mut state,
+            HOST_A,
+            0,
             profile,
-            attention: AgentAttentionState {
+            AgentAttentionState {
                 cursor: 0,
                 unread: 0,
                 highest_severity: None,
@@ -274,7 +315,7 @@ mod tests {
                 suggested_action: None,
                 history_truncated: false,
             },
-        });
+        );
         let mut buf = Buffer::empty(area);
         render_agent_attention_panel(area, &mut buf, &state);
         let text = buffer_text(&buf);
@@ -282,5 +323,46 @@ mod tests {
         assert!(!text.contains("secret"));
         assert!(!text.contains("[31m"));
         assert!(!text.contains("/home/user/private"));
+    }
+
+    #[test]
+    fn committed_restart_shows_only_the_fixed_resync_marker() {
+        let mut state = AgentAttentionPanelState::default();
+        complete_ready(
+            &mut state,
+            HOST_A,
+            0,
+            crate::app::agent_attention::AgentHostProfile::Desktop,
+            AgentAttentionState {
+                cursor: 1,
+                unread: 1,
+                highest_severity: Some(AdvisorySeverity::Info),
+                latest_summary: Some("Agent host is ready.".into()),
+                suggested_action: None,
+                history_truncated: false,
+            },
+        );
+        complete_ready(
+            &mut state,
+            HOST_B,
+            0,
+            crate::app::agent_attention::AgentHostProfile::Desktop,
+            AgentAttentionState {
+                cursor: 1,
+                unread: 1,
+                highest_severity: Some(AdvisorySeverity::Info),
+                latest_summary: Some("Agent host is ready.".into()),
+                suggested_action: None,
+                history_truncated: false,
+            },
+        );
+
+        let area = Rect::new(0, 0, 32, 18);
+        let mut buf = Buffer::empty(area);
+        render_agent_attention_panel(area, &mut buf, &state);
+        let text = buffer_text(&buf);
+        assert!(text.contains("restart_resync"));
+        assert!(!text.contains(HOST_A));
+        assert!(!text.contains(HOST_B));
     }
 }

@@ -42,16 +42,19 @@ pub(crate) fn execute(
     let mut meta = EffectMeta::default();
     let effect_is_send_now = matches!(effect, Effect::SendPromptNow { .. });
     match effect {
-        Effect::PollAgentAttention { cursor, cancel } => {
+        Effect::PollAgentAttention { request, cancel } => {
             tasks.spawn(async move {
+                let failed_request = request.clone();
                 let result = tokio::task::spawn_blocking(move || {
-                    crate::app::agent_attention::poll_agent_attention(cursor, &cancel)
+                    crate::app::agent_attention::poll_agent_attention(request, &cancel)
                 })
                 .await
                 .unwrap_or_else(|_error| {
-                    crate::app::agent_attention::AgentAttentionPollResult::Degraded(
-                        crate::app::agent_attention::AgentHostDegradedReason::PollTaskFailed,
-                    )
+                    crate::app::agent_attention::AgentAttentionPollResult::Degraded {
+                        request: failed_request,
+                        reason:
+                            crate::app::agent_attention::AgentHostDegradedReason::PollTaskFailed,
+                    }
                 });
                 TaskResult::AgentAttentionPolled(result)
             });

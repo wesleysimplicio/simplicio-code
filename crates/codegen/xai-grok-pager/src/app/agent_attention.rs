@@ -4,7 +4,7 @@
 //! operations. It never turns an advisory into an effect: this state is a
 //! read-only input to the side panel.
 
-use simplicio_agent_client::{AgentAttentionState, AgentHostClient, Error};
+use simplicio_agent_client::{AgentAttentionState, AgentHostClient, Error, HostInstanceId};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -50,11 +50,38 @@ impl AgentAttentionPollLifecycle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentAttentionPollResult {
     Ready {
+        request: AgentAttentionPollRequest,
+        host_instance_id: HostInstanceId,
+        replayed_from_cursor: u64,
         profile: AgentHostProfile,
         attention: AgentAttentionState,
     },
-    Degraded(AgentHostDegradedReason),
-    Cancelled,
+    Degraded {
+        request: AgentAttentionPollRequest,
+        reason: AgentHostDegradedReason,
+    },
+    Cancelled {
+        request: AgentAttentionPollRequest,
+    },
+}
+
+impl AgentAttentionPollResult {
+    fn request(&self) -> &AgentAttentionPollRequest {
+        match self {
+            Self::Ready { request, .. }
+            | Self::Degraded { request, .. }
+            | Self::Cancelled { request } => request,
+        }
+    }
+}
+
+/// Single-flight ticket binding a poll to the exact state snapshot it extends.
+/// The opaque instance identity remains redacted by the client newtype.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentAttentionPollRequest {
+    generation: u64,
+    cursor: u64,
+    expected_host_instance_id: Option<HostInstanceId>,
 }
 
 /// Safe, bounded display projection of the host's untrusted profile string.
@@ -92,6 +119,8 @@ pub enum AgentHostDegradedReason {
     HostNotReady,
     ProtocolMismatch,
     CapabilityMismatch,
+    InvalidHostInstanceId,
+    HostInstanceMismatch,
     InvalidAdvisoryCursor,
     PollTaskFailed,
 }
@@ -107,6 +136,8 @@ impl AgentHostDegradedReason {
             Self::HostNotReady => "host_not_ready",
             Self::ProtocolMismatch => "protocol_mismatch",
             Self::CapabilityMismatch => "capability_mismatch",
+            Self::InvalidHostInstanceId => "invalid_host_instance_id",
+            Self::HostInstanceMismatch => "host_instance_mismatch",
             Self::InvalidAdvisoryCursor => "invalid_advisory_cursor",
             Self::PollTaskFailed => "poll_task_failed",
         }
@@ -122,6 +153,8 @@ impl AgentHostDegradedReason {
             Self::HostNotReady => "Agent host is not ready.",
             Self::ProtocolMismatch => "Agent protocol is incompatible.",
             Self::CapabilityMismatch => "Agent capabilities are incomplete.",
+            Self::InvalidHostInstanceId => "Agent host identity was invalid.",
+            Self::HostInstanceMismatch => "Agent host identity changed during polling.",
             Self::InvalidAdvisoryCursor => "Agent advisory cursor was rejected.",
             Self::PollTaskFailed => "Agent status poll failed.",
         }
@@ -141,12 +174,28 @@ enum AttentionMergeError {
     InvalidCursor,
 }
 
+/// Fixed marker shown after an atomically committed host-restart replay.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AgentAttentionResyncState {
+    #[default]
+    Stable,
+    RestartResync,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct IncarnatedAttention {
+    host_instance_id: HostInstanceId,
+    attention: AgentAttentionState,
+}
+
 /// App-owned state for the non-focusable Agent panel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentAttentionPanelState {
     pub status: AgentHostStatus,
-    pub attention: Option<AgentAttentionState>,
-    poll_in_flight: bool,
+    stream: Option<IncarnatedAttention>,
+    pub resync: AgentAttentionResyncState,
+    next_poll_generation: u64,
+    in_flight_generation: Option<u64>,
     consecutive_failures: u8,
 }
 
@@ -154,22 +203,40 @@ impl Default for AgentAttentionPanelState {
     fn default() -> Self {
         Self {
             status: AgentHostStatus::Connecting,
-            attention: None,
-            poll_in_flight: false,
+            stream: None,
+            resync: AgentAttentionResyncState::Stable,
+            next_poll_generation: 1,
+            in_flight_generation: None,
             consecutive_failures: 0,
         }
     }
 }
 
 impl AgentAttentionPanelState {
-    /// Claim the single poll slot and return the advisory cursor to request.
+    /// Claim the single poll slot and bind it to the current incarnation/cursor.
     /// `None` means another poll is already in flight.
-    pub fn begin_poll(&mut self) -> Option<u64> {
-        if self.poll_in_flight {
+    pub fn begin_poll(&mut self) -> Option<AgentAttentionPollRequest> {
+        if self.in_flight_generation.is_some() {
             return None;
         }
-        self.poll_in_flight = true;
-        Some(self.attention.as_ref().map_or(0, |state| state.cursor))
+        let generation = self.next_poll_generation;
+        self.next_poll_generation = self.next_poll_generation.wrapping_add(1);
+        self.in_flight_generation = Some(generation);
+        Some(AgentAttentionPollRequest {
+            generation,
+            cursor: self
+                .stream
+                .as_ref()
+                .map_or(0, |stream| stream.attention.cursor),
+            expected_host_instance_id: self
+                .stream
+                .as_ref()
+                .map(|stream| stream.host_instance_id.clone()),
+        })
+    }
+
+    pub fn attention(&self) -> Option<&AgentAttentionState> {
+        self.stream.as_ref().map(|stream| &stream.attention)
     }
 
     /// Healthy cadence with capped exponential backoff after failures.
@@ -181,24 +248,85 @@ impl AgentAttentionPanelState {
     }
 
     pub fn complete_poll(&mut self, result: AgentAttentionPollResult) {
-        self.poll_in_flight = false;
+        if self.in_flight_generation != Some(result.request().generation) {
+            return;
+        }
+        self.in_flight_generation = None;
         match result {
-            AgentAttentionPollResult::Ready { profile, attention } => {
-                match merge_attention(&mut self.attention, attention) {
-                    Ok(()) => {
-                        self.consecutive_failures = 0;
-                        self.status = AgentHostStatus::Ready { profile };
-                    }
-                    Err(AttentionMergeError::InvalidCursor) => {
-                        self.record_failure(AgentHostDegradedReason::InvalidAdvisoryCursor);
-                    }
-                }
-            }
-            AgentAttentionPollResult::Degraded(reason) => {
+            AgentAttentionPollResult::Ready {
+                request,
+                host_instance_id,
+                replayed_from_cursor,
+                profile,
+                attention,
+            } => self.complete_ready_poll(
+                request,
+                host_instance_id,
+                replayed_from_cursor,
+                profile,
+                attention,
+            ),
+            AgentAttentionPollResult::Degraded { reason, .. } => {
                 self.record_failure(reason);
             }
-            AgentAttentionPollResult::Cancelled => {}
+            AgentAttentionPollResult::Cancelled { .. } => {}
         }
+    }
+
+    fn complete_ready_poll(
+        &mut self,
+        request: AgentAttentionPollRequest,
+        host_instance_id: HostInstanceId,
+        replayed_from_cursor: u64,
+        profile: AgentHostProfile,
+        attention: AgentAttentionState,
+    ) {
+        let current_identity = self.stream.as_ref().map(|stream| &stream.host_instance_id);
+        if request.expected_host_instance_id.as_ref() != current_identity {
+            self.record_failure(AgentHostDegradedReason::HostInstanceMismatch);
+            return;
+        }
+        let current_cursor = self
+            .stream
+            .as_ref()
+            .map_or(0, |stream| stream.attention.cursor);
+        if request.cursor != current_cursor {
+            self.record_failure(AgentHostDegradedReason::InvalidAdvisoryCursor);
+            return;
+        }
+
+        let replacing_incarnation = current_identity.is_some_and(|id| id != &host_instance_id);
+        let expected_replay_cursor = if replacing_incarnation {
+            0
+        } else {
+            request.cursor
+        };
+        if replayed_from_cursor != expected_replay_cursor {
+            self.record_failure(AgentHostDegradedReason::InvalidAdvisoryCursor);
+            return;
+        }
+
+        let mut candidate = if replacing_incarnation {
+            None
+        } else {
+            self.stream.as_ref().map(|stream| stream.attention.clone())
+        };
+        if merge_attention(&mut candidate, attention).is_err() {
+            self.record_failure(AgentHostDegradedReason::InvalidAdvisoryCursor);
+            return;
+        }
+        let attention = candidate.expect("a valid poll always initializes attention");
+        self.stream = Some(IncarnatedAttention {
+            host_instance_id,
+            attention,
+        });
+        self.resync = if replacing_incarnation {
+            AgentAttentionResyncState::RestartResync
+        } else {
+            AgentAttentionResyncState::Stable
+        };
+        self.consecutive_failures = 0;
+        self.status = AgentHostStatus::Ready { profile };
     }
 
     fn record_failure(&mut self, reason: AgentHostDegradedReason) {
@@ -208,7 +336,7 @@ impl AgentAttentionPanelState {
 
     #[cfg(test)]
     fn poll_in_flight(&self) -> bool {
-        self.poll_in_flight
+        self.in_flight_generation.is_some()
     }
 }
 
@@ -219,26 +347,47 @@ impl AgentAttentionPanelState {
 /// response-size cap. Cancellation is checked before status, between status
 /// and advisories, and after advisories; an in-progress blocking socket read
 /// therefore finishes no later than its transport timeout.
-pub fn poll_agent_attention(cursor: u64, cancel: &CancellationToken) -> AgentAttentionPollResult {
+pub fn poll_agent_attention(
+    request: AgentAttentionPollRequest,
+    cancel: &CancellationToken,
+) -> AgentAttentionPollResult {
     if cancel.is_cancelled() {
-        return AgentAttentionPollResult::Cancelled;
+        return AgentAttentionPollResult::Cancelled { request };
     }
     let client = match AgentHostClient::connect_default() {
         Ok(client) => client,
-        Err(error) => return AgentAttentionPollResult::Degraded(safe_reason(&error)),
+        Err(error) => {
+            return AgentAttentionPollResult::Degraded {
+                request,
+                reason: safe_reason(&error),
+            };
+        }
     };
     if cancel.is_cancelled() {
-        return AgentAttentionPollResult::Cancelled;
+        return AgentAttentionPollResult::Cancelled { request };
     }
     let profile = AgentHostProfile::from_untrusted(&client.capabilities().profile);
-    let page = match client.advisories(cursor) {
+    let host_instance_id = client.capabilities().host_instance_id().clone();
+    let replayed_from_cursor = match request.expected_host_instance_id.as_ref() {
+        Some(expected) if expected != &host_instance_id => 0,
+        _ => request.cursor,
+    };
+    let page = match client.advisories(replayed_from_cursor) {
         Ok(page) => page,
-        Err(error) => return AgentAttentionPollResult::Degraded(safe_reason(&error)),
+        Err(error) => {
+            return AgentAttentionPollResult::Degraded {
+                request,
+                reason: safe_reason(&error),
+            };
+        }
     };
     if cancel.is_cancelled() {
-        return AgentAttentionPollResult::Cancelled;
+        return AgentAttentionPollResult::Cancelled { request };
     }
     AgentAttentionPollResult::Ready {
+        request,
+        host_instance_id,
+        replayed_from_cursor,
         profile,
         attention: page.attention_state(),
     }
@@ -258,7 +407,10 @@ fn merge_attention(
     // An empty validated page keeps its requested cursor. A non-empty page
     // must advance at least once per strictly increasing event sequence.
     if (event_count == 0 && advanced_by != 0)
-        || (event_count > 0 && (advanced_by == 0 || event_count > advanced_by))
+        || (event_count > 0
+            && (advanced_by == 0
+                || event_count > advanced_by
+                || (event_count < advanced_by && !incoming.history_truncated)))
     {
         return Err(AttentionMergeError::InvalidCursor);
     }
@@ -296,9 +448,12 @@ pub(crate) fn safe_reason(error: &Error) -> AgentHostDegradedReason {
         Error::UnsupportedTransport => AgentHostDegradedReason::UnsupportedTransport,
         Error::Io(_) => AgentHostDegradedReason::TransportIo,
         Error::InvalidResponse(_) => AgentHostDegradedReason::InvalidResponse,
-        Error::OperationRejected(_) => AgentHostDegradedReason::HostNotReady,
+        Error::OperationRejected => AgentHostDegradedReason::HostNotReady,
         Error::ProtocolMismatch(_) => AgentHostDegradedReason::ProtocolMismatch,
         Error::CapabilityMismatch { .. } => AgentHostDegradedReason::CapabilityMismatch,
+        Error::InvalidHostInstanceId => AgentHostDegradedReason::InvalidHostInstanceId,
+        Error::HostInstanceMismatch => AgentHostDegradedReason::HostInstanceMismatch,
+        Error::InvalidAdvisoryCursor => AgentHostDegradedReason::InvalidAdvisoryCursor,
     }
 }
 
@@ -306,6 +461,13 @@ pub(crate) fn safe_reason(error: &Error) -> AgentHostDegradedReason {
 mod tests {
     use super::*;
     use simplicio_agent_client::AdvisorySeverity;
+
+    const HOST_A: &str = "host-instance-aaaaaaaa";
+    const HOST_B: &str = "host-instance-bbbbbbbb";
+
+    fn host_id(value: &str) -> HostInstanceId {
+        HostInstanceId::from_untrusted(value).unwrap()
+    }
 
     fn attention(
         cursor: u64,
@@ -324,41 +486,82 @@ mod tests {
         }
     }
 
-    #[test]
-    fn admits_only_one_poll_at_a_time() {
-        let mut state = AgentAttentionPanelState::default();
-        assert_eq!(state.begin_poll(), Some(0));
-        assert_eq!(state.begin_poll(), None);
-        assert!(state.poll_in_flight());
+    fn ready_result(
+        request: AgentAttentionPollRequest,
+        host: &str,
+        replayed_from_cursor: u64,
+        attention: AgentAttentionState,
+    ) -> AgentAttentionPollResult {
+        AgentAttentionPollResult::Ready {
+            request,
+            host_instance_id: host_id(host),
+            replayed_from_cursor,
+            profile: AgentHostProfile::Desktop,
+            attention,
+        }
+    }
 
-        state.complete_poll(AgentAttentionPollResult::Degraded(
-            AgentHostDegradedReason::AgentUnavailable,
-        ));
-        assert!(!state.poll_in_flight());
-        assert_eq!(state.begin_poll(), Some(0));
+    fn complete_ready(
+        state: &mut AgentAttentionPanelState,
+        host: &str,
+        attention: AgentAttentionState,
+    ) {
+        let request = state.begin_poll().unwrap();
+        let current = host_id(host);
+        let replayed_from_cursor = match request.expected_host_instance_id.as_ref() {
+            Some(expected) if expected != &current => 0,
+            _ => request.cursor,
+        };
+        state.complete_poll(ready_result(request, host, replayed_from_cursor, attention));
     }
 
     #[test]
-    fn merges_new_pages_without_erasing_the_last_advisory() {
+    fn admits_only_one_incarnation_bound_poll_at_a_time() {
         let mut state = AgentAttentionPanelState::default();
-        assert_eq!(state.begin_poll(), Some(0));
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(
+        let request = state.begin_poll().unwrap();
+        assert_eq!(request.cursor, 0);
+        assert!(request.expected_host_instance_id.is_none());
+        assert_eq!(state.begin_poll(), None);
+        assert!(state.poll_in_flight());
+
+        state.complete_poll(AgentAttentionPollResult::Degraded {
+            request,
+            reason: AgentHostDegradedReason::AgentUnavailable,
+        });
+        assert!(!state.poll_in_flight());
+        assert_eq!(state.begin_poll().unwrap().cursor, 0);
+    }
+
+    #[test]
+    fn first_poll_and_same_incarnation_merge_without_false_resync() {
+        let mut state = AgentAttentionPanelState::default();
+        complete_ready(
+            &mut state,
+            HOST_A,
+            attention(
                 2,
                 2,
                 Some(AdvisorySeverity::Warning),
                 Some("Agent host is saturated."),
                 Some("retry"),
             ),
-        });
-        assert_eq!(state.begin_poll(), Some(2));
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(2, 0, None, None, None),
-        });
+        );
+        assert_eq!(state.resync, AgentAttentionResyncState::Stable);
 
-        let merged = state.attention.as_ref().unwrap();
+        let request = state.begin_poll().unwrap();
+        assert_eq!(request.cursor, 2);
+        assert_eq!(
+            request.expected_host_instance_id.as_ref(),
+            Some(&host_id(HOST_A))
+        );
+        state.complete_poll(ready_result(
+            request,
+            HOST_A,
+            2,
+            attention(2, 0, None, None, None),
+        ));
+
+        let merged = state.attention().unwrap();
         assert_eq!(merged.cursor, 2);
         assert_eq!(merged.unread, 2);
         assert_eq!(
@@ -366,71 +569,237 @@ mod tests {
             Some("Agent host is saturated.")
         );
         assert_eq!(merged.suggested_action.as_deref(), Some("retry"));
+        assert_eq!(state.resync, AgentAttentionResyncState::Stable);
     }
 
     #[test]
-    fn degraded_status_keeps_last_known_attention_and_cursor() {
+    fn proven_restart_replays_zero_and_atomically_replaces_equal_numeric_cursor() {
         let mut state = AgentAttentionPanelState::default();
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(
+        complete_ready(
+            &mut state,
+            HOST_A,
+            attention(
+                2,
+                2,
+                Some(AdvisorySeverity::Warning),
+                Some("Agent host is saturated."),
+                Some("retry"),
+            ),
+        );
+
+        let request = state.begin_poll().unwrap();
+        state.complete_poll(ready_result(
+            request,
+            HOST_B,
+            0,
+            attention(
+                2,
+                2,
+                Some(AdvisorySeverity::Info),
+                Some("Agent host is ready."),
+                None,
+            ),
+        ));
+
+        assert_eq!(state.resync, AgentAttentionResyncState::RestartResync);
+        let replaced = state.attention().unwrap();
+        assert_eq!(replaced.cursor, 2);
+        assert_eq!(replaced.unread, 2);
+        assert_eq!(replaced.highest_severity, Some(AdvisorySeverity::Info));
+        assert_eq!(
+            replaced.latest_summary.as_deref(),
+            Some("Agent host is ready.")
+        );
+        assert_eq!(replaced.suggested_action, None);
+
+        complete_ready(&mut state, HOST_B, attention(2, 0, None, None, None));
+        assert_eq!(state.resync, AgentAttentionResyncState::Stable);
+    }
+
+    #[test]
+    fn restart_requires_a_validated_cursor_zero_replay() {
+        let mut state = AgentAttentionPanelState::default();
+        complete_ready(
+            &mut state,
+            HOST_A,
+            attention(
+                1,
+                1,
+                Some(AdvisorySeverity::Warning),
+                Some("Agent host is saturated."),
+                Some("retry"),
+            ),
+        );
+        let request = state.begin_poll().unwrap();
+        state.complete_poll(ready_result(
+            request,
+            HOST_B,
+            1,
+            attention(1, 1, Some(AdvisorySeverity::Info), None, None),
+        ));
+
+        assert_eq!(
+            state.status,
+            AgentHostStatus::Degraded {
+                reason: AgentHostDegradedReason::InvalidAdvisoryCursor
+            }
+        );
+        assert_eq!(
+            state.attention().unwrap().latest_summary.as_deref(),
+            Some("Agent host is saturated.")
+        );
+        assert_eq!(state.resync, AgentAttentionResyncState::Stable);
+    }
+
+    #[test]
+    fn delayed_old_incarnation_result_cannot_regress_committed_restart() {
+        let mut state = AgentAttentionPanelState::default();
+        complete_ready(
+            &mut state,
+            HOST_A,
+            attention(
+                1,
+                1,
+                Some(AdvisorySeverity::Warning),
+                Some("Agent host is saturated."),
+                None,
+            ),
+        );
+        let old_request = state.begin_poll().unwrap();
+        state.complete_poll(ready_result(
+            old_request.clone(),
+            HOST_B,
+            0,
+            attention(
                 1,
                 1,
                 Some(AdvisorySeverity::Info),
                 Some("Agent host is ready."),
                 None,
             ),
-        });
-        assert_eq!(state.begin_poll(), Some(1));
-        state.complete_poll(AgentAttentionPollResult::Degraded(
-            AgentHostDegradedReason::TransportIo,
         ));
 
-        assert!(matches!(state.status, AgentHostStatus::Degraded { .. }));
-        assert_eq!(state.attention.as_ref().unwrap().cursor, 1);
-        let AgentHostStatus::Degraded { reason } = &state.status else {
-            unreachable!();
-        };
-        assert_eq!(*reason, AgentHostDegradedReason::TransportIo);
-    }
-
-    #[test]
-    fn a_valid_new_advisory_replaces_its_action_and_sticks_truncation() {
-        let mut current = Some(attention(
-            3,
+        let live_request = state.begin_poll().unwrap();
+        state.complete_poll(ready_result(
+            old_request,
+            HOST_A,
             1,
-            Some(AdvisorySeverity::Warning),
-            Some("Agent host is saturated."),
-            Some("retry"),
+            attention(1, 0, None, None, None),
         ));
-        let mut incoming = attention(
-            4,
-            1,
-            Some(AdvisorySeverity::Info),
-            Some("Agent host is ready."),
-            None,
-        );
-        incoming.history_truncated = true;
-        assert_eq!(merge_attention(&mut current, incoming), Ok(()));
 
-        let current = current.unwrap();
-        assert_eq!(current.cursor, 4);
+        assert!(matches!(&state.status, AgentHostStatus::Ready { .. }));
+        assert!(state.poll_in_flight());
         assert_eq!(
-            current.latest_summary.as_deref(),
+            state.attention().unwrap().latest_summary.as_deref(),
             Some("Agent host is ready.")
         );
-        assert_eq!(current.suggested_action, None);
-        assert!(current.history_truncated);
+        assert_eq!(state.resync, AgentAttentionResyncState::RestartResync);
+
+        state.complete_poll(ready_result(
+            live_request,
+            HOST_B,
+            1,
+            attention(1, 0, None, None, None),
+        ));
+        assert!(!state.poll_in_flight());
     }
 
     #[test]
-    fn cancelled_poll_does_not_touch_the_socket() {
+    fn same_incarnation_stale_or_future_results_stay_fail_closed() {
+        for invalid in [
+            attention(0, 0, None, None, None),
+            attention(3, 1, Some(AdvisorySeverity::Info), None, None),
+        ] {
+            let mut state = AgentAttentionPanelState::default();
+            complete_ready(
+                &mut state,
+                HOST_A,
+                attention(
+                    1,
+                    1,
+                    Some(AdvisorySeverity::Warning),
+                    Some("Agent host is saturated."),
+                    None,
+                ),
+            );
+            let request = state.begin_poll().unwrap();
+            state.complete_poll(ready_result(request, HOST_A, 1, invalid));
+
+            assert_eq!(
+                state.status,
+                AgentHostStatus::Degraded {
+                    reason: AgentHostDegradedReason::InvalidAdvisoryCursor
+                }
+            );
+            assert_eq!(state.attention().unwrap().cursor, 1);
+            assert_eq!(state.attention().unwrap().unread, 1);
+        }
+    }
+
+    #[test]
+    fn degraded_status_keeps_last_known_incarnation_and_backoff_is_capped() {
+        let mut state = AgentAttentionPanelState::default();
+        complete_ready(
+            &mut state,
+            HOST_A,
+            attention(1, 1, Some(AdvisorySeverity::Info), None, None),
+        );
+        let request = state.begin_poll().unwrap();
+        state.complete_poll(AgentAttentionPollResult::Degraded {
+            request,
+            reason: AgentHostDegradedReason::TransportIo,
+        });
+
+        assert_eq!(state.attention().unwrap().cursor, 1);
+        assert_eq!(state.next_poll_delay(), Duration::from_secs(10));
+        for _ in 0..10 {
+            let request = state.begin_poll().unwrap();
+            state.complete_poll(AgentAttentionPollResult::Degraded {
+                request,
+                reason: AgentHostDegradedReason::AgentUnavailable,
+            });
+        }
+        assert_eq!(state.next_poll_delay(), MAX_POLL_BACKOFF);
+
+        let request = state.begin_poll().unwrap();
+        state.complete_poll(ready_result(
+            request,
+            HOST_A,
+            1,
+            attention(1, 0, None, None, None),
+        ));
+        assert_eq!(state.next_poll_delay(), HEALTHY_POLL_INTERVAL);
+    }
+
+    #[test]
+    fn truncation_is_the_only_valid_reason_for_a_sequence_gap() {
+        let mut current = Some(attention(3, 1, None, None, None));
+        let gap = attention(5, 1, Some(AdvisorySeverity::Info), None, None);
+        assert_eq!(
+            merge_attention(&mut current, gap.clone()),
+            Err(AttentionMergeError::InvalidCursor)
+        );
+
+        let mut truncated_gap = gap;
+        truncated_gap.history_truncated = true;
+        assert_eq!(merge_attention(&mut current, truncated_gap), Ok(()));
+        assert_eq!(current.unwrap().cursor, 5);
+    }
+
+    #[test]
+    fn cancellation_releases_single_flight_and_can_precede_socket_access() {
+        let mut state = AgentAttentionPanelState::default();
+        let request = state.begin_poll().unwrap();
         let cancel = CancellationToken::new();
         cancel.cancel();
-        assert_eq!(
-            poll_agent_attention(0, &cancel),
-            AgentAttentionPollResult::Cancelled
-        );
+        let result = poll_agent_attention(request, &cancel);
+        assert!(matches!(
+            &result,
+            AgentAttentionPollResult::Cancelled { .. }
+        ));
+        state.complete_poll(result);
+        assert!(!state.poll_in_flight());
+        assert_eq!(state.begin_poll().unwrap().cursor, 0);
     }
 
     #[test]
@@ -445,133 +814,29 @@ mod tests {
     }
 
     #[test]
-    fn cancelled_result_releases_the_single_flight_slot() {
-        let mut state = AgentAttentionPanelState::default();
-        assert_eq!(state.begin_poll(), Some(0));
-        state.complete_poll(AgentAttentionPollResult::Cancelled);
-        assert!(!state.poll_in_flight());
-        assert_eq!(state.begin_poll(), Some(0));
-    }
-
-    #[test]
-    fn raw_error_paths_and_hostile_profiles_never_enter_state() {
-        let secret = std::path::PathBuf::from("/home/user/private/secret.sock");
-        let reason = safe_reason(&Error::AgentNotFound(secret));
+    fn identity_and_raw_errors_never_enter_state_debug_or_ui_catalog() {
+        let secret = "/home/user/private/secret.sock";
+        let reason = safe_reason(&Error::AgentNotFound(secret.into()));
         assert_eq!(reason, AgentHostDegradedReason::AgentUnavailable);
-        assert!(!reason.message().contains("/home"));
-
-        let hostile_profile = format!("secret\n\u{1b}[31m{}", "x".repeat(10_000));
-        let profile = AgentHostProfile::from_untrusted(&hostile_profile);
-        assert_eq!(profile, AgentHostProfile::Compatible);
-        assert_eq!(profile.label(), "compatible");
-        assert!(!profile.label().contains("secret"));
+        assert!(!reason.message().contains(secret));
 
         let mut state = AgentAttentionPanelState::default();
-        state.complete_poll(AgentAttentionPollResult::Degraded(reason));
+        complete_ready(&mut state, HOST_A, attention(0, 0, None, None, None));
         let debug = format!("{state:?}");
-        assert!(!debug.contains("/home/user/private/secret.sock"));
-        assert!(!debug.contains("secret\n"));
-        assert!(!debug.contains("[31m"));
-        assert!(debug.len() < 500);
-    }
-
-    #[test]
-    fn stale_attention_result_degrades_without_changing_known_state() {
-        let mut state = AgentAttentionPanelState::default();
-        state.attention = Some(attention(
-            9,
-            2,
-            Some(AdvisorySeverity::Warning),
-            Some("Agent host is saturated."),
-            Some("retry"),
-        ));
-        assert_eq!(state.begin_poll(), Some(9));
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(
-                8,
-                4,
-                Some(AdvisorySeverity::Info),
-                Some("Agent host is ready."),
-                None,
-            ),
-        });
+        assert!(!debug.contains(HOST_A));
+        assert!(debug.contains("[redacted]"));
 
         assert_eq!(
-            state.status,
-            AgentHostStatus::Degraded {
-                reason: AgentHostDegradedReason::InvalidAdvisoryCursor
-            }
+            safe_reason(&Error::InvalidHostInstanceId),
+            AgentHostDegradedReason::InvalidHostInstanceId
         );
-        let current = state.attention.unwrap();
-        assert_eq!(current.cursor, 9);
-        assert_eq!(current.unread, 2);
         assert_eq!(
-            current.latest_summary.as_deref(),
-            Some("Agent host is saturated.")
+            safe_reason(&Error::HostInstanceMismatch),
+            AgentHostDegradedReason::HostInstanceMismatch
         );
-        assert_eq!(current.suggested_action.as_deref(), Some("retry"));
-    }
-
-    #[test]
-    fn equal_cursor_with_new_events_is_rejected_fail_closed() {
-        let mut state = AgentAttentionPanelState::default();
-        state.attention = Some(attention(9, 2, None, None, None));
-        assert_eq!(state.begin_poll(), Some(9));
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(9, 1, None, None, None),
-        });
-
         assert_eq!(
-            state.status,
-            AgentHostStatus::Degraded {
-                reason: AgentHostDegradedReason::InvalidAdvisoryCursor
-            }
+            safe_reason(&Error::InvalidAdvisoryCursor),
+            AgentHostDegradedReason::InvalidAdvisoryCursor
         );
-        let current = state.attention.unwrap();
-        assert_eq!(current.cursor, 9);
-        assert_eq!(current.unread, 2);
-    }
-
-    #[test]
-    fn empty_page_cannot_advance_the_cursor() {
-        let mut state = AgentAttentionPanelState::default();
-        state.attention = Some(attention(9, 2, None, None, None));
-        assert_eq!(state.begin_poll(), Some(9));
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(10, 0, None, None, None),
-        });
-
-        assert_eq!(
-            state.status,
-            AgentHostStatus::Degraded {
-                reason: AgentHostDegradedReason::InvalidAdvisoryCursor
-            }
-        );
-        assert_eq!(state.attention.unwrap().cursor, 9);
-    }
-
-    #[test]
-    fn degraded_polls_back_off_to_a_cap_and_success_resets_cadence() {
-        let mut state = AgentAttentionPanelState::default();
-        assert_eq!(state.next_poll_delay(), Duration::from_secs(5));
-        state.complete_poll(AgentAttentionPollResult::Degraded(
-            AgentHostDegradedReason::AgentUnavailable,
-        ));
-        assert_eq!(state.next_poll_delay(), Duration::from_secs(10));
-        for _ in 0..10 {
-            state.complete_poll(AgentAttentionPollResult::Degraded(
-                AgentHostDegradedReason::AgentUnavailable,
-            ));
-        }
-        assert_eq!(state.next_poll_delay(), MAX_POLL_BACKOFF);
-
-        state.complete_poll(AgentAttentionPollResult::Ready {
-            profile: AgentHostProfile::Desktop,
-            attention: attention(0, 0, None, None, None),
-        });
-        assert_eq!(state.next_poll_delay(), HEALTHY_POLL_INTERVAL);
     }
 }

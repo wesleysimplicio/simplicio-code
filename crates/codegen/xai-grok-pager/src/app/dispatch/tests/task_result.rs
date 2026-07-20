@@ -8,9 +8,16 @@ use super::*;
 #[test]
 fn agent_attention_poll_is_projection_only_and_emits_no_effects() {
     let mut app = test_app();
+    let request = app.agent_attention.begin_poll().unwrap();
     let effects = dispatch_task_result(
         TaskResult::AgentAttentionPolled(
             crate::app::agent_attention::AgentAttentionPollResult::Ready {
+                request,
+                host_instance_id: simplicio_agent_client::HostInstanceId::from_untrusted(
+                    "dispatch-host-instance-aaaa",
+                )
+                .unwrap(),
+                replayed_from_cursor: 0,
                 profile: crate::app::agent_attention::AgentHostProfile::Desktop,
                 attention: simplicio_agent_client::AgentAttentionState {
                     cursor: 1,
