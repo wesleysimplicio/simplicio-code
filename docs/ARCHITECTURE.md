@@ -7,20 +7,37 @@ somente identidade, entitlement e gateway Simplicio. Chaves e assinaturas de
 Grok, OpenRouter, OpenCode Go/Zen ou outros provedores pertencem à infraestrutura
 privada do Simplicio e nunca são configuradas ou entregues ao cliente.
 
-## Runtime e Code como um produto
+## Agent, Runtime e Code como um produto
 
 ```text
 TUI / headless / ACP
         |
         v
-AsyncFileSystem (SimplicioRuntimeFs)
+AgentHost v1 obrigatório (status + advisories)
+        |
+        v
+AsyncFileSystem / AsyncSearch (SimplicioRuntimeFs)
         |
         v
 MCP stdio: simplicio serve --mcp --stdio --json
         |
         v
-simplicio_file_read (sandbox + limite + contrato tipado)
+Runtime tools (sandbox + limites + contratos tipados)
 ```
+
+Simplicio Agent e Simplicio Runtime continuam produtos independentes: nenhum
+deles importa ou depende do Code. A dependência é unidirecional. O Code valida
+primeiro o AgentHost (`simplicio.agent-host/v1`, `agent/v1`, capabilities
+obrigatórias), depois inicia/valida o Runtime. Ausência, versão incompatível ou
+socket inseguro de qualquer um bloqueia a operação, sem agente embutido e sem
+fallback local. O canal `host.advisories` é passivo, limitado e livre de
+conteúdo arbitrário; ele alimenta o modelo de atenção da futura lateral sem
+criar outro coordinator ou scheduler dentro do Code.
+
+Em produção, o Agent é o único coordinator cognitivo; os modos `builtin` e
+`external` ficam restritos a diagnóstico/compatibilidade isolados. Diagnóstico
+pode relatar que Agent ou Runtime está ausente, mas nenhum turno produtivo ou
+efeito de projeto pode continuar nessa condição.
 
 O Runtime é a autoridade de leitura, escrita e exclusão, inclusive quando um
 cliente ACP anuncia filesystem próprio. `SimplicioRuntimeFs` não possui
@@ -55,6 +72,20 @@ O Runtime é um processo acoplado ao binário na experiência do usuário, mas
 continua sendo um componente independente e testável. Isso evita duplicar mapa,
 memória, busca, action gate e políticas de contexto dentro da TUI.
 
+O recorte atual torna Agent + Runtime obrigatórios nos pontos que já usam
+`SimplicioRuntimeFs` (TUI/headless/workspace/ACP) e entrega o contrato tipado de
+advisories. Ainda não significa que todos os comandos herdados do Code passam
+pelos dois componentes: `list`/`stat`/`edit`/`exec`, alguns caminhos diretos de
+`ripgrep`/`tokio::fs` e a renderização da lateral continuam nas próximas
+fatias. Essa fronteira é registrada explicitamente para não confundir contrato
+P0 real com integração total ainda não entregue.
+
+Também permanece pendente o contrato neutro de proatividade real:
+`workspace.observe` + `workspace.advisory` com finding/risk/suggestion,
+privacidade e aprovação. Os eventos atuais são apenas saúde/backpressure/
+resultado do host; não observam o que o desenvolvedor está fazendo e não devem
+ser apresentados como a lateral proativa completa.
+
 ## Gateway Simplicio
 
 Contrato planejado para a próxima fatia executável:
@@ -71,6 +102,11 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
 
 ## Migração incremental
 
+- Concluído: cliente AgentHost fail-closed com handshake/versionamento,
+  capabilities obrigatórias, socket Unix privado e replay bounded de eventos
+  operacionais; `SimplicioRuntimeFs` exige Agent antes do Runtime.
+- Concluído no modelo, pendente de UI: `AgentAttentionState` para uma futura
+  lateral passiva sem roubar foco, executar efeitos ou duplicar o scheduler.
 - Concluído: leitura, escrita e exclusão de arquivos do agente via Runtime
   (`SimplicioRuntimeFs`), com sandbox rígido (path traversal + escape via
   symlink) e sem fallback local.
@@ -82,7 +118,8 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
   `list`/`stat`/`edit`/`exec` com capability negotiation e rejeição
   fail-closed de Runtime incompatível — nenhum tool do agente os consome
   ainda.
-- Próximo: ligar `grep`/`hashline_grep`/`list_dir` (que hoje chamam
+- Próximo: renderizar/pollear a lateral e ligar
+  `grep`/`hashline_grep`/`list_dir` (que hoje chamam
   `ripgrep`/`tokio::fs`/`ignore::WalkBuilder` diretamente, fora de
   `AsyncSearch`/`AsyncFileSystem`) ao mesmo `SearchBackend`/contrato de
   `list`, e o executor de `bash` ao contrato de `exec`.

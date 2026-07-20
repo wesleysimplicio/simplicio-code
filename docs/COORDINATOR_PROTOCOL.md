@@ -1,12 +1,37 @@
 # CoordinatorProtocol/v1
 
 `scripts/validate_coordinator_protocol.py` defines the neutral contract for
-the optional coordinator requested by issue #50. A Code turn names exactly one
-coordinator (`builtin`, `simplicio-agent`, or `external`) and carries stable
-workspace/session/turn/policy identities. Events must have unique increasing
-sequence numbers and causal IDs; invalid lifecycle transitions are blocked.
+the coordinator boundary requested by issue #50. Simplicio Agent is an
+independent product and the mandatory cognitive coordinator for productive
+Simplicio Code turns. The schema retains `builtin` and `external` only for
+isolated diagnostics/contract compatibility; neither may enter the productive
+effect path. A productive turn therefore names exactly one coordinator:
+`simplicio-agent`. It carries stable workspace/session/turn/policy identities;
+events must have unique increasing sequence numbers and causal IDs, and
+invalid lifecycle transitions are blocked.
 
 This contract is intentionally independent of the Agent implementation. The
-future AgentHost adapter must emit this envelope and keep Runtime effects out
-of the coordinator transport. The validator is a boundary gate, not evidence
-that an AgentHost is already shipped in this repository.
+Agent remains in its own repository and does not import Code. Code's
+`simplicio-agent-client` verifies the independent AgentHost's
+`simplicio.agent-host/v1` discovery envelope, `agent/v1` protocol, mandatory
+capabilities, and bounded `simplicio.agent-advisory/v1` replay before use.
+`SimplicioRuntimeFs` verifies Agent first and Runtime second, failing closed if
+either dependency is absent or incompatible. Diagnostics that do not execute a
+productive turn or project effect may still report dependency health while a
+service is absent.
+
+Advisory replay is a passive attention surface, not a second coordinator: it
+contains only a fixed operational vocabulary, cannot carry prompts/workspace
+content, cannot invoke Runtime effects, and must not steal terminal focus. The
+Rust client exposes a minimal `AgentAttentionState` for a future side panel;
+rendering and interactive approval/cancel/resume controls remain a subsequent
+UI slice. Runtime remains the sole authority for filesystem and command
+effects, and Simplicio Loop remains the ecosystem scheduler.
+
+The current advisory vocabulary is operational only. It does **not** observe
+workspace activity and does not emit proactive `finding`/`risk`/`suggestion`
+records. A neutral `workspace.observe` + `workspace.advisory` contract, its
+privacy/approval policy, Agent-side production, Code-side polling/rendering,
+and the full AgentHost → `CoordinatorProtocol/v1` turn adapter remain explicit
+follow-up work. This first slice must not be described as the completed visual
+panel or completed proactive assistance.
