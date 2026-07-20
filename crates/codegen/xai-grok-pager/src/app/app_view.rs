@@ -659,6 +659,9 @@ pub struct AppView {
     /// `event_loop::run` from `connection.leader_status_rx.is_some()`;
     /// defaults to `false` (non-leader, dashboard hidden).
     pub leader_mode: bool,
+    /// Passive status/advisory projection from the independently shipped
+    /// Simplicio Agent host. It has no input route or executable callbacks.
+    pub agent_attention: crate::app::agent_attention::AgentAttentionPanelState,
     /// App-level credit balance used to show the usage warning on the
     /// welcome screen before any agent session exists.
     pub credit_balance: Option<crate::views::credit_bar::CreditBalance>,
@@ -1329,6 +1332,7 @@ impl AppView {
             usage_visible: true,
             tier_restricted_commands: Vec::new(),
             leader_mode: false,
+            agent_attention: Default::default(),
             credit_balance: None,
             auto_topup: None,
             billing_poll_wanted: false,
@@ -3765,6 +3769,7 @@ impl AppView {
         let Self {
             active_view,
             agents,
+            agent_attention,
             registry,
             scratch,
             cursor,
@@ -4077,6 +4082,8 @@ impl AppView {
                             d.overlay_next_hit.set(header.and_then(|c| c.next_rect));
                         }
                         if let Some(agent) = agents.get_mut(&id) {
+                            let (agent_content_area, agent_panel_area) =
+                                crate::views::agent_attention_panel::split_agent_area(agent_area);
                             let announcement_banner_h =
                                 crate::views::announcements::session_banner_height(
                                     &self.active_announcements,
@@ -4094,7 +4101,7 @@ impl AppView {
                                 0
                             };
                             let result = agent.draw(
-                                agent_area,
+                                agent_content_area,
                                 f.buffer_mut(),
                                 registry,
                                 scratch,
@@ -4115,6 +4122,13 @@ impl AppView {
                                 voice_listening,
                                 voice_interim.as_deref(),
                             );
+                            if let Some(panel_area) = agent_panel_area {
+                                crate::views::agent_attention_panel::render_agent_attention_panel(
+                                    panel_area,
+                                    f.buffer_mut(),
+                                    agent_attention,
+                                );
+                            }
                             if let Some(modal) = self.import_claude_modal.as_mut() {
                                 let theme = crate::theme::Theme::current();
                                 crate::views::import_claude_modal::render_import_claude_modal(
@@ -5217,6 +5231,7 @@ pub(crate) mod tests {
             usage_visible: true,
             tier_restricted_commands: Vec::new(),
             leader_mode: true,
+            agent_attention: Default::default(),
             credit_balance: None,
             auto_topup: None,
             billing_poll_wanted: false,

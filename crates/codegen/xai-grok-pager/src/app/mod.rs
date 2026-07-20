@@ -11,6 +11,7 @@
 //! - [`event_loop`] — biased tokio::select! loop
 pub mod actions;
 pub mod agent;
+pub mod agent_attention;
 pub mod agent_view;
 pub mod app_view;
 pub mod bundle;

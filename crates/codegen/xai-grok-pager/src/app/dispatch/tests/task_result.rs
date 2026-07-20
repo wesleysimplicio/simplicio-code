@@ -5,6 +5,33 @@ use super::super::task_result::{
 };
 use super::*;
 
+#[test]
+fn agent_attention_poll_is_projection_only_and_emits_no_effects() {
+    let mut app = test_app();
+    let effects = dispatch_task_result(
+        TaskResult::AgentAttentionPolled(
+            crate::app::agent_attention::AgentAttentionPollResult::Ready {
+                profile: crate::app::agent_attention::AgentHostProfile::Desktop,
+                attention: simplicio_agent_client::AgentAttentionState {
+                    cursor: 1,
+                    unread: 1,
+                    highest_severity: Some(simplicio_agent_client::AdvisorySeverity::Warning),
+                    latest_summary: Some("Agent host is saturated.".into()),
+                    suggested_action: Some("retry".into()),
+                    history_truncated: false,
+                },
+            },
+        ),
+        &mut app,
+    );
+
+    assert!(effects.is_empty(), "advisories must never schedule effects");
+    assert!(matches!(
+        app.agent_attention.status,
+        crate::app::agent_attention::AgentHostStatus::Ready { .. }
+    ));
+}
+
 fn foreign_resume_hint(
     tool: xai_grok_workspace::foreign_sessions::ForeignSessionTool,
 ) -> xai_grok_workspace::foreign_sessions::RecentForeignSession {

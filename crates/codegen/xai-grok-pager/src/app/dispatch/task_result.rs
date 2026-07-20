@@ -171,6 +171,10 @@ fn drain_clipboard_target(target: &ClipboardPasteTarget, app: &mut AppView) -> V
 /// Handle a completed async task result.
 pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec<Effect> {
     match result {
+        TaskResult::AgentAttentionPolled(result) => {
+            app.agent_attention.complete_poll(result);
+            vec![]
+        }
         TaskResult::SessionCreated {
             agent_id,
             session_id,
