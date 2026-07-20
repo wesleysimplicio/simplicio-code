@@ -11,7 +11,7 @@ and the source it was resolved from (crates.io / git / path).
 Usage:
     python3 scripts/release/generate_sbom.py \
         --root-package xai-grok-pager-bin \
-        --version 0.3.0-beta.1 \
+        --version 0.3.0-beta.2 \
         --out sbom.cdx.json
 
 Exit codes: 0 on success, 1 if `cargo metadata` fails or the root package

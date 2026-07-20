@@ -18,7 +18,7 @@
     build one.
 
 .PARAMETER Version
-    Specific version to install, e.g. "0.3.0-beta.1". Defaults to latest.
+    Specific version to install, e.g. "0.3.0-beta.2". Defaults to latest.
 
 .EXAMPLE
     irm https://raw.githubusercontent.com/wesleysimplicio/simplicio-code/main/install.ps1 | iex

@@ -427,7 +427,7 @@ mod tests {
 
     #[test]
     fn map_result_tags_current_schema_version() {
-        let result = sample("hash", "3.5.2", MapState::Ready);
+        let result = sample("hash", "3.5.3", MapState::Ready);
         assert_eq!(result.schema, MAP_RESULT_SCHEMA_V1);
     }
 
@@ -442,7 +442,7 @@ mod tests {
 
     #[test]
     fn map_result_round_trips_through_json() {
-        let result = sample("hash-a", "3.5.2", MapState::Degraded);
+        let result = sample("hash-a", "3.5.3", MapState::Degraded);
         let json = serde_json::to_string(&result).unwrap();
         let back: MapResult = serde_json::from_str(&json).unwrap();
         assert_eq!(result, back);
@@ -462,23 +462,23 @@ mod tests {
     fn put_then_get_returns_the_same_result() {
         let dir = temp_cache_dir("put-get");
         let mut cache = MapCache::new(&dir);
-        let result = sample("repo-1", "3.5.2", MapState::Ready);
+        let result = sample("repo-1", "3.5.3", MapState::Ready);
         cache.put(result.clone()).unwrap();
-        assert_eq!(cache.get("repo-1", "3.5.2"), Some(&result));
+        assert_eq!(cache.get("repo-1", "3.5.3"), Some(&result));
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_recovers_a_cache_entry_written_by_a_previous_process() {
         let dir = temp_cache_dir("load-recover");
-        let result = sample("repo-2", "3.5.2", MapState::Ready);
+        let result = sample("repo-2", "3.5.3", MapState::Ready);
         {
             let mut writer = MapCache::new(&dir);
             writer.put(result.clone()).unwrap();
         }
         let mut reader = MapCache::new(&dir);
-        assert!(reader.get("repo-2", "3.5.2").is_none());
-        let loaded = reader.load("repo-2", "3.5.2").unwrap();
+        assert!(reader.get("repo-2", "3.5.3").is_none());
+        let loaded = reader.load("repo-2", "3.5.3").unwrap();
         assert_eq!(loaded, Some(result));
         let _ = fs::remove_dir_all(&dir);
     }
@@ -487,7 +487,7 @@ mod tests {
     fn load_is_a_miss_not_an_error_for_a_cold_cache() {
         let dir = temp_cache_dir("cold");
         let mut cache = MapCache::new(&dir);
-        let loaded = cache.load("never-mapped", "3.5.2").unwrap();
+        let loaded = cache.load("never-mapped", "3.5.3").unwrap();
         assert_eq!(loaded, None);
     }
 
@@ -498,19 +498,19 @@ mod tests {
         let stale = serde_json::json!({
             "schema": "simplicio.map-result/v0",
             "repo_hash": "repo-3",
-            "runtime_version": "3.5.2",
+            "runtime_version": "3.5.3",
             "state": "ready",
             "summary": "old shape",
             "file_count": 1,
             "generated_at_unix_ms": 0,
         });
         fs::write(
-            dir.join(cache_file_name("repo-3", "3.5.2")),
+            dir.join(cache_file_name("repo-3", "3.5.3")),
             serde_json::to_vec(&stale).unwrap(),
         )
         .unwrap();
         let mut cache = MapCache::new(&dir);
-        let loaded = cache.load("repo-3", "3.5.2").unwrap();
+        let loaded = cache.load("repo-3", "3.5.3").unwrap();
         assert_eq!(loaded, None);
         let _ = fs::remove_dir_all(&dir);
     }
@@ -519,7 +519,7 @@ mod tests {
     fn put_rejects_entries_written_under_a_different_schema_version_before_side_effects() {
         let dir = temp_cache_dir("put-schema-mismatch");
         let mut cache = MapCache::new(&dir);
-        let mut result = sample("repo-put-schema", "3.5.2", MapState::Ready);
+        let mut result = sample("repo-put-schema", "3.5.3", MapState::Ready);
         result.schema = "simplicio.map-result/v0".to_string();
 
         let error = cache.put(result).unwrap_err();
@@ -535,9 +535,9 @@ mod tests {
     fn put_deduplicates_identical_writes() {
         let dir = temp_cache_dir("dedup");
         let mut cache = MapCache::new(&dir);
-        let result = sample("repo-4", "3.5.2", MapState::Ready);
+        let result = sample("repo-4", "3.5.3", MapState::Ready);
         cache.put(result.clone()).unwrap();
-        let path = dir.join(cache_file_name("repo-4", "3.5.2"));
+        let path = dir.join(cache_file_name("repo-4", "3.5.3"));
         let first_write = fs::metadata(&path).unwrap().modified().unwrap();
 
         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -555,13 +555,13 @@ mod tests {
         let dir = temp_cache_dir("overwrite");
         let mut cache = MapCache::new(&dir);
         cache
-            .put(sample("repo-5", "3.5.2", MapState::Mapping))
+            .put(sample("repo-5", "3.5.3", MapState::Mapping))
             .unwrap();
         cache
-            .put(sample("repo-5", "3.5.2", MapState::Ready))
+            .put(sample("repo-5", "3.5.3", MapState::Ready))
             .unwrap();
         assert_eq!(
-            cache.get("repo-5", "3.5.2").map(|r| r.state),
+            cache.get("repo-5", "3.5.3").map(|r| r.state),
             Some(MapState::Ready)
         );
         let _ = fs::remove_dir_all(&dir);
@@ -572,14 +572,14 @@ mod tests {
         let dir = temp_cache_dir("runtime-version");
         let mut cache = MapCache::new(&dir);
         cache
-            .put(sample("repo-6", "3.5.2", MapState::Ready))
+            .put(sample("repo-6", "3.5.3", MapState::Ready))
             .unwrap();
         cache
             .put(sample("repo-6", "3.6.0", MapState::Mapping))
             .unwrap();
         assert_eq!(cache.len(), 2);
         assert_eq!(
-            cache.get("repo-6", "3.5.2").map(|r| r.state),
+            cache.get("repo-6", "3.5.3").map(|r| r.state),
             Some(MapState::Ready)
         );
         assert_eq!(
@@ -594,26 +594,26 @@ mod tests {
         let dir = temp_cache_dir("invalidate");
         let mut cache = MapCache::new(&dir);
         cache
-            .put(sample("repo-7", "3.5.2", MapState::Ready))
+            .put(sample("repo-7", "3.5.3", MapState::Ready))
             .unwrap();
         cache
             .put(sample("repo-7", "3.6.0", MapState::Ready))
             .unwrap();
         cache
-            .put(sample("repo-other", "3.5.2", MapState::Ready))
+            .put(sample("repo-other", "3.5.3", MapState::Ready))
             .unwrap();
 
         let removed = cache.invalidate_repo("repo-7").unwrap();
         assert_eq!(removed, 2);
-        assert!(cache.get("repo-7", "3.5.2").is_none());
+        assert!(cache.get("repo-7", "3.5.3").is_none());
         assert!(cache.get("repo-7", "3.6.0").is_none());
         // A different repository's entry must survive the invalidation.
-        assert!(cache.get("repo-other", "3.5.2").is_some());
+        assert!(cache.get("repo-other", "3.5.3").is_some());
 
         // And the files must actually be gone from disk, not just memory.
         let mut fresh = MapCache::new(&dir);
-        assert!(fresh.load("repo-7", "3.5.2").unwrap().is_none());
-        assert!(fresh.load("repo-other", "3.5.2").unwrap().is_some());
+        assert!(fresh.load("repo-7", "3.5.3").unwrap().is_none());
+        assert!(fresh.load("repo-other", "3.5.3").unwrap().is_some());
         let _ = fs::remove_dir_all(&dir);
     }
 

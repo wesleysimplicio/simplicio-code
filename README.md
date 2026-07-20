@@ -27,7 +27,7 @@ for the version of the code present in this tree.
 
 ## Estado do produto
 
-Versão atual: **0.3.0-beta.1**.
+Versão atual: **0.3.0-beta.2**.
 
 - leitura de arquivos obrigatoriamente via `simplicio_file_read`;
 - handshake MCP valida que o processo é o Simplicio Runtime verdadeiro;
@@ -55,7 +55,7 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.
 A partir da `0.3.0-beta.1`, releases assinadas (prerelease no GitHub) passam
 a ser publicadas por [`.github/workflows/release.yml`](.github/workflows/release.yml),
 com checksum, SBOM e manifest assinado — veja
-[`RELEASE_NOTES_0.3.0-beta.1.md`](RELEASE_NOTES_0.3.0-beta.1.md) para o que
+[`RELEASE_NOTES_0.3.0-beta.2.md`](RELEASE_NOTES_0.3.0-beta.2.md) para o que
 já funciona e o que ainda falta (chave de assinatura de produção, build
 Windows, rollout gradual). Instale com:
 

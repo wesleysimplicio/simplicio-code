@@ -803,7 +803,7 @@ mod tests {
     #[test]
     fn parses_runtime_capabilities_contract() {
         let capabilities = parse_capabilities(
-            &json!({"protocolVersion": PROTOCOL_VERSION, "serverInfo": {"name": "simplicio", "version": "3.5.2"}}),
+            &json!({"protocolVersion": PROTOCOL_VERSION, "serverInfo": {"name": "simplicio", "version": "3.5.3"}}),
             &json!({"tools": [{"name": "simplicio_file_read"}, {"name": "simplicio_exec"}]}),
         )
         .unwrap();

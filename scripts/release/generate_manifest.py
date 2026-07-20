@@ -15,7 +15,7 @@ signed manifest).
 
 Usage:
     python3 scripts/release/generate_manifest.py \
-        --version 0.3.0-beta.1 --channel beta \
+        --version 0.3.0-beta.2 --channel beta \
         --artifacts-dir dist/ --out dist/manifest.json
 """
 
