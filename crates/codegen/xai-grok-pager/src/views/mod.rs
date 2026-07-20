@@ -1,5 +1,6 @@
 //! Screen rendering — each screen type has its own rendering module.
 pub mod agent;
+pub mod agent_attention_panel;
 pub mod agent_status;
 pub mod agents_modal;
 pub mod announcements;

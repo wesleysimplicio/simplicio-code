@@ -235,6 +235,7 @@ fn test_app() -> AppView {
         usage_visible: true,
         tier_restricted_commands: Vec::new(),
         leader_mode: true,
+        agent_attention: Default::default(),
         credit_balance: None,
         auto_topup: None,
         billing_poll_wanted: false,

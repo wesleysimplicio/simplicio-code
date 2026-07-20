@@ -13546,6 +13546,7 @@ dependencies = [
  "shellexpand",
  "signal-hook 0.3.18",
  "similar",
+ "simplicio-agent-client",
  "strip-ansi-escapes",
  "syntect",
  "tar",

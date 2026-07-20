@@ -1180,6 +1180,9 @@ pub(crate) async fn run(
     let connection_cancel = connection.cancel;
     let mut leader_status_rx = connection.leader_status_rx;
     let mut tasks: JoinSet<TaskResult> = JoinSet::new();
+    // Its drop guard covers startup short-circuits and task-driven quits in
+    // addition to the explicit normal-shutdown cancellation below.
+    let agent_attention_lifecycle = crate::app::agent_attention::AgentAttentionPollLifecycle::new();
     let (progress_tx, mut progress_rx) =
         tokio::sync::mpsc::unbounded_channel::<effects::RestoreProgressMsg>();
 
@@ -1206,6 +1209,12 @@ pub(crate) async fn run(
 
     const GATE_POLL_INTERVAL: Duration = Duration::from_secs(30);
     let mut gate_poll_at: Option<Instant> = None;
+
+    // Reuse the central select!/JoinSet scheduler. The state model rejects a
+    // second in-flight poll, and the cancellation guard owns teardown. Minimal
+    // mode has no side panel, so it does no invisible Agent polling.
+    let mut agent_attention_poll_at: Option<Instant> =
+        app.screen_mode.is_fullscreen().then(Instant::now);
 
     // Free→paid subscription watch (see `app::subscription`).
     let mut subscription_watch_at: Option<Instant> = if app.subscription_watch_wanted() {
@@ -1656,6 +1665,13 @@ pub(crate) async fn run(
             }
         };
 
+        let agent_attention_poll = async {
+            match agent_attention_poll_at {
+                Some(at) => sleep_until(at).await,
+                None => std::future::pending().await,
+            }
+        };
+
         let subscription_watch = async {
             match subscription_watch_at {
                 Some(at) => sleep_until(at).await,
@@ -1761,6 +1777,8 @@ pub(crate) async fn run(
             Some(join_result) = tasks.join_next() => {
                 match join_result {
                     Ok(result) => {
+                        let agent_attention_completed =
+                            matches!(&result, TaskResult::AgentAttentionPolled(_));
                         let effs = dispatch::dispatch(Action::TaskComplete(result), &mut app);
                         if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
                             break;
@@ -1778,6 +1796,11 @@ pub(crate) async fn run(
                             gate_poll_at = Some(Instant::now() + GATE_POLL_INTERVAL);
                         } else if app.has_access() {
                             gate_poll_at = None;
+                        }
+                        if agent_attention_completed {
+                            agent_attention_poll_at = Some(
+                                Instant::now() + app.agent_attention.next_poll_delay()
+                            );
                         }
 
                         app.draw(terminal);
@@ -1947,6 +1970,26 @@ pub(crate) async fn run(
                 // Keep ticking as long as there are running animations
                 // or pending actions waiting to expire.
                 schedule_tick(&mut animation_tick_at, &app, tick_interval);
+            }
+
+            _ = agent_attention_poll => {
+                agent_attention_poll_at = None;
+                if let Some(cursor) = app.agent_attention.begin_poll() {
+                    let effect = Effect::PollAgentAttention {
+                        cursor,
+                        cancel: agent_attention_lifecycle.token(),
+                    };
+                    if process_effects(vec![effect], &mut tasks, &mut app, &progress_tx) {
+                        break;
+                    }
+                } else {
+                    // Defensive: single-flight normally makes this unreachable,
+                    // but never leave the timer dormant if state was restored
+                    // with a poll already marked in flight.
+                    agent_attention_poll_at = Some(
+                        Instant::now() + app.agent_attention.next_poll_delay()
+                    );
+                }
             }
 
             _ = billing_poll => {
@@ -2444,6 +2487,7 @@ pub(crate) async fn run(
         }
     }
 
+    agent_attention_lifecycle.cancel();
     app.notification_service.shutdown();
 
     Ok(make_run_result(&app))

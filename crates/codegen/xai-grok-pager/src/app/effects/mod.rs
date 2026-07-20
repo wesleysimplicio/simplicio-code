@@ -42,6 +42,20 @@ pub(crate) fn execute(
     let mut meta = EffectMeta::default();
     let effect_is_send_now = matches!(effect, Effect::SendPromptNow { .. });
     match effect {
+        Effect::PollAgentAttention { cursor, cancel } => {
+            tasks.spawn(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    crate::app::agent_attention::poll_agent_attention(cursor, &cancel)
+                })
+                .await
+                .unwrap_or_else(|_error| {
+                    crate::app::agent_attention::AgentAttentionPollResult::Degraded(
+                        crate::app::agent_attention::AgentHostDegradedReason::PollTaskFailed,
+                    )
+                });
+                TaskResult::AgentAttentionPolled(result)
+            });
+        }
         Effect::RegisterActiveSession { session_id, cwd } => {
             crate::app::signal_handler::set_current_session_id(Some(session_id.clone()));
             if let Err(e) = xai_grok_shell::active_sessions::register(xai_grok_shell::active_sessions::ActiveSession {

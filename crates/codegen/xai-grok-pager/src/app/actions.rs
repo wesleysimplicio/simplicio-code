@@ -1318,6 +1318,12 @@ pub enum ProbedAttachment {
 }
 #[derive(Debug)]
 pub enum Effect {
+    /// Poll the passive Simplicio Agent host projection off the event-loop
+    /// thread. The central event loop owns cadence and admits one in flight.
+    PollAgentAttention {
+        cursor: u64,
+        cancel: tokio_util::sync::CancellationToken,
+    },
     /// Create a new ACP session.
     CreateSession {
         agent_id: AgentId,
@@ -2048,6 +2054,8 @@ pub enum SubagentKillOutcome {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskResult {
+    /// One passive Agent host status/advisory poll completed.
+    AgentAttentionPolled(crate::app::agent_attention::AgentAttentionPollResult),
     /// Session was created successfully.
     SessionCreated {
         agent_id: AgentId,
