@@ -2007,6 +2007,7 @@ mod tests {
         SessionContext {
             backend: Arc::new(crate::computer::local::LocalTerminalBackend::new()),
             fs: Arc::new(crate::computer::local::LocalFs),
+            search: None,
             cwd: tmp.path().to_path_buf(),
             session_folder: tmp.path().join("session"),
             session_env: Arc::new(HashMap::new()),
