@@ -46,6 +46,16 @@ pub enum AuthStartMode {
     Command,
 }
 
+/// Whether the product is currently running in guest mode.
+///
+/// Simpleti is temporarily open to users without an XAI account. The normal
+/// login flow remains in place and can be restored without a code change by
+/// setting `SIMPLICIO_REQUIRE_XAI_LOGIN=1` (the future Gmail/simpleti.com.br
+/// rollout can use the same switch while its identity provider is wired in).
+pub fn guest_access_enabled() -> bool {
+    !xai_grok_config::env_bool("SIMPLICIO_REQUIRE_XAI_LOGIN").unwrap_or(false)
+}
+
 /// Result of connecting to an agent.
 pub struct AcpConnection {
     /// Send requests to the agent.
@@ -210,16 +220,23 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         startup_auth_metadata(&auth_methods);
 
     let (needs_login, login_label, login_method_id, auth_start_mode, auth_meta) =
-        eager_auth_or_login_fallback(
-            &tx,
-            &auth_methods,
-            default_auth_method_id.as_ref(),
-            needs_login,
-            login_label,
-            login_method_id,
-            auth_start_mode,
-        )
-        .await;
+        if guest_access_enabled() {
+            tracing::info!(
+                "XAI account login bypassed; running in Simpleti guest mode"
+            );
+            (false, None, None, AuthStartMode::Pending, None)
+        } else {
+            eager_auth_or_login_fallback(
+                &tx,
+                &auth_methods,
+                default_auth_method_id.as_ref(),
+                needs_login,
+                login_label,
+                login_method_id,
+                auth_start_mode,
+            )
+            .await
+        };
 
     Ok(AcpConnection {
         tx,
@@ -322,16 +339,23 @@ pub async fn connect_via_leader(
         startup_auth_metadata(&auth_methods);
 
     let (needs_login, login_label, login_method_id, auth_start_mode, auth_meta) =
-        eager_auth_or_login_fallback(
-            &tx,
-            &auth_methods,
-            default_auth_method_id.as_ref(),
-            needs_login,
-            login_label,
-            login_method_id,
-            auth_start_mode,
-        )
-        .await;
+        if guest_access_enabled() {
+            tracing::info!(
+                "XAI account login bypassed; running in Simpleti guest mode"
+            );
+            (false, None, None, AuthStartMode::Pending, None)
+        } else {
+            eager_auth_or_login_fallback(
+                &tx,
+                &auth_methods,
+                default_auth_method_id.as_ref(),
+                needs_login,
+                login_label,
+                login_method_id,
+                auth_start_mode,
+            )
+            .await
+        };
 
     // Leader mode runs the agent in a separate process, so there's no shared
     // in-process `AuthManager`. Build a dedicated *non-refreshing* one over the
