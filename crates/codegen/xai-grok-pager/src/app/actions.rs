@@ -1321,7 +1321,7 @@ pub enum Effect {
     /// Poll the passive Simplicio Agent host projection off the event-loop
     /// thread. The central event loop owns cadence and admits one in flight.
     PollAgentAttention {
-        cursor: u64,
+        request: crate::app::agent_attention::AgentAttentionPollRequest,
         cancel: tokio_util::sync::CancellationToken,
     },
     /// Create a new ACP session.
