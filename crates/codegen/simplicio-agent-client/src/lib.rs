@@ -295,9 +295,9 @@ fn parse_advisory_page(response: &Value, after: u64) -> Result<AdvisoryPage, Err
         validate_advisory(event)?;
         previous = event.sequence;
     }
-    if page.next_cursor < previous {
+    if page.next_cursor != previous {
         return Err(Error::InvalidResponse(
-            "advisory next_cursor moved backwards".into(),
+            "advisory next_cursor must equal the last observed sequence".into(),
         ));
     }
     Ok(page)
@@ -510,6 +510,30 @@ mod tests {
         ));
 
         response["advisories"]["events"][0]["summary"] = json!("Agent host is ready.");
+        assert!(matches!(
+            parse_advisory_page(&response, 7),
+            Err(Error::InvalidResponse(_))
+        ));
+    }
+
+    #[test]
+    fn rejects_a_future_cursor_that_would_skip_advisories() {
+        let mut response = host_response();
+        response["advisories"] = json!({
+            "schema": ADVISORY_SCHEMA,
+            "events": [{
+                "schema": ADVISORY_SCHEMA,
+                "sequence": 8,
+                "kind": "host.ready",
+                "severity": "info",
+                "summary": "Agent host is ready.",
+                "action": null,
+                "ts_wall_ns": 1,
+            }],
+            "next_cursor": 99,
+            "truncated": false,
+        });
+
         assert!(matches!(
             parse_advisory_page(&response, 7),
             Err(Error::InvalidResponse(_))
