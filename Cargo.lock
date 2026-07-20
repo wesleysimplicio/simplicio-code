@@ -9840,6 +9840,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplicio-agent-client"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "simplicio-code-gateway"
 version = "0.1.0"
 dependencies = [
@@ -14162,6 +14172,7 @@ dependencies = [
  "serde_yaml",
  "shellexpand",
  "similar",
+ "simplicio-agent-client",
  "simplicio-runtime-client",
  "strip-ansi-escapes",
  "strum 0.26.3",

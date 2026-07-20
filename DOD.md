@@ -23,6 +23,14 @@ This DoD applies to the points genuinely added or modified by Simplicio:
   Simplicio Runtime. No local-filesystem fallback exists in this crate by
   design; the handshake (`initialize` → `tools/list`) is the boundary that
   must fail closed.
+- `crates/codegen/simplicio-agent-client` — Code's fail-closed client for the
+  independently shipped AgentHost. Its version/capability handshake, private
+  socket check, bounded advisory replay, and fixed no-free-form attention
+  vocabulary are part of the owned boundary.
+- `crates/codegen/xai-grok-tools/src/computer/local/simplicio_runtime.rs` —
+  the narrow inherited adapter modified by Simplicio to require Agent first
+  and Runtime second for every operation it owns. Neither dependency has a
+  built-in/local fallback.
 - `crates/codegen/xai-grok-models` — the crate that loads Simplicio's model
   configuration (`Simplicio-1` / `tencent/hy3:free` via OpenRouter, the
   default model surfaced by this fork).
@@ -76,7 +84,8 @@ aimed specifically at that gap.
 ### 1. Build & lint (existing CI gates, scoped)
 
 - `cargo check -p simplicio-runtime-client` / `cargo check -p
-  xai-grok-models` — must succeed without a network dependency beyond what
+  simplicio-agent-client` / `cargo check -p xai-grok-models` — must succeed
+  without a network dependency beyond what
   `Cargo.lock` already resolves (regression guard for the class of bug in
   code#63: any new build-time network fetch must have a documented,
   discoverable offline/`PATH`-fallback override, same shape as

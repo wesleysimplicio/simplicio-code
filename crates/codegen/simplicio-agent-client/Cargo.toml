@@ -1,0 +1,17 @@
+[package]
+name = "simplicio-agent-client"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Fail-closed AgentHost client and advisory model for Simplicio Code"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[lints]
+workspace = true

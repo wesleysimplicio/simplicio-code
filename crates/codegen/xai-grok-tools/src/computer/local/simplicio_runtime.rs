@@ -3,31 +3,35 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use simplicio_agent_client::{AgentHostClient, resolve_socket_path};
 use simplicio_runtime_client::{DEFAULT_MAX_FILE_BYTES, RuntimeClient, start_workspace_map};
 
 use crate::computer::types::{
     AsyncFileSystem, AsyncSearch, ComputerError, SearchMatch, SearchOutcome,
 };
 
-/// Project filesystem whose reads, writes and deletes are all owned by the
-/// Simplicio Runtime.
+/// Project filesystem whose effects are owned by the Simplicio Runtime and
+/// gated on a compatible, independently running Simplicio Agent host.
 ///
-/// Every operation fails closed: there is intentionally no direct-local
-/// fallback for any of them, matching the reads-only guarantee PR #1/#2
-/// shipped for `read_file`.
+/// Every operation requires both products and fails closed: there is
+/// intentionally no direct-local or built-in-agent fallback for any of them.
 pub struct SimplicioRuntimeFs {
     root: PathBuf,
+    agent_socket: PathBuf,
+    agent_client: Arc<Mutex<Option<AgentHostClient>>>,
     client: Arc<Mutex<Option<RuntimeClient>>>,
 }
 
 impl SimplicioRuntimeFs {
     pub fn new(root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
-        if let Err(error) = start_workspace_map(&root) {
-            tracing::warn!(%error, workspace = %root.display(), "Simplicio Mapper bootstrap failed");
-        }
+        Self::with_agent_socket(root, resolve_socket_path())
+    }
+
+    fn with_agent_socket(root: impl Into<PathBuf>, agent_socket: impl Into<PathBuf>) -> Self {
         Self {
-            root,
+            root: root.into(),
+            agent_socket: agent_socket.into(),
+            agent_client: Arc::new(Mutex::new(None)),
             client: Arc::new(Mutex::new(None)),
         }
     }
@@ -82,14 +86,9 @@ impl SimplicioRuntimeFs {
         Ok(relative)
     }
 
-    /// Runs `op` against a lazily-initialized, per-workspace Runtime MCP
-    /// session, tearing the session down on any error so the next call
-    /// reconnects instead of replaying a wedged connection. This is the
-    /// fail-closed core shared by every operation: on a missing Runtime,
-    /// incompatible capability (see `RuntimeClient`'s capability
-    /// negotiation), or a rejected call, `op` returns `Err`, the session is
-    /// dropped, and the error propagates — there is no local fallback branch
-    /// anywhere in this function.
+    /// Verifies the independent Agent host, then runs `op` against a lazily
+    /// initialized Runtime MCP session. Either missing/incompatible dependency
+    /// blocks the operation; no local coordinator/filesystem fallback exists.
     async fn with_runtime<T: Send + 'static>(
         &self,
         op: impl FnOnce(&mut RuntimeClient, &Path) -> Result<T, simplicio_runtime_client::Error>
@@ -97,8 +96,34 @@ impl SimplicioRuntimeFs {
         + 'static,
     ) -> Result<T, ComputerError> {
         let root = self.root.clone();
+        let agent_socket = self.agent_socket.clone();
+        let agent_client = Arc::clone(&self.agent_client);
         let client = Arc::clone(&self.client);
         tokio::task::spawn_blocking(move || {
+            {
+                let mut agent_guard = agent_client
+                    .lock()
+                    .map_err(|_| ComputerError::io("Simplicio Agent client lock poisoned"))?;
+                let validation = if let Some(agent) = agent_guard.as_mut() {
+                    agent.refresh_status().map(|_| ())
+                } else {
+                    AgentHostClient::connect(agent_socket.clone()).map(|agent| {
+                        *agent_guard = Some(agent);
+                    })
+                };
+                if let Err(error) = validation {
+                    *agent_guard = None;
+                    return Err(ComputerError::io(error.to_string()));
+                }
+            }
+
+            // Runtime-owned mapping starts only after the mandatory Agent
+            // handshake; Code cannot partially run one dependency without the
+            // other. Mapping remains best-effort and never bypasses Runtime.
+            if let Err(error) = start_workspace_map(&root) {
+                tracing::warn!(%error, workspace = %root.display(), "Simplicio Mapper bootstrap failed");
+            }
+
             let mut guard = client
                 .lock()
                 .map_err(|_| ComputerError::io("Simplicio Runtime client lock poisoned"))?;
@@ -223,10 +248,28 @@ impl AsyncFileSystem for SimplicioRuntimeFs {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn operation_fails_closed_before_runtime_when_agent_is_missing() {
+        let workspace = tempfile::tempdir().unwrap();
+        let missing_socket = workspace.path().join("missing-agent.sock");
+        let fs = SimplicioRuntimeFs::with_agent_socket(workspace.path(), missing_socket);
+
+        let error = fs
+            .search("needle", None, &[], false, false, 100, 100)
+            .await
+            .expect_err("an operation without Agent must fail before Runtime startup");
+
+        assert!(
+            error
+                .to_string()
+                .contains("Simplicio Agent socket was not found"),
+            "unexpected error: {error}"
+        );
+    }
+
     /// Regression: writes must fail closed exactly like the PR #1/#2 read
-    /// path — no Runtime on `PATH`/`SIMPLICIO_BIN` means the write is
-    /// rejected, and critically, no file is silently created on local disk
-    /// as a fallback.
+    /// path when mandatory Agent/Runtime dependencies are unavailable, and
+    /// critically no file is silently created on local disk as a fallback.
     #[tokio::test]
     async fn write_file_fails_closed_without_local_fallback() {
         let workspace = tempfile::tempdir().unwrap();
@@ -235,15 +278,18 @@ mod tests {
         let result = fs
             .write_file(Path::new("should_not_exist.txt"), b"data")
             .await;
-        assert!(result.is_err(), "write must fail closed without a Runtime");
+        assert!(
+            result.is_err(),
+            "write must fail closed without mandatory dependencies"
+        );
         assert!(
             !target.exists(),
             "write must not silently fall back to local disk"
         );
     }
 
-    /// Same guarantee for deletes: a missing Runtime must not let a delete
-    /// silently fall back to touching the file directly.
+    /// Same guarantee for deletes: missing mandatory dependencies must not let
+    /// a delete silently fall back to touching the file directly.
     #[tokio::test]
     async fn delete_file_fails_closed_without_local_fallback() {
         let workspace = tempfile::tempdir().unwrap();
@@ -251,24 +297,28 @@ mod tests {
         std::fs::write(&target, b"keep me").unwrap();
         let fs = SimplicioRuntimeFs::new(workspace.path());
         let result = fs.delete_file(Path::new("keep.txt")).await;
-        assert!(result.is_err(), "delete must fail closed without a Runtime");
+        assert!(
+            result.is_err(),
+            "delete must fail closed without mandatory dependencies"
+        );
         assert!(
             target.exists(),
             "delete must not silently fall back to local disk"
         );
     }
 
-    /// New capability, same fail-closed contract as read/write/delete: no
-    /// Runtime on `PATH`/`SIMPLICIO_BIN` means `search` is rejected outright,
-    /// never silently degrading to a local ripgrep/`tokio::fs` walk.
+    /// New capability, same fail-closed contract as read/write/delete: missing
+    /// mandatory dependencies reject `search` outright, never silently
+    /// degrading to a local ripgrep/`tokio::fs` walk.
     #[tokio::test]
     async fn search_fails_closed_without_local_fallback() {
         let workspace = tempfile::tempdir().unwrap();
         let fs = SimplicioRuntimeFs::new(workspace.path());
-        let result = fs
-            .search("needle", None, &[], false, false, 100, 100)
-            .await;
-        assert!(result.is_err(), "search must fail closed without a Runtime");
+        let result = fs.search("needle", None, &[], false, false, 100, 100).await;
+        assert!(
+            result.is_err(),
+            "search must fail closed without mandatory dependencies"
+        );
     }
 
     /// Security regression, mirroring `rejects_symlink_escape_to_outside_target`
