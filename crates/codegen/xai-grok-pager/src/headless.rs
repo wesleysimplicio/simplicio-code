@@ -964,18 +964,23 @@ pub async fn run_single_turn(
     // Authenticate using agent defaultAuthMethodId (preferred_method pin).
     let t_auth = Instant::now();
     let default_auth_method_id = crate::acp::parse_default_auth_method_id(init_resp.meta.as_ref());
-    let is_api_key_auth = match authenticate(
-        &acp_tx,
-        &init_resp.auth_methods,
-        default_auth_method_id.as_ref(),
-    )
-    .await
-    {
-        Ok(is_api_key) => is_api_key,
-        Err(e) => {
-            emitter.on_error(&e.to_string());
-            cancel.cancel();
-            return Err(e);
+    let is_api_key_auth = if crate::acp::guest_access_enabled() {
+        tracing::info!("headless XAI account login bypassed; running in guest mode");
+        false
+    } else {
+        match authenticate(
+            &acp_tx,
+            &init_resp.auth_methods,
+            default_auth_method_id.as_ref(),
+        )
+        .await
+        {
+            Ok(is_api_key) => is_api_key,
+            Err(e) => {
+                emitter.on_error(&e.to_string());
+                cancel.cancel();
+                return Err(e);
+            }
         }
     };
     tracing::debug!(
