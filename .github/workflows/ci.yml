@@ -87,6 +87,10 @@ jobs:
         run: python3 scripts/check_unused_struct_locals.py --json > struct-initializer-report.json
       - name: Generate offline headless invocation matrix
         run: python3 scripts/headless_invocation_matrix.py --json > headless-invocation-matrix.json
+      - name: Validate failure-diagnostics artifact path
+        run: |
+          python3 -m py_compile scripts/ci_diagnostics.py scripts/tests/test_ci_diagnostics.py
+          python3 scripts/tests/test_ci_diagnostics.py
       - name: Run gate self-tests
         run: python3 scripts/tests/test_issue_68_gates.py
       - name: Upload Simplicio reports
