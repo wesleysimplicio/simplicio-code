@@ -407,6 +407,8 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         ));
         let fs = simplicio_runtime_fs.clone()
             as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
+        let directory = Some(simplicio_runtime_fs.clone()
+            as Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>);
         let search = Some(simplicio_runtime_fs
             as Arc<dyn xai_grok_tools::computer::types::AsyncSearch>);
         let notification_handle = xai_grok_tools::notification::ToolNotificationHandle::noop();
@@ -462,6 +464,7 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             backend,
             fs,
             search,
+            directory,
             cwd,
             session_folder: Self::resolve_session_folder(session_id),
             session_env,
@@ -579,6 +582,7 @@ pub mod test_support {
                 backend,
                 fs: Arc::new(LocalFs),
                 search: None,
+                directory: None,
                 cwd,
                 session_folder: session_root.clone(),
                 session_env,

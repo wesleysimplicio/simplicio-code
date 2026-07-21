@@ -217,14 +217,6 @@ impl xai_tool_runtime::Tool for CodexGrepFilesTool {
             _ => cwd.clone(),
         };
 
-        // Verify path exists
-        if let Err(err) = tokio::fs::metadata(&search_path).await {
-            return Ok(CodexGrepFilesOutput::Error(format!(
-                "unable to access `{}`: {err}",
-                search_path.display()
-            )));
-        }
-
         // Clean up include glob
         let include = input.include.as_deref().map(str::trim).and_then(|v| {
             if v.is_empty() {
@@ -283,6 +275,16 @@ impl xai_tool_runtime::Tool for CodexGrepFilesTool {
                     "Simplicio Runtime search failed: {err}"
                 ))),
             };
+        }
+
+        // Local metadata and ripgrep are retained only for explicitly local
+        // test/legacy sessions. Productive Runtime sessions return above
+        // before touching the workspace through tokio::fs.
+        if let Err(err) = tokio::fs::metadata(&search_path).await {
+            return Ok(CodexGrepFilesOutput::Error(format!(
+                "unable to access `{}`: {err}",
+                search_path.display()
+            )));
         }
 
         // Run rg

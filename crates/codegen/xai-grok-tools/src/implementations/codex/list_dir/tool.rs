@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use crate::types::output::{ListDirContent, ListDirOutput};
 use crate::types::requirements::Expr;
+use crate::types::resources::DirectoryBackend;
 use crate::types::tool::{ToolKind, ToolNamespace};
 
 // ─── Constants ──────────────────────────────────────────────────────
@@ -304,7 +305,7 @@ impl xai_tool_runtime::Tool for CodexListDirTool {
     )]
     async fn run(
         &self,
-        _ctx: xai_tool_runtime::ToolCallContext,
+        ctx: xai_tool_runtime::ToolCallContext,
         input: CodexListDirInput,
     ) -> Result<ListDirOutput, xai_tool_runtime::ToolError> {
         let CodexListDirInput {
@@ -336,6 +337,34 @@ impl xai_tool_runtime::Tool for CodexListDirTool {
             ));
         }
 
+        // Runtime owns productive tree walking. The local BFS below remains
+        // available only to tests/legacy contexts that did not negotiate the
+        // Runtime directory contract.
+        let resources = crate::types::tool_metadata::shared_resources(&ctx)?;
+        let runtime_backend = resources.lock().await.get::<DirectoryBackend>().map(|b| b.0.clone());
+        if let Some(backend) = runtime_backend {
+            let payload = backend
+                .list_directory(
+                    &path,
+                    serde_json::json!({
+                        "depth": depth,
+                        "offset": offset.saturating_sub(1),
+                        "limit": limit,
+                        "include_hidden": true,
+                        "follow_symlinks": false,
+                        "respect_git_ignore": false,
+                    }),
+                )
+                .await
+                .map_err(|error| {
+                    xai_tool_runtime::ToolError::execution(
+                        xai_tool_protocol::ToolId::new("list_dir").expect("valid tool id"),
+                        format!("Simplicio Runtime list failed: {error}"),
+                    )
+                })?;
+            return Ok(render_runtime_listing(&path, payload, offset, limit));
+        }
+
         let entries = match list_dir_slice(&path, offset, limit, depth).await {
             Ok(entries) => entries,
             Err(msg) => return Ok(ListDirOutput::Error(msg)),
@@ -353,10 +382,156 @@ impl xai_tool_runtime::Tool for CodexListDirTool {
     }
 }
 
+fn render_runtime_listing(
+    path: &Path,
+    payload: serde_json::Value,
+    offset: usize,
+    limit: usize,
+) -> ListDirOutput {
+    let payload = match crate::computer::local::runtime_directory::runtime_payload(payload) {
+        Ok(payload) => payload,
+        Err(error) => return ListDirOutput::Error(error),
+    };
+    let Some(nodes) = payload
+        .get("nodes")
+        .or_else(|| payload.get("entries"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return ListDirOutput::Error(
+            "Simplicio Runtime list response is missing the v1 `nodes` array".to_owned(),
+        );
+    };
+    let mut lines = Vec::with_capacity(nodes.len() + 2);
+    lines.push(format!("Absolute path: {}", path.display()));
+    for (index, node) in nodes.iter().enumerate() {
+        let name = node
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| node.get("name").and_then(serde_json::Value::as_str));
+        let Some(name) = name else {
+            return ListDirOutput::Error(
+                "Simplicio Runtime list response contains an entry without `path` or `name`"
+                    .to_owned(),
+            );
+        };
+        let kind = node
+            .get("type")
+            .or_else(|| node.get("nodeType"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        let suffix = if node
+            .get("is_symlink")
+            .or_else(|| node.get("isSymlink"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+        {
+            "@"
+        } else if kind.eq_ignore_ascii_case("directory") {
+            "/"
+        } else {
+            ""
+        };
+        lines.push(format!("{}: {}{}", offset + index, name, suffix));
+        if index + 1 >= limit {
+            break;
+        }
+    }
+    if payload
+        .get("truncated")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        lines.push(format!("More than {} entries found", limit));
+    }
+    ListDirOutput::Content(ListDirContent {
+        content: lines.join("\n"),
+        absolute_root_path: path.to_path_buf(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::computer::types::ComputerError;
+    use crate::types::resources::{AsyncDirectoryListing, Cwd, DirectoryBackend, Resources};
     use tempfile::TempDir;
+
+    struct FakeRuntimeList {
+        response: Result<serde_json::Value, String>,
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncDirectoryListing for FakeRuntimeList {
+        async fn list_directory(
+            &self,
+            _path: &Path,
+            _options: serde_json::Value,
+        ) -> Result<serde_json::Value, ComputerError> {
+            self.response.clone().map_err(ComputerError::io)
+        }
+    }
+
+    fn runtime_ctx(
+        cwd: &Path,
+        response: Result<serde_json::Value, String>,
+    ) -> xai_tool_runtime::ToolCallContext {
+        let mut resources = Resources::new();
+        resources.insert(Cwd(cwd.to_path_buf()));
+        resources.insert(DirectoryBackend(std::sync::Arc::new(FakeRuntimeList { response })));
+        let mut ctx = xai_tool_runtime::ToolCallContext::default();
+        ctx.extensions.insert(resources.into_shared());
+        ctx
+    }
+
+    #[tokio::test]
+    async fn productive_list_dir_uses_runtime_without_local_walk() {
+        let tmp = TempDir::new().unwrap();
+        let output = xai_tool_runtime::Tool::run(
+            &CodexListDirTool,
+            runtime_ctx(
+                tmp.path(),
+                Ok(serde_json::json!({
+                    "nodes": [{"path": "virtual.rs", "type": "file"}],
+                    "truncated": false
+                })),
+            ),
+            CodexListDirInput {
+                dir_path: tmp.path().join("missing-locally").display().to_string(),
+                offset: 1,
+                limit: 25,
+                depth: 2,
+            },
+        )
+        .await
+        .unwrap();
+        match output {
+            ListDirOutput::Content(content) => assert!(content.content.contains("virtual.rs")),
+            other => panic!("expected Runtime listing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn productive_list_dir_rejects_malformed_runtime_response() {
+        let tmp = TempDir::new().unwrap();
+        let output = xai_tool_runtime::Tool::run(
+            &CodexListDirTool,
+            runtime_ctx(tmp.path(), Ok(serde_json::json!({"schema": "wrong"}))),
+            CodexListDirInput {
+                dir_path: tmp.path().join("missing-locally").display().to_string(),
+                offset: 1,
+                limit: 25,
+                depth: 2,
+            },
+        )
+        .await
+        .unwrap();
+        match output {
+            ListDirOutput::Error(message) => {
+                assert!(message.contains("missing the v1 `nodes` array"));
+            }
+            other => panic!("expected fail-closed error, got {other:?}"),
+        }
+    }
 
     // ── Unit tests (core logic) ─────────────────────────────────
 

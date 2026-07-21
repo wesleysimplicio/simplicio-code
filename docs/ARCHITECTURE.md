@@ -67,12 +67,15 @@ com erro acionável, sem fallback local. `search` também valida cada `glob`
 contra path traversal/absolute antes de enviar ao Runtime
 (`secure_glob`/`Error::GlobRejected`), fechando a mesma classe de bypass que a
 correção de symlink do PR anterior fechou para os alvos de leitura/escrita.
-Um único `SearchBackend` (recurso em `Resources`, ao lado de `FileSystem`) é
-injetado apenas nos dois pontos de construção que já usam
-`SimplicioRuntimeFs` — nenhum tool passa a exigi-lo: ausente, o tool mantém
-seu comportamento local (ripgrep) inalterado; presente, o tool usa o backend
-exclusivamente e falha fechado nos erros dele. `CodexGrepFilesTool`
-(`grep_files`) continua usando esse backend exclusivamente. O `apply_patch`
+Os recursos `SearchBackend` e `DirectoryBackend` (em `Resources`, ao lado de
+`FileSystem`) são injetados nos pontos de construção que usam
+`SimplicioRuntimeFs`. Em fixtures e superfícies legadas, a ausência explícita
+desses recursos preserva o comportamento local; em uma sessão produtiva que os
+negociou, os tools usam o backend exclusivamente e falham fechado nos erros
+dele. `grep`, `hashline_grep` e `grep_files` usam `simplicio_search`; as duas
+variantes de `list_dir` usam `simplicio_fs_list`, inclusive quando a resposta
+chega embrulhada pelo transporte MCP. Nenhum desses caminhos faz `metadata`,
+`WalkBuilder` ou `ripgrep` local antes/depois do Runtime. O `apply_patch`
 do Codex usa a mesma `FileSystem` resource: ele calcula o plano somente com
 leituras do backend e, quando o backend oferece edição atômica, envia um único
 plano ao contrato Runtime `simplicio_edit`. `SimplicioRuntimeFs` implementa
@@ -80,8 +83,9 @@ essa capacidade chamando seu `edit_workspace`, portanto approval/checkpoint/
 rollback/receipt continuam sob a autoridade do Runtime. Um erro do Runtime é
 terminal para o patch; não há fallback para `write_file`/`delete_file` locais.
 Backends locais usados apenas por fixtures e superfícies legadas continuam
-com o aplicador por arquivo já existente. `list`/`stat`/`exec` permanecem sem
-consumidor produtivo nesta fatia.
+com o aplicador por arquivo já existente. `stat` já é consumido pelos adapters
+de workspace; `exec`/bash ainda aguardam a migração do `TerminalBackend` para
+o contrato Runtime de execução.
 
 O Runtime é um processo acoplado ao binário na experiência do usuário, mas
 continua sendo um componente independente e testável. Isso evita duplicar mapa,
@@ -103,13 +107,13 @@ ainda são dependências externas: o Code fornece o contrato, aceita
 `standalone` só existe quando selecionado explicitamente e não é fallback
 silencioso.
 
-O recorte atual torna Agent + Runtime obrigatórios nos pontos que já usam
+O recorte atual torna Agent + Runtime obrigatórios nos pontos que usam
 `SimplicioRuntimeFs` (TUI/headless/workspace/ACP) e entrega o contrato tipado de
 advisories. Ainda não significa que todos os comandos herdados do Code passam
-pelos dois componentes: `list`/`stat`/`exec`, alguns caminhos diretos de
-`ripgrep`/`tokio::fs` e a renderização da lateral continuam nas próximas
-fatias. Essa fronteira é registrada explicitamente para não confundir contrato
-P0 real com integração total ainda não entregue.
+pelos dois componentes: bash/terminal e alguns walkers internos fora das
+ferramentas `list_dir` ainda exigem migração. Essa fronteira é registrada
+explicitamente para não confundir contrato P0 real com integração total ainda
+não entregue.
 
 Também permanece pendente o contrato neutro de proatividade real:
 `workspace.observe` + `workspace.advisory` com finding/risk/suggestion,
@@ -145,18 +149,18 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
   (`SimplicioRuntimeFs`), com sandbox rígido (path traversal + escape via
   symlink) e sem fallback local.
 - Concluído: `search` ligado via `AsyncSearch`/`SimplicioRuntimeFs` e
-  consumido por `grep_files` (namespace Codex) através do recurso opcional
-  `SearchBackend`, com o mesmo sandbox fail-closed (path/glob traversal,
-  escape via symlink) e sem fallback local quando o backend está presente.
-- Concluído no cliente, pendente de ligação: contratos MCP tipados de
-  `list`/`stat`/`edit`/`exec` com capability negotiation e rejeição
-  fail-closed de Runtime incompatível — nenhum tool do agente os consome
-  ainda.
-- Próximo: renderizar/pollear a lateral e ligar
-  `grep`/`hashline_grep`/`list_dir` (que hoje chamam
-  `ripgrep`/`tokio::fs`/`ignore::WalkBuilder` diretamente, fora de
-  `AsyncSearch`/`AsyncFileSystem`) ao mesmo `SearchBackend`/contrato de
-  `list`, e o executor de `bash` ao contrato de `exec`.
+  consumido por `grep`, `hashline_grep` e `grep_files`, com sandbox
+  fail-closed (path/glob traversal, escape via symlink) e sem fallback local
+  quando o backend está presente.
+- Concluído: `list_dir` das namespaces Grok Build e Codex ligado a
+  `DirectoryBackend`/`simplicio_fs_list`, com validação de `nodes`/alias
+  `entries`, payload MCP embrulhado e testes de resposta malformada sem
+  fallback para `WalkBuilder`/`tokio::fs`.
+- Concluído: contratos MCP tipados de `list`/`stat`/`edit`/`exec` com
+  capability negotiation e rejeição fail-closed de Runtime incompatível;
+  `list`/`stat`/`edit` já possuem consumidores produtivos nesta fatia.
+- Próximo: ligar o executor de `bash`/terminal ao contrato `exec` e cobrir o
+  E2E com Runtime instalado em todas as plataformas.
 - Depois: identidade/entitlement Simplicio e gateway único de inferência.
 - Por último: instaladores assinados, atualização automática e release privada.
 

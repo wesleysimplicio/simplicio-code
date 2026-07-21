@@ -22,13 +22,14 @@ mod versions;
 use crate::types::output::{ListDirContent, ListDirOutput};
 #[allow(unused_imports)]
 use crate::types::resources::{
-    DisplayCwd, Params, PathNotFoundHints, RespectGitignore, SharedResources, display_cwd_or_cwd,
-    resolve_model_path,
+    AsyncDirectoryListing, DirectoryBackend, DisplayCwd, Params, PathNotFoundHints,
+    RespectGitignore, SharedResources, display_cwd_or_cwd, resolve_model_path,
 };
 use crate::types::template_renderer::TemplateRenderer;
 use crate::types::tool::{ToolKind, ToolNamespace};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct ListDirInput {
     #[schemars(
@@ -113,6 +114,86 @@ const MAX_GLOBAL_ITEMS: usize = 100_000;
 /// the cutoff notice's shared count stays correct whichever cap triggers truncation.
 const MAX_SEED_ITEMS: usize = 100_000;
 const _: () = assert!(MAX_SEED_ITEMS == MAX_GLOBAL_ITEMS);
+
+/// Validate and render the Runtime `simplicio_fs_list` response. The Runtime
+/// remains the tree-walk authority; this adapter only maps its contract into
+/// the existing model-facing list shape. A missing/invalid `entries` array is
+/// an incompatibility, not permission to walk local disk.
+fn render_runtime_listing(display_path: &Path, payload: serde_json::Value) -> ListDirOutput {
+    let payload = match crate::computer::local::runtime_directory::runtime_payload(payload) {
+        Ok(payload) => payload,
+        Err(error) => return ListDirOutput::Error(error),
+    };
+    let Some(entries) = payload
+        .get("nodes")
+        .or_else(|| payload.get("entries"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return ListDirOutput::Error(
+            "Simplicio Runtime list response is missing the v1 `nodes` array".to_owned(),
+        );
+    };
+
+    let mut lines = vec![format!("- {}/", display_path.display())];
+    for entry in entries {
+        let name = entry
+            .get("path")
+            .and_then(serde_json::Value::as_str)
+            .or_else(|| entry.get("name").and_then(serde_json::Value::as_str));
+        let Some(name) = name else {
+            return ListDirOutput::Error(
+                "Simplicio Runtime list response contains an entry without `path` or `name`"
+                    .to_owned(),
+            );
+        };
+        let is_dir = entry
+            .get("is_dir")
+            .and_then(serde_json::Value::as_bool)
+            .or_else(|| {
+                entry
+                    .get("type")
+                    .or_else(|| entry.get("nodeType"))
+                    .and_then(serde_json::Value::as_str)
+                    .map(|kind| kind.eq_ignore_ascii_case("directory"))
+            })
+            .unwrap_or_else(|| name.ends_with('/'));
+        let suffix = if is_dir && !name.ends_with('/') { "/" } else { "" };
+        lines.push(format!("  - {name}{suffix}"));
+    }
+    if payload
+        .get("truncated")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        lines.push("  ... (Runtime listing truncated)".to_owned());
+    }
+    ListDirOutput::Content(ListDirContent {
+        content: lines.join("\n"),
+        absolute_root_path: display_path.to_path_buf(),
+    })
+}
+
+async fn run_runtime_listing(
+    backend: Arc<dyn AsyncDirectoryListing>,
+    path: &Path,
+    display_path: &Path,
+    max_output_chars: usize,
+    respect_gitignore: bool,
+) -> ListDirOutput {
+    let options = serde_json::json!({
+        "depth": 12,
+        "follow_symlinks": false,
+        "respect_git_ignore": respect_gitignore,
+        "include_hidden": false,
+        "max_entries": MAX_GLOBAL_ITEMS,
+        "max_output_chars": max_output_chars,
+    });
+    match backend.list_directory(path, options).await {
+        Ok(payload) => render_runtime_listing(display_path, payload),
+        Err(error) => ListDirOutput::Error(format!("Simplicio Runtime list failed: {error}")),
+    }
+}
+
 #[derive(Debug, Default)]
 struct DirAccum {
     total_files: usize,
@@ -498,6 +579,34 @@ impl xai_tool_runtime::Tool for ListDirTool {
         let path = resolve_model_path(&cwd, display_cwd.as_deref(), &input.target_directory);
         let display_base = display_cwd_or_cwd(&cwd, display_cwd.as_deref());
         let display_path = compute_display_path(&display_base, &input.target_directory);
+
+        // Productive Code sessions inject the Runtime list contract. This
+        // branch intentionally occurs before local metadata or WalkBuilder:
+        // Runtime failures and malformed responses are surfaced directly,
+        // never replaced by a local tree walk.
+        let runtime_listing = {
+            let res = resources.lock().await;
+            let backend = res.get::<DirectoryBackend>().map(|b| b.0.clone());
+            let max_output_chars = res
+                .get::<Params<ListDirParams>>()
+                .and_then(|p| p.0.max_output_chars)
+                .unwrap_or(DEFAULT_MAX_OUTPUT_CHARS);
+            let respect_gitignore = res.get::<RespectGitignore>().is_none_or(|r| r.0);
+            backend.map(|backend| (backend, max_output_chars, respect_gitignore))
+        };
+        if let Some((backend, max_output_chars, respect_gitignore)) = runtime_listing {
+            return Ok(
+                run_runtime_listing(
+                    backend,
+                    &path,
+                    &display_path,
+                    max_output_chars,
+                    respect_gitignore,
+                )
+                .await,
+            );
+        }
+
         let meta = tokio::fs::metadata(&path).await;
         let is_dir = meta.as_ref().is_ok_and(|m| m.is_dir());
         if !is_dir {
@@ -594,11 +703,89 @@ Other details:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::resources::{Cwd, Resources};
+    use crate::types::resources::{AsyncDirectoryListing, Cwd, DirectoryBackend, Resources};
+    use crate::computer::types::ComputerError;
     use crate::types::tool_metadata::test_ctx;
     use std::fs::{self, File};
     use std::path::{Path, PathBuf};
     use tempfile::TempDir;
+
+    struct FakeRuntimeList {
+        response: Result<serde_json::Value, String>,
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncDirectoryListing for FakeRuntimeList {
+        async fn list_directory(
+            &self,
+            _path: &Path,
+            _options: serde_json::Value,
+        ) -> Result<serde_json::Value, ComputerError> {
+            self.response.clone().map_err(ComputerError::io)
+        }
+    }
+
+    fn runtime_list_ctx(
+        cwd: &Path,
+        response: Result<serde_json::Value, String>,
+    ) -> xai_tool_runtime::ToolCallContext {
+        let mut resources = Resources::new();
+        resources.insert(Cwd(cwd.to_path_buf()));
+        resources.insert(DirectoryBackend(Arc::new(FakeRuntimeList { response })));
+        test_ctx(resources.into_shared())
+    }
+
+    #[tokio::test]
+    async fn productive_list_dir_uses_runtime_contract_without_local_walk() {
+        let tmp = TempDir::new().unwrap();
+        let output = xai_tool_runtime::Tool::run(
+            &ListDirTool,
+            runtime_list_ctx(
+                tmp.path(),
+                Ok(serde_json::json!({
+                    "schema": "simplicio.fs-list/v1",
+                    "entries": [
+                        {"path": "virtual.rs", "is_dir": false},
+                        {"path": "virtual/", "is_dir": true}
+                    ],
+                    "truncated": false
+                })),
+            ),
+            ListDirInput {
+                target_directory: "missing-locally".to_owned(),
+            },
+        )
+        .await
+        .unwrap();
+        match output {
+            ListDirOutput::Content(content) => {
+                assert!(content.content.contains("virtual.rs"));
+                assert!(content.content.contains("virtual/"));
+                assert!(!content.content.contains("No such file"));
+            }
+            other => panic!("expected Runtime listing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn runtime_list_malformed_response_fails_closed_without_walk_fallback() {
+        let tmp = TempDir::new().unwrap();
+        let output = xai_tool_runtime::Tool::run(
+            &ListDirTool,
+            runtime_list_ctx(tmp.path(), Ok(serde_json::json!({"schema": "wrong"}))),
+            ListDirInput {
+                target_directory: "missing-locally".to_owned(),
+            },
+        )
+        .await
+        .unwrap();
+        match output {
+            ListDirOutput::Error(message) => {
+                assert!(message.contains("missing the v1 `nodes` array"));
+            }
+            other => panic!("expected fail-closed error, got {other:?}"),
+        }
+    }
     /// Minimal `.git` worktree so the `ignore` crate applies `.gitignore` without a `git` binary
     /// (some CI environments may not have `git` on PATH).
     fn init_minimal_git_worktree(root: &Path) {
