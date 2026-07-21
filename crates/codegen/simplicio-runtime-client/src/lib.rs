@@ -7,6 +7,7 @@
 //! while rejecting newer operations with an actionable incompatibility error.
 
 pub mod map_cache;
+pub mod loop_hub;
 
 pub use map_cache::{
     MAP_RESULT_SCHEMA_V1, MapCache, MapResult, MapState, budgeted_summary, compute_repo_hash,
@@ -16,12 +17,12 @@ use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     io::{BufRead, BufReader, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
     sync::{
-        Arc, LazyLock, Mutex,
+        Arc, LazyLock, Mutex, Weak,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -44,6 +45,8 @@ pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
 const RAW_SNIPPET_MAX_BYTES: usize = 200;
 static MAPPED_WORKSPACES: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
+static SHARED_RUNTIME_CLIENTS: LazyLock<Mutex<HashMap<PathBuf, Weak<SharedRuntimeSession>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -192,6 +195,82 @@ pub struct RuntimeClient {
     stdout: BufReader<ChildStdout>,
     next_id: u64,
     capabilities: RuntimeCapabilities,
+}
+
+struct SharedRuntimeSession {
+    client: Mutex<Option<RuntimeClient>>,
+    workspace: PathBuf,
+}
+
+/// A Runtime MCP connection shared by every Code surface in one process for a
+/// workspace. The Hub remains the cross-process owner when present; this
+/// registry is the Code-side guard against TUI/headless/ACP opening duplicate
+/// Runtime children and handshakes.
+#[derive(Clone)]
+pub struct SharedRuntimeClient {
+    session: Arc<SharedRuntimeSession>,
+}
+
+impl SharedRuntimeClient {
+    /// Returns the existing connection for `workspace`, or creates exactly
+    /// one lazy connection slot. No process is started until the first
+    /// operation is executed.
+    pub fn connect_in(workspace: &Path) -> Result<Self, Error> {
+        let workspace = canonical_repo(workspace)?;
+        let mut sessions = SHARED_RUNTIME_CLIENTS
+            .lock()
+            .map_err(|_| Error::Spawn("shared Runtime session lock poisoned".into()))?;
+        if let Some(session) = sessions.get(&workspace).and_then(Weak::upgrade) {
+            return Ok(Self { session });
+        }
+        let session = Arc::new(SharedRuntimeSession {
+            client: Mutex::new(None),
+            workspace: workspace.clone(),
+        });
+        sessions.insert(workspace, Arc::downgrade(&session));
+        Ok(Self { session })
+    }
+
+    /// Executes one operation on the shared MCP connection. A failed
+    /// operation invalidates the shared connection so the next caller gets a
+    /// fresh, negotiated Runtime session instead of falling back locally.
+    pub fn with_client<T>(
+        &self,
+        operation: impl FnOnce(&mut RuntimeClient, &Path) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut client = self
+            .session
+            .client
+            .lock()
+            .map_err(|_| Error::Spawn("shared Runtime client lock poisoned".into()))?;
+        if client.is_none() {
+            *client = Some(RuntimeClient::spawn_in(&self.session.workspace)?);
+        }
+        let result = operation(
+            client.as_mut().expect("shared Runtime client initialized"),
+            &self.session.workspace,
+        );
+        if result.is_err() {
+            *client = None;
+        }
+        result
+    }
+
+    /// Drops a failed connection without changing the registry entry. The
+    /// session handle remains reusable and reconnects on the next operation.
+    pub fn invalidate(&self) -> Result<(), Error> {
+        let mut client = self
+            .session
+            .client
+            .lock()
+            .map_err(|_| Error::Spawn("shared Runtime client lock poisoned".into()))?;
+        *client = None;
+        Ok(())
+    }
+
+    pub fn workspace(&self) -> &Path {
+        &self.session.workspace
+    }
 }
 
 impl RuntimeClient {
@@ -810,6 +889,16 @@ mod tests {
         assert_eq!(capabilities.schema, MCP_CONTRACT_SCHEMA);
         assert!(capabilities.supports("simplicio_file_read"));
         assert!(!capabilities.supports("simplicio_fs_write"));
+    }
+
+    #[test]
+    fn shared_runtime_handles_reuse_one_lazy_session_slot() {
+        SHARED_RUNTIME_CLIENTS.lock().unwrap().clear();
+        let workspace = tempfile::tempdir().unwrap();
+        let first = SharedRuntimeClient::connect_in(workspace.path()).unwrap();
+        let second = SharedRuntimeClient::connect_in(workspace.path()).unwrap();
+        assert!(Arc::ptr_eq(&first.session, &second.session));
+        assert!(first.session.client.lock().unwrap().is_none());
     }
 
     #[test]
