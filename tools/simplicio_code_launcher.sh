@@ -5,7 +5,13 @@
 # `simplicio` and from the Agent command `simplicio_agent`.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE="${BASH_SOURCE[0]}"
+while [[ -L "$SOURCE" ]]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  [[ "$SOURCE" = /* ]] || SOURCE="$SOURCE_DIR/$SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 REPO_ROOT="${SIMPLICIO_CODE_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 if [[ -n "${SIMPLICIO_CODE_BIN:-}" ]]; then
