@@ -167,6 +167,9 @@ jobs:
           cp dist/dev_signing_key.pub.b64 dist/manifest_signing_public_key.b64
           rm -f dist/dev_signing_key.pem dist/dev_signing_key.pub.pem dist/manifest.json.raw.sig
 
+      - name: Block unreviewed JSON package outputs
+        run: python3 scripts/check_package_contents.py dist --inventory config/json-boundaries.toml
+
       - name: Upload packaged release assets
         uses: actions/upload-artifact@v4
         with:
