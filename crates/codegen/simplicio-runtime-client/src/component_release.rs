@@ -497,7 +497,14 @@ impl BundleStore {
     {
         let payload = event.verify(trusted_keys)?;
         let _lock = UpdateLock::acquire(&self.root)?;
+        let state_path = self.root.join("release-event-state.json");
+        let state_exists = state_path.is_file();
         let mut state = self.load_event_state()?;
+        if !state_exists && self.root.join("slots/active").is_dir() {
+            return Err(ReleaseError::EventState(
+                "release event history is missing for the active bundle".into(),
+            ));
+        }
         if let Some(previous) = state.events.iter().find(|record| record.event_id == payload.event_id) {
             if previous.bundle_digest == payload.bundle_digest
                 && previous.producer == payload.producer
