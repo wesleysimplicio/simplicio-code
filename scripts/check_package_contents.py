@@ -9,22 +9,49 @@ directory-wide exceptions are not supported.
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import pathlib
 import sys
 import tomllib
 
 FORBIDDEN_SUFFIXES = {".json", ".jsonl", ".ndjson"}
-INTERNAL_WORDS = ("state", "cache", "session", "receipt", "evidence", "checkpoint", "queue", "index")
+PACKAGE_EXCEPTION_FIELDS = (
+    "owner",
+    "reason",
+    "expires",
+    "category",
+    "target_format",
+    "status",
+    "producer",
+    "consumer",
+    "lifecycle",
+)
 
 
 def load_exact_inventory(path: pathlib.Path) -> set[str]:
+    """Return exact, unexpired package-output exceptions from the inventory."""
     raw = tomllib.loads(path.read_text(encoding="utf-8"))
     paths: set[str] = set()
-    for group in list(raw.get("boundary", [])) + list(raw.get("audit", [])):
+    for group in raw.get("package_output", []):
         names = group.get("paths") or ([group["path"]] if group.get("path") else [])
         for name in names:
             if any(ch in name for ch in "*?[]"):
                 raise ValueError(f"package inventory path must be exact: {name}")
+            if not name:
+                raise ValueError("package inventory path must be exact: empty path")
+            for field in PACKAGE_EXCEPTION_FIELDS:
+                if not group.get(field):
+                    raise ValueError(f"{name}: missing {field}")
+            if group["status"] != "exception":
+                raise ValueError(f"{name}: package output must be an exception")
+            try:
+                expires = dt.date.fromisoformat(group["expires"])
+            except ValueError as exc:
+                raise ValueError(f"{name}: invalid expires date") from exc
+            if expires < dt.date.today():
+                raise ValueError(f"{name}: package exception expired on {group['expires']}")
+            if name in paths:
+                raise ValueError(f"duplicate package inventory path: {name}")
             paths.add(name)
     return paths
 
@@ -35,10 +62,7 @@ def violations(root: pathlib.Path, inventory: set[str]) -> list[str]:
         rel = path.relative_to(root).as_posix()
         if path.suffix.lower() not in FORBIDDEN_SUFFIXES:
             continue
-        if rel in inventory:
-            continue
-        lowered = rel.lower()
-        if any(word in lowered for word in INTERNAL_WORDS):
+        if rel not in inventory:
             result.append(rel)
     return result
 
@@ -56,7 +80,7 @@ def main() -> int:
         return 2
     print("# Package JSON boundary scan\n")
     print(f"- Root: `{args.root}`  ")
-    print(f"- Internal JSON artifacts not allowlisted: `{len(found)}`\n")
+    print(f"- JSON artifacts not exact-package-allowlisted: `{len(found)}`\n")
     if found:
         print("| Path |\n|---|")
         for path in found:
