@@ -53,3 +53,15 @@ than estimated.
 The local Python scanner and package smoke tests are reproducible offline; the
 Runtime MCP and Rust test lanes remain blocked by missing executables in this
 environment.
+
+## Release boundary gate
+
+The source scanner's strict mode intentionally continues to report the exact
+`migration_pending` entries above; enabling the strict source gate does not
+mean the HBP/HBI migration is complete. Release packaging has a narrower,
+release-blocking check: after the manifest and SBOM are generated,
+`scripts/check_package_contents.py` scans every JSON-family file in `dist/`.
+Only exact `[[package_output]]` entries in `config/json-boundaries.toml` may
+pass, and each exception must have an owner, producer, consumer, lifecycle,
+reason, target format and unexpired date. A newly emitted JSON artifact fails
+the package job unless it is reviewed and added as its own exact exception.
