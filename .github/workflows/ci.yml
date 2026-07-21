@@ -51,6 +51,7 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
 
 jobs:
   fmt:
@@ -74,6 +75,10 @@ jobs:
         run: python3 scripts/headless_invocation_matrix.py --json > headless-invocation-matrix.json
       - name: Run gate self-tests
         run: python3 scripts/tests/test_issue_68_gates.py
+      - name: Validate CI diagnostics helper
+        run: |
+          python3 -m py_compile scripts/ci_diagnostics.py
+          python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics.json
       - name: Upload Simplicio reports
         uses: actions/upload-artifact@v4
         with:
@@ -81,6 +86,17 @@ jobs:
           path: |
             struct-initializer-report.json
             headless-invocation-matrix.json
+            ci-diagnostics.json
+      - name: Capture diagnostics after setup failure
+        if: ${{ failure() }}
+        run: python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics-failure.json
+      - name: Upload failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplicio-owned-reports-failure
+          if-no-files-found: warn
+          path: ci-diagnostics-failure.json
 
   # Fails the build on any secret-shaped string introduced by this push/PR.
   # This is the CI-side half of issue #9's "block release when the scanner
@@ -136,6 +152,16 @@ jobs:
           gitleaks detect --source . -c .gitleaks.toml \
             --log-opts="${{ steps.range.outputs.range }}" \
             --redact -v
+      - name: Capture diagnostics after setup failure
+        if: ${{ failure() }}
+        run: python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics-failure.json
+      - name: Upload failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: secret-scan-failure-diagnostics
+          if-no-files-found: warn
+          path: ci-diagnostics-failure.json
 
   # Full workspace lint/build/test on the two platforms where the workspace
   # is known to build cleanly (see the header note re: Windows/protoc).
@@ -166,6 +192,16 @@ jobs:
         run: cargo check --workspace --all-targets
       - name: cargo test
         run: cargo test --workspace --all-targets
+      - name: Capture diagnostics after setup failure
+        if: ${{ failure() }}
+        run: python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics-${{ matrix.os }}-failure.json
+      - name: Upload failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-build-test-${{ matrix.os }}-failure-diagnostics
+          if-no-files-found: warn
+          path: ci-diagnostics-${{ matrix.os }}-failure.json
 
   # Windows leg: the xai-proto-build /dev/stdout|/dev/null bug (issues #8,
   # #35) is fixed and locally verified (docs/windows-build-status.md), so
@@ -200,6 +236,16 @@ jobs:
         run: cargo test -p xai-grok-secrets --all-targets
       - name: cargo check (xai-grok-tools-api, protoc-dependent, issue #8/#35)
         run: cargo check -p xai-grok-tools-api --all-targets
+      - name: Capture diagnostics after setup failure
+        if: ${{ failure() }}
+        run: python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics-windows-failure.json
+      - name: Upload failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-scoped-failure-diagnostics
+          if-no-files-found: warn
+          path: ci-diagnostics-windows-failure.json
 
   # cargo-deny: advisories (known vulns), license allow-list, and duplicate/
   # banned dependency checks. Config lives in deny.toml at the repo root.
@@ -211,3 +257,61 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check all
+
+  coverage:
+    name: coverage (owned Rust boundaries, 85% lines)
+    needs: [fmt]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - uses: taiki-e/install-action@cargo-llvm-cov
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: Measure and enforce line coverage
+        run: |
+          cargo llvm-cov \
+            -p simplicio-runtime-client \
+            -p simplicio-agent-client \
+            -p xai-grok-models \
+            --all-features --lcov --output-path lcov.info \
+            --fail-under-lines 85
+      - uses: actions/upload-artifact@v4
+        with:
+          name: owned-boundary-coverage
+          if-no-files-found: error
+          path: lcov.info
+      - name: Capture diagnostics after setup failure
+        if: ${{ failure() }}
+        run: python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics-coverage-failure.json
+      - name: Upload failure diagnostics
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-failure-diagnostics
+          if-no-files-found: warn
+          path: ci-diagnostics-coverage-failure.json
+
+  mandatory-gate:
+    name: mandatory-gate
+    if: ${{ always() }}
+    needs: [fmt, simplicio-owned-reports, secret-scan, lint-build-test, windows-scoped, cargo-deny, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every mandatory quality signal
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["RESULTS"])
+          bad = {name: value["result"] for name, value in needs.items()
+                 if value["result"] != "success"}
+          if bad:
+              print("mandatory-gate blocked:", json.dumps(bad, sort_keys=True))
+              sys.exit(1)
+          print("mandatory-gate passed: all required jobs, including coverage, succeeded")
