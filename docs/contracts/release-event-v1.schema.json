@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simplicio.dev/contracts/release-event/v1",
+  "title": "Simplicio signed release event",
+  "type": "object",
+  "required": ["key_id", "signature", "payload"],
+  "properties": {
+    "key_id": { "type": "string", "minLength": 1 },
+    "signature": { "type": "string", "minLength": 1 },
+    "payload": {
+      "type": "object",
+      "required": ["schema", "event_id", "producer", "sequence", "manifest", "bundle_digest"],
+      "properties": {
+        "schema": { "const": "simplicio.release-event/v1" },
+        "event_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "producer": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "manifest": { "$ref": "component-release-v1.schema.json" },
+        "bundle_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
