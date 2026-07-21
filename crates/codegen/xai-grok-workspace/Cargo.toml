@@ -39,6 +39,7 @@ tokio = { workspace = true, features = [
 tracing = { workspace = true }
 uuid = { workspace = true, features = ["v4", "v5", "v7"] }
 xai-grok-agent = { path = "../xai-grok-agent" }
+simplicio-agent-client = { workspace = true }
 xai-grok-tools = { path = "../xai-grok-tools" }
 xai-grok-tools-api = { path = "../xai-grok-tools-api" }
 xai-grok-workspace-client = { path = "../xai-grok-workspace-client" }
