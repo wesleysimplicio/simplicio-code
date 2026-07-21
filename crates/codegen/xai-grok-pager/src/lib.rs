@@ -43,6 +43,7 @@ pub mod obf;
 pub mod plugin_cmd;
 pub mod privacy_cmd;
 pub mod project_picker;
+pub mod prototype_first;
 pub mod pty_wrap;
 pub mod scrollback;
 pub mod search;

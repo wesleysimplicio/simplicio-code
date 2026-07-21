@@ -28,6 +28,7 @@ pub mod hub_server;
 pub mod mcp;
 pub mod permission;
 pub mod preview_supervisor;
+pub mod prototype_first;
 pub mod project_config;
 pub mod recovery;
 pub mod rpc_envelope;

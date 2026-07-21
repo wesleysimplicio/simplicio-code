@@ -26,6 +26,7 @@ use xai_grok_shell::util::config as cli_config;
 use crate::acp::model_state::{EffortTokenError, ModelState};
 use crate::acp::spawn::spawn_grok_shell;
 use crate::client_identity::{HEADLESS_CLIENT_TYPE, PAGER_CLIENT_VERSION};
+use xai_grok_workspace_types::{DecisionReceipt, Surface, ValidationReport};
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -45,6 +46,16 @@ pub fn parse_json_schema(input: &str) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("--json-schema: must be a JSON object describing a JSON Schema");
     }
     Ok(schema)
+}
+
+/// Render a Prototype-First receipt for `--output-format json` without
+/// granting headless mode Build authority. Build authorization is obtained
+/// only by the shared receipt gate after an explicit ACCEPT.
+pub fn render_prototype_preview(
+    receipt: &DecisionReceipt,
+    source_revision: &str,
+) -> Result<String, ValidationReport> {
+    xai_grok_workspace_types::render_surface(receipt, source_revision, Surface::Headless)
 }
 
 #[derive(Debug, Clone)]
