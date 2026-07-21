@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -9,8 +10,25 @@ use simplicio_runtime_client::{
 };
 
 use crate::computer::types::{
-    AsyncFileSystem, AsyncSearch, ComputerError, SearchMatch, SearchOutcome,
+    AsyncFileSystem, AsyncSearch, BackgroundHandle, ComputerError, KillOutcome, SearchMatch,
+    SearchOutcome, TaskSnapshot, TerminalBackend, TerminalRunRequest, TerminalRunResult,
 };
+
+/// Runtime-owned execution boundary used by [`SimplicioRuntimeTerminalBackend`].
+/// The trait makes the production adapter independently testable with a fake
+/// Runtime while preserving the exact `simplicio_exec` response parser.
+#[async_trait::async_trait]
+pub trait RuntimeExecInvoker: Send + Sync {
+    async fn exec_workspace(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        env: &BTreeMap<String, String>,
+        timeout_ms: u64,
+        max_output_bytes: usize,
+        idempotency_key: &str,
+    ) -> Result<serde_json::Value, ComputerError>;
+}
 
 /// Project filesystem whose effects are owned by the Simplicio Runtime and
 /// gated on a compatible, independently running Simplicio Agent host.
@@ -22,6 +40,159 @@ pub struct SimplicioRuntimeFs {
     agent_socket: PathBuf,
     agent_client: Arc<Mutex<Option<AgentHostCoordinator>>>,
     client: Arc<Mutex<Option<SharedRuntimeClient>>>,
+}
+
+/// Terminal backend for productive Code sessions. It submits an argv-safe
+/// command to Runtime and never starts a local process. Background lifecycle
+/// operations remain unavailable until Runtime publishes a versioned task
+/// capability; they fail closed instead of delegating to LocalTerminalBackend.
+pub struct SimplicioRuntimeTerminalBackend {
+    runtime: Arc<dyn RuntimeExecInvoker>,
+}
+
+impl SimplicioRuntimeTerminalBackend {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
+        Self::with_runtime(Arc::new(SimplicioRuntimeFs::new(root)))
+    }
+
+    pub fn with_runtime(runtime: Arc<dyn RuntimeExecInvoker>) -> Self {
+        Self { runtime }
+    }
+}
+
+fn parse_terminal_argv(command: &str) -> Result<Vec<String>, ComputerError> {
+    let argv = shlex::split(command).ok_or_else(|| {
+        ComputerError::io("Simplicio Runtime rejected bash: unmatched quote or escape")
+    })?;
+    if argv.is_empty() {
+        return Err(ComputerError::io("Simplicio Runtime rejected empty command"));
+    }
+    Ok(argv)
+}
+
+fn runtime_error(message: impl Into<String>) -> ComputerError {
+    ComputerError::io(format!("Simplicio Runtime exec failed closed: {}", message.into()))
+}
+
+fn terminal_result(
+    request: &TerminalRunRequest,
+    value: &serde_json::Value,
+) -> Result<TerminalRunResult, ComputerError> {
+    let result = simplicio_runtime_client::parse_exec_result(value)
+        .map_err(|error| runtime_error(error.to_string()))?;
+    use simplicio_runtime_client::ExecEffectState;
+    match result.effect_state {
+        Some(ExecEffectState::Completed) => {}
+        Some(ExecEffectState::NotStarted) | Some(ExecEffectState::Denied) => {
+            return Err(runtime_error(format!(
+                "effect state is {:?}",
+                result.effect_state
+            )));
+        }
+        Some(ExecEffectState::EffectUnknown) => {
+            return Err(runtime_error(
+                "effect state is effect_unknown; the command is not retryable",
+            ));
+        }
+        None => return Err(runtime_error("response omitted effect_state")),
+    }
+    let mut combined_output = result.stdout;
+    combined_output.push_str(&result.stderr);
+    Ok(TerminalRunResult {
+        total_bytes: result
+            .total_bytes
+            .unwrap_or_else(|| combined_output.as_bytes().len()),
+        output_file: result
+            .output_file
+            .map(PathBuf::from)
+            .unwrap_or_else(|| request.output_file.clone()),
+        combined_output,
+        exit_code: result.exit_code,
+        truncated: result.truncated,
+        signal: result.signal,
+        timed_out: result.timed_out,
+        pid: None,
+    })
+}
+
+#[async_trait::async_trait]
+impl RuntimeExecInvoker for SimplicioRuntimeFs {
+    async fn exec_workspace(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        env: &BTreeMap<String, String>,
+        timeout_ms: u64,
+        max_output_bytes: usize,
+        idempotency_key: &str,
+    ) -> Result<serde_json::Value, ComputerError> {
+        SimplicioRuntimeFs::exec_workspace(
+            self,
+            cwd,
+            argv,
+            env,
+            timeout_ms,
+            max_output_bytes,
+            idempotency_key,
+        )
+        .await
+    }
+}
+
+#[async_trait::async_trait]
+impl TerminalBackend for SimplicioRuntimeTerminalBackend {
+    async fn run(&self, request: TerminalRunRequest) -> Result<TerminalRunResult, ComputerError> {
+        let argv = parse_terminal_argv(&request.command)?;
+        let env = request
+            .env
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if request.tool_call_id.trim().is_empty() {
+            return Err(runtime_error("tool_call_id is required as idempotency key"));
+        }
+        let value = self
+            .runtime
+            .exec_workspace(
+                &request.working_directory,
+                &argv,
+                &env,
+                request.timeout.as_millis().min(u64::MAX as u128) as u64,
+                request.output_byte_limit,
+                &request.tool_call_id,
+            )
+            .await?;
+        terminal_result(&request, &value)
+    }
+
+    async fn run_background(
+        &self,
+        _request: TerminalRunRequest,
+    ) -> Result<BackgroundHandle, ComputerError> {
+        Err(runtime_error(
+            "Runtime has no versioned background exec lifecycle capability; required dependency: simplicio_exec task start/status/cancel contract",
+        ))
+    }
+
+    async fn get_task(&self, _task_id: &str) -> Option<TaskSnapshot> {
+        None
+    }
+
+    async fn kill_task(&self, _task_id: &str) -> KillOutcome {
+        KillOutcome::NotFound
+    }
+
+    async fn wait_for_completion(
+        &self,
+        _task_id: &str,
+        _timeout: Option<std::time::Duration>,
+    ) -> Option<TaskSnapshot> {
+        None
+    }
+
+    async fn list_tasks(&self) -> Vec<TaskSnapshot> {
+        Vec::new()
+    }
 }
 
 impl SimplicioRuntimeFs {
@@ -214,13 +385,25 @@ impl SimplicioRuntimeFs {
         &self,
         cwd: &Path,
         argv: &[String],
+        env: &BTreeMap<String, String>,
         timeout_ms: u64,
         max_output_bytes: usize,
+        idempotency_key: &str,
     ) -> Result<serde_json::Value, ComputerError> {
         let relative_cwd = self.relative_path(cwd)?;
         let argv = argv.to_vec();
+        let env = env.clone();
+        let idempotency_key = idempotency_key.to_owned();
         self.with_runtime(move |client, root| {
-            client.exec(root, &relative_cwd, &argv, timeout_ms, max_output_bytes)
+            client.exec(
+                root,
+                &relative_cwd,
+                &argv,
+                &env,
+                timeout_ms,
+                max_output_bytes,
+                &idempotency_key,
+            )
         })
         .await
     }
@@ -718,5 +901,119 @@ mod tests {
             error.to_string().contains("symlink escape"),
             "unexpected error: {error}"
         );
+    }
+
+    struct FakeExecRuntime {
+        response: serde_json::Value,
+        calls: std::sync::Mutex<Vec<(PathBuf, Vec<String>, BTreeMap<String, String>, u64, usize, String)>>,
+    }
+
+    #[async_trait::async_trait]
+    impl RuntimeExecInvoker for FakeExecRuntime {
+        async fn exec_workspace(
+            &self,
+            cwd: &Path,
+            argv: &[String],
+            env: &BTreeMap<String, String>,
+            timeout_ms: u64,
+            max_output_bytes: usize,
+            idempotency_key: &str,
+        ) -> Result<serde_json::Value, ComputerError> {
+            self.calls.lock().unwrap().push((
+                cwd.to_path_buf(),
+                argv.to_vec(),
+                env.clone(),
+                timeout_ms,
+                max_output_bytes,
+                idempotency_key.to_owned(),
+            ));
+            Ok(self.response.clone())
+        }
+    }
+
+    fn terminal_request(command: &str) -> TerminalRunRequest {
+        TerminalRunRequest {
+            command: command.to_owned(),
+            working_directory: PathBuf::from("/workspace/repo"),
+            env: [
+                ("Z_VAR".to_owned(), "two".to_owned()),
+                ("A_VAR".to_owned(), "one".to_owned()),
+            ]
+            .into_iter()
+            .collect(),
+            timeout: std::time::Duration::from_millis(4321),
+            output_byte_limit: 777,
+            output_file: PathBuf::from("/tmp/never-written.log"),
+            notification_handle: crate::notification::ToolNotificationHandle::noop(),
+            tool_call_id: "call-123".to_owned(),
+            display_command: None,
+            auto_background_on_timeout: false,
+            foreground_block_budget: None,
+            kind: crate::computer::types::TaskKind::Bash,
+            owner_session_id: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn terminal_backend_forwards_validated_exec_contract() {
+        let fake = Arc::new(FakeExecRuntime {
+            response: serde_json::json!({
+                "schema": "simplicio.exec-result/v1",
+                "stdout": "hello\n",
+                "stderr": "",
+                "exit_code": 0,
+                "total_bytes": 6,
+                "effect_state": "completed"
+            }),
+            calls: std::sync::Mutex::new(Vec::new()),
+        });
+        let backend = SimplicioRuntimeTerminalBackend::with_runtime(fake.clone());
+        let result = backend.run(terminal_request("printf 'hello\\n'")).await.unwrap();
+
+        assert_eq!(result.combined_output, "hello\n");
+        assert_eq!(result.exit_code, Some(0));
+        let calls = fake.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, PathBuf::from("/workspace/repo"));
+        assert_eq!(calls[0].1, vec!["printf", "hello\\n"]);
+        assert_eq!(calls[0].2.get("A_VAR"), Some(&"one".to_owned()));
+        assert_eq!(calls[0].3, 4321);
+        assert_eq!(calls[0].4, 777);
+        assert_eq!(calls[0].5, "call-123");
+    }
+
+    #[tokio::test]
+    async fn terminal_backend_never_retries_unknown_effect() {
+        let fake = Arc::new(FakeExecRuntime {
+            response: serde_json::json!({
+                "schema": "simplicio.exec-result/v1",
+                "effect_state": "effect_unknown"
+            }),
+            calls: std::sync::Mutex::new(Vec::new()),
+        });
+        let backend = SimplicioRuntimeTerminalBackend::with_runtime(fake.clone());
+        let error = backend
+            .run(terminal_request("printf done"))
+            .await
+            .expect_err("unknown effect must fail closed");
+        assert!(error.to_string().contains("effect_unknown"));
+        assert_eq!(fake.calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn terminal_backend_rejects_background_until_runtime_publishes_lifecycle() {
+        let fake = Arc::new(FakeExecRuntime {
+            response: serde_json::json!({
+                "schema": "simplicio.exec-result/v1",
+                "effect_state": "completed"
+            }),
+            calls: std::sync::Mutex::new(Vec::new()),
+        });
+        let backend = SimplicioRuntimeTerminalBackend::with_runtime(fake);
+        let error = backend
+            .run_background(terminal_request("printf done"))
+            .await
+            .expect_err("background must not fall back to local subprocesses");
+        assert!(error.to_string().contains("background exec lifecycle"));
     }
 }
