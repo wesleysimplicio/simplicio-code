@@ -21,7 +21,7 @@ use agent_client_protocol as acp;
 use tokio::task::JoinSet;
 use xai_acp_lib::{AcpAgentTx, acp_send};
 use actions::{
-    ClipboardPasteTarget, Effect, ProbedAttachment, SubagentKillOutcome,
+    ClipboardPasteTarget, Effect, ProbedAttachment, SimplicioRuntimeInspectCommand, SubagentKillOutcome,
     SwitchModelError, TaskResult,
 };
 #[cfg(test)]
@@ -42,6 +42,80 @@ pub(crate) fn execute(
     let mut meta = EffectMeta::default();
     let effect_is_send_now = matches!(effect, Effect::SendPromptNow { .. });
     match effect {
+        Effect::RunSimplicioAgentTurn {
+            agent_id,
+            session_id,
+            message,
+            idempotency_key,
+        } => {
+            tasks.spawn(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    xai_grok_agent::SimplicioAgentCoordinator::default().start_turn(
+                        session_id,
+                        message,
+                        idempotency_key,
+                    )
+                })
+                .await;
+                match result {
+                    Ok(Ok(turn)) if turn.completed => TaskResult::SimplicioAgentTurnCompleted {
+                        agent_id,
+                        message: turn
+                            .final_response
+                            .unwrap_or_else(|| "Agent completed without a textual response.".into()),
+                        succeeded: true,
+                    },
+                    Ok(Ok(_)) => TaskResult::SimplicioAgentTurnCompleted {
+                        agent_id,
+                        message: "Agent did not complete the requested turn.".into(),
+                        succeeded: false,
+                    },
+                    Ok(Err(_)) | Err(_) => TaskResult::SimplicioAgentTurnCompleted {
+                        agent_id,
+                        message: "Simplicio Agent is unavailable or incompatible.".into(),
+                        succeeded: false,
+                    },
+                }
+            });
+        }
+        Effect::RunSimplicioRuntimeInspect {
+            agent_id,
+            cwd,
+            command,
+        } => {
+            tasks.spawn(async move {
+                let runtime = xai_grok_tools::computer::local::SimplicioRuntimeFs::new(cwd);
+                let result = match command {
+                    SimplicioRuntimeInspectCommand::List { path } => runtime
+                        .list_workspace(&path, serde_json::json!({}))
+                        .await
+                        .and_then(|value| format_runtime_value(value)),
+                    SimplicioRuntimeInspectCommand::Stat { path } => runtime
+                        .stat_workspace(&path)
+                        .await
+                        .and_then(|value| format_runtime_value(value)),
+                    SimplicioRuntimeInspectCommand::Read { path } => {
+                        runtime.read_workspace(&path).await
+                    }
+                    SimplicioRuntimeInspectCommand::Search { query, path } => runtime
+                        .search_workspace(&query, path.as_deref())
+                        .await
+                        .and_then(format_runtime_search),
+                };
+                match result {
+                    Ok(value) => TaskResult::SimplicioAgentTurnCompleted {
+                        agent_id,
+                        message: value,
+                        succeeded: true,
+                    },
+                    Err(_) => TaskResult::SimplicioAgentTurnCompleted {
+                        agent_id,
+                        message: "Simplicio Runtime is unavailable or incompatible.".into(),
+                        succeeded: false,
+                    },
+                }
+            });
+        }
         Effect::PollAgentAttention { request, cancel } => {
             tasks.spawn(async move {
                 let failed_request = request.clone();
@@ -4114,6 +4188,31 @@ pub(crate) fn execute(
         }
     }
     (false, meta)
+}
+
+fn format_runtime_value(value: serde_json::Value) -> Result<String, xai_grok_tools::computer::types::ComputerError> {
+    serde_json::to_string_pretty(&value)
+        .map_err(|error| xai_grok_tools::computer::types::ComputerError::io(error.to_string()))
+}
+
+fn format_runtime_search(
+    outcome: xai_grok_tools::computer::types::SearchOutcome,
+) -> Result<String, xai_grok_tools::computer::types::ComputerError> {
+    let matches = outcome
+        .matches
+        .into_iter()
+        .map(|entry| {
+            serde_json::json!({
+                "path": entry.path,
+                "line": entry.line,
+                "text": entry.text,
+            })
+        })
+        .collect::<Vec<_>>();
+    format_runtime_value(serde_json::json!({
+        "matches": matches,
+        "truncated": outcome.truncated,
+    }))
 }
 /// Fetch session info from ACP via `x.ai/session/info`.
 async fn fetch_session_info(

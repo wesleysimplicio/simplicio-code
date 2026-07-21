@@ -1,0 +1,1331 @@
+{
+  "schema": "simplicio.code.capability-command-inventory/v1",
+  "generated_at": "2026-07-21",
+  "sources": [
+    {
+      "product": "simplicio-agent",
+      "registry": "hermes_cli.commands.COMMAND_REGISTRY",
+      "contract": "simplicio.agent-host/v1"
+    },
+    {
+      "product": "simplicio-runtime",
+      "registry": "src/main_parts/chunk_18.rs:COMPLETION_COMMANDS",
+      "contract": "simplicio.runtime.mcp/v1"
+    }
+  ],
+  "status_definitions": {
+    "implemented": "reachable and contract-tested in the named Code surface",
+    "adapter-required": "upstream capability exists but the named Code surface lacks a typed adapter",
+    "blocked-by-upstream": "Code cannot implement safely without a versioned upstream contract",
+    "deprecated": "intentionally unsupported and superseded",
+    "not-applicable": "not a valid capability for that surface"
+  },
+  "invariants": [
+    "Code never copies the Agent or Runtime engine.",
+    "Productive operations require compatible Agent and Runtime handshakes.",
+    "Mutating Runtime commands route through Agent policy, approval, idempotency, and Runtime receipts."
+  ],
+  "current_code_routes": [
+    {
+      "command": "/simplicio <instruction>",
+      "tui": "implemented",
+      "ownership": "AgentHost turn.start",
+      "note": "single textual turn route; it is not command-specific adapter coverage"
+    },
+    {
+      "command": "/simplicio-agent <command>",
+      "tui": "implemented",
+      "ownership": "AgentHost turn.start",
+      "note": "command namespace; normalizes `model ...` to the Agent command `/model ...`"
+    },
+    {
+      "command": "simplicio-code simplicio --session-id <id> <instruction>",
+      "headless": "implemented",
+      "ownership": "AgentHost turn.start",
+      "note": "structured headless counterpart of the TUI turn route; it is not command-specific adapter coverage"
+    },
+    {
+      "command": "/runtime list [path]",
+      "tui": "implemented",
+      "ownership": "Runtime simplicio_fs_list",
+      "note": "read-only and fail-closed after Agent handshake"
+    },
+    {
+      "command": "/runtime stat <path>",
+      "tui": "implemented",
+      "ownership": "Runtime simplicio_fs_stat",
+      "note": "read-only and fail-closed after Agent handshake"
+    },
+    {
+      "command": "/runtime read <path>",
+      "tui": "implemented",
+      "ownership": "Runtime simplicio_fs_read",
+      "note": "read-only and fail-closed after Agent handshake"
+    },
+    {
+      "command": "/runtime search <query> [path]",
+      "tui": "implemented",
+      "ownership": "Runtime simplicio_search",
+      "note": "read-only and fail-closed after Agent handshake"
+    }
+  ],
+  "agent_commands": [
+    {
+      "command": "/start",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/new",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/topic",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/clear",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/redraw",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/history",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/save",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/retry",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/prompt",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/undo",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/title",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/handoff",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/branch",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/compress",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/rollback",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/snapshot",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/stop",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/approve",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/deny",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/background",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/agents",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/journey",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/queue",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/steer",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/goal",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/moa",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/subgoal",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/status",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/whoami",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/profile",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/sethome",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/resume",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/sessions",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/config",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/model",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/codex-runtime",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/personality",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/statusbar",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/timestamps",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/verbose",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/footer",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/yolo",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/reasoning",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/fast",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/skin",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/indicator",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/voice",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/busy",
+      "family": "Configuration",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/tools",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/toolsets",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/skills",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/memory",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/bundles",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/pet",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/hatch",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/learn",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/cron",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/suggestions",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/blueprint",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/curator",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/kanban",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/reload",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/reload-mcp",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/reload-skills",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/browser",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/plugins",
+      "family": "Tools & Skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/commands",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/help",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/restart",
+      "family": "Session",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/usage",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/credits",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/billing",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/insights",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/platforms",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/platform",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/copy",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/paste",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/image",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/update",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/version",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/debug",
+      "family": "Info",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "/quit",
+      "family": "Exit",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    }
+  ],
+  "runtime_commands": [
+    {
+      "command": "simplicio doctor",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio toolchain",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio endpoints",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio pr",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio cloud-watch",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio evidence",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio runtime",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio infra-advanced",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio contracts",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio map",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio plan",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio decide",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio run",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio sprint",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio edit",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio agents",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio dev-cli",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio model",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio local-model",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio benchmark",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio issue-factory",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio savings",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio mobile-push",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio ide",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio ide-compat",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio shell",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio compact",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio packages",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio update",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio cron",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio login",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio auth",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio logout",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio license",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio telegram",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio browser",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio computer-use",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio validate",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio novelty",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio bilateral-verify",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio agent-rooms",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio sealed-receipt",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio diagnostics",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio trajectory",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio task",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio status",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio governor",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio parallelism",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio cache",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio memory",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio memory-db",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio skill-memory",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio orientation",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio capabilities",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio skills",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio chat",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio invoke",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio advise",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio compiled",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio learn",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio intake",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio integrations",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio install",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio app",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio completion",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio serve",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio mcp",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio service",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio adapters",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio privacy",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio demo",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio reasoning",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio welcome",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio self-test",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    },
+    {
+      "command": "simplicio version",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required"
+    }
+  ],
+  "runtime_mcp_tools": [
+    {
+      "capability": "simplicio_search",
+      "tui": "implemented",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "read-only"
+    },
+    {
+      "capability": "simplicio_fs_read",
+      "tui": "implemented",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "read-only"
+    },
+    {
+      "capability": "simplicio_fs_list",
+      "tui": "implemented",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "read-only"
+    },
+    {
+      "capability": "simplicio_fs_stat",
+      "tui": "implemented",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "read-only"
+    },
+    {
+      "capability": "simplicio_edit",
+      "tui": "adapter-required",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "approval-required"
+    },
+    {
+      "capability": "simplicio_fs_write",
+      "tui": "adapter-required",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "approval-required"
+    },
+    {
+      "capability": "simplicio_fs_delete",
+      "tui": "adapter-required",
+      "headless": "implemented",
+      "acp": "adapter-required",
+      "workspace": "implemented",
+      "policy": "approval-required"
+    },
+    {
+      "capability": "simplicio_exec",
+      "tui": "adapter-required",
+      "headless": "adapter-required",
+      "acp": "adapter-required",
+      "workspace": "adapter-required",
+      "policy": "approval-required"
+    }
+  ],
+  "verification": {
+    "required_before_closure": [
+      "typed adapter contract test for every adapter-required entry",
+      "integration test per command family",
+      "installed E2E covering TUI, headless, ACP, and workspace",
+      "reconnect/retry proof with no duplicate Runtime effects"
+    ]
+  }
+}

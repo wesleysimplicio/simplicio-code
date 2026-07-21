@@ -156,6 +156,50 @@ impl SimplicioRuntimeFs {
         self.with_runtime(move |client, root| op(client, root, &relative))
             .await
     }
+
+    /// Lists a workspace-relative directory through Runtime after the
+    /// mandatory AgentHost handshake. This is intentionally read-only so it
+    /// can be surfaced as direct TUI observability without bypassing the
+    /// Agent's approval path for productive effects.
+    pub async fn list_workspace(
+        &self,
+        path: &Path,
+        options: serde_json::Value,
+    ) -> Result<serde_json::Value, ComputerError> {
+        self.with_client(path, move |client, root, relative| {
+            client.list(root, relative, options)
+        })
+        .await
+    }
+
+    /// Returns Runtime-owned metadata for one workspace-relative path. Like
+    /// [`Self::list_workspace`], this remains fail-closed on either missing
+    /// dependency and performs no local filesystem fallback.
+    pub async fn stat_workspace(&self, path: &Path) -> Result<serde_json::Value, ComputerError> {
+        self.with_client(path, |client, root, relative| client.stat(root, relative))
+            .await
+    }
+
+    /// Reads UTF-8 text through the Runtime boundary for the explicit TUI
+    /// inspection route. Binary-oriented callers keep using `read_file`.
+    pub async fn read_workspace(&self, path: &Path) -> Result<String, ComputerError> {
+        self.with_client(path, |client, root, relative| {
+            client
+                .read_file(root, relative, DEFAULT_MAX_FILE_BYTES)
+                .map(|read| read.content)
+        })
+        .await
+    }
+
+    /// Searches through Runtime while retaining the mandatory AgentHost gate.
+    pub async fn search_workspace(
+        &self,
+        pattern: &str,
+        path: Option<&Path>,
+    ) -> Result<SearchOutcome, ComputerError> {
+        self.search(pattern, path, &[], false, false, 100, 100)
+            .await
+    }
 }
 
 #[async_trait::async_trait]
@@ -264,6 +308,34 @@ mod tests {
                 .to_string()
                 .contains("Simplicio Agent socket was not found"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn inspection_commands_fail_closed_before_runtime_when_agent_is_missing() {
+        let workspace = tempfile::tempdir().unwrap();
+        std::fs::write(workspace.path().join("present.txt"), b"present").unwrap();
+        let missing_socket = workspace.path().join("missing-agent.sock");
+        let fs = SimplicioRuntimeFs::with_agent_socket(workspace.path(), missing_socket);
+
+        let list_error = fs
+            .list_workspace(Path::new("."), serde_json::json!({}))
+            .await
+            .expect_err("list must require Agent before Runtime startup");
+        let stat_error = fs
+            .stat_workspace(Path::new("present.txt"))
+            .await
+            .expect_err("stat must require Agent before Runtime startup");
+
+        assert!(
+            list_error
+                .to_string()
+                .contains("Simplicio Agent socket was not found")
+        );
+        assert!(
+            stat_error
+                .to_string()
+                .contains("Simplicio Agent socket was not found")
         );
     }
 

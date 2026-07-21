@@ -14,7 +14,10 @@ This contract is intentionally independent of the Agent implementation. The
 Agent remains in its own repository and does not import Code. Code's
 `simplicio-agent-client` verifies the independent AgentHost's
 `simplicio.agent-host/v1` discovery envelope, `agent/v1` protocol, mandatory
-capabilities, and bounded `simplicio.agent-advisory/v1` replay before use.
+capabilities, and bounded `simplicio.agent-advisory/v1` replay before use. On
+Windows, where `AF_UNIX` may be unavailable, it discovers the Agent's private
+`127.0.0.1` endpoint and one-process bearer token from the Agent-owned
+sidecars; non-loopback endpoints and malformed tokens are rejected.
 `SimplicioRuntimeFs` verifies Agent first and Runtime second, failing closed if
 either dependency is absent or incompatible. Diagnostics that do not execute a
 productive turn or project effect may still report dependency health while a
@@ -32,6 +35,9 @@ The current advisory vocabulary is operational only. It does **not** observe
 workspace activity and does not emit proactive `finding`/`risk`/`suggestion`
 records. A neutral `workspace.observe` + `workspace.advisory` contract, its
 privacy/approval policy, Agent-side production, Code-side polling/rendering,
-and the full AgentHost → `CoordinatorProtocol/v1` turn adapter remain explicit
-follow-up work. This first slice must not be described as the completed visual
-panel or completed proactive assistance.
+and the complete multi-command AgentHost → `CoordinatorProtocol/v1` adapter
+remain explicit follow-up work. The TUI now has one explicit productive entry
+point, `/simplicio <instruction>`, which sends a causally identified
+`turn.start` through the negotiated AgentHost off the event-loop thread and
+renders its terminal result in scrollback. This is not a completed visual
+panel, command inventory, or proactive-assistance surface.

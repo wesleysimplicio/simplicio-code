@@ -33,7 +33,9 @@ use xai_grok_pager::app::{
     AgentCmd, Command, HeadlessArgs, LeaderMgmtArgs, LeaderMgmtCommand, LeaderTargetArgs,
     PagerArgs, join_early_prefetch, resolve_use_leader,
 };
-use xai_grok_pager::app::{WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs};
+use xai_grok_pager::app::{
+    SimplicioTurnArgs, WorkspaceMgmtArgs, WorkspaceMgmtCommand, WorkspaceStartArgs,
+};
 use xai_grok_pager::client_identity::PAGER_CLIENT_VERSION;
 use xai_grok_shell::agent::app::{run_headless, run_leader, run_stdio_agent};
 use xai_grok_shell::agent::config::Config as AgentConfig;
@@ -256,6 +258,43 @@ async fn run_leader_mgmt(args: LeaderMgmtArgs) -> Result<()> {
             Ok(())
         }
     }
+}
+
+async fn run_simplicio_turn(args: SimplicioTurnArgs) -> Result<()> {
+    let instruction = args.instruction.join(" ");
+    let session_id = args.session_id;
+    let profile = args.profile;
+    let result = tokio::task::spawn_blocking(move || {
+        xai_grok_agent::SimplicioAgentCoordinator::new(profile).start_turn(
+            session_id,
+            instruction,
+            uuid::Uuid::new_v4().to_string(),
+        )
+    })
+    .await
+    .map_err(|error| anyhow::anyhow!("Simplicio AgentHost task failed: {error}"))??;
+
+    if args.json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "completed": result.completed,
+                "failed": result.failed,
+                "interrupted": result.interrupted,
+                "final_response": result.final_response,
+                "error": result.error,
+                "messages": result.messages,
+                "api_calls": result.api_calls,
+            }))?
+        );
+    } else if let Some(response) = result.final_response {
+        println!("{response}");
+    } else if let Some(error) = result.error {
+        anyhow::bail!("Simplicio AgentHost turn failed: {error}");
+    } else {
+        println!("Simplicio AgentHost turn completed without a textual response.");
+    }
+    Ok(())
 }
 async fn kill_leaders() -> Result<()> {
     let leaders = xai_grok_shell::leader::discover_leaders().await;
@@ -1775,6 +1814,9 @@ async fn async_main() -> Result<()> {
                 )
                 .await;
             }
+            Command::Simplicio(simplicio_args) => {
+                return run_simplicio_turn(simplicio_args).await;
+            }
             Command::Inspect { json } => {
                 let cwd = std::env::current_dir().unwrap_or_default();
                 xai_grok_shell::inspect::inspect(&cwd, json).await?;
@@ -2476,6 +2518,31 @@ mod tests {
         );
     }
     use clap::Parser as _;
+
+    #[test]
+    fn simplicio_subcommand_parses_a_headless_turn_contract() {
+        let args = PagerArgs::try_parse_from([
+            "simplicio-code",
+            "simplicio",
+            "--session-id",
+            "session-42",
+            "--profile",
+            "ci",
+            "--json",
+            "inspect",
+            "the",
+            "workspace",
+        ])
+        .unwrap();
+        let Some(Command::Simplicio(turn)) = args.command else {
+            panic!("expected Simplicio command");
+        };
+        assert_eq!(turn.session_id, "session-42");
+        assert_eq!(turn.profile, "ci");
+        assert!(turn.json);
+        assert_eq!(turn.instruction, ["inspect", "the", "workspace"]);
+    }
+
     /// `grok dashboard` flags the startup hook without forcing leader mode —
     /// the dashboard is independent of leader mode, so the launch keeps
     /// whatever leader setting the user (or config) chose.

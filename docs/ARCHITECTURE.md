@@ -9,6 +9,12 @@ privada do Simplicio e nunca são configuradas ou entregues ao cliente.
 
 ## Agent, Runtime e Code como um produto
 
+O mapeamento auditável entre cada comando/capability e suas superfícies fica em
+[`capability-command-inventory.v1.json`](capability-command-inventory.v1.json).
+Um atalho genérico não é evidência de cobertura: uma entrada só deixa
+`adapter-required` depois de ter boundary tipado, policy, receipt e teste de
+contrato na superfície indicada.
+
 ```text
 TUI / headless / ACP
         |
@@ -105,8 +111,11 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
 - Concluído: cliente AgentHost fail-closed com handshake/versionamento,
   capabilities obrigatórias, socket Unix privado e replay bounded de eventos
   operacionais; `SimplicioRuntimeFs` exige Agent antes do Runtime.
-- Concluído no modelo, pendente de UI: `AgentAttentionState` para uma futura
-  lateral passiva sem roubar foco, executar efeitos ou duplicar o scheduler.
+- Concluído: `AgentAttentionState` para a lateral passiva sem roubar foco,
+  executar efeitos ou duplicar o scheduler; e `/simplicio <instrução>` como
+  entrada explícita que executa um turno no AgentHost e devolve o resultado ao
+  scrollback. No Windows, o cliente usa loopback autenticado quando AF_UNIX
+  não está disponível.
 - Concluído: leitura, escrita e exclusão de arquivos do agente via Runtime
   (`SimplicioRuntimeFs`), com sandbox rígido (path traversal + escape via
   symlink) e sem fallback local.

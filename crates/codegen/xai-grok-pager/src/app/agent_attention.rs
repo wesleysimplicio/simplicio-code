@@ -447,7 +447,9 @@ pub(crate) fn safe_reason(error: &Error) -> AgentHostDegradedReason {
         Error::InsecureSocket(_) => AgentHostDegradedReason::SocketRejected,
         Error::UnsupportedTransport => AgentHostDegradedReason::UnsupportedTransport,
         Error::Io(_) => AgentHostDegradedReason::TransportIo,
-        Error::InvalidResponse(_) => AgentHostDegradedReason::InvalidResponse,
+        Error::InvalidResponse(_) | Error::InvalidTurnRequest(_) => {
+            AgentHostDegradedReason::InvalidResponse
+        }
         Error::OperationRejected => AgentHostDegradedReason::HostNotReady,
         Error::ProtocolMismatch(_) => AgentHostDegradedReason::ProtocolMismatch,
         Error::CapabilityMismatch { .. } => AgentHostDegradedReason::CapabilityMismatch,
