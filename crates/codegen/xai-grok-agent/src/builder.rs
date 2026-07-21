@@ -56,6 +56,8 @@ pub struct AgentBuilder {
     /// `SearchBackend` (see `with_search`). `None` (the default) leaves
     /// search tools on their existing local (ripgrep/`tokio::fs`) behavior.
     search_backend: Option<Arc<dyn xai_grok_tools::computer::types::AsyncSearch>>,
+    directory_backend:
+        Option<Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>>,
     notification_handle: ToolNotificationHandle,
     owner_session_id: Option<String>,
     parent_scheduler_handle:
@@ -192,6 +194,7 @@ impl AgentBuilder {
             terminal_backend,
             fs_backend: Arc::new(xai_grok_tools::computer::local::LocalFs),
             search_backend: None,
+            directory_backend: None,
             notification_handle,
             owner_session_id: None,
             parent_scheduler_handle: None,
@@ -414,6 +417,18 @@ impl AgentBuilder {
         search: Arc<dyn xai_grok_tools::computer::types::AsyncSearch>,
     ) -> Self {
         self.search_backend = Some(search);
+        self
+    }
+
+    /// Set the Runtime-owned directory listing backend used by `list_dir`
+    /// and tree-walk tools. It is separate from content search so a
+    /// productive session cannot accidentally treat a local filesystem as a
+    /// Runtime directory authority.
+    pub fn with_directory(
+        mut self,
+        directory: Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>,
+    ) -> Self {
+        self.directory_backend = Some(directory);
         self
     }
     /// Set the session ID that owns processes spawned by this session's tools.
@@ -1032,6 +1047,7 @@ impl AgentBuilder {
                 backend: self.terminal_backend,
                 fs: self.fs_backend,
                 search: self.search_backend,
+                directory: self.directory_backend,
                 cwd: self.working_directory.clone(),
                 session_folder: state_path
                     .parent()

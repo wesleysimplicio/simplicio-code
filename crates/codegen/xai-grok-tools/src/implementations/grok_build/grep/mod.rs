@@ -17,8 +17,8 @@ use crate::DEFAULT_TOOL_OUTPUT_BYTES;
 use crate::types::output::{GrepFileMatch, GrepLineMatch, GrepSearchOutput};
 #[allow(unused_imports)]
 use crate::types::resources::{
-    Cwd, DenyReadGlobs, DisplayCwd, Params, PathNotFoundHints, SharedResources, display_cwd_or_cwd,
-    resolve_model_path,
+    Cwd, DenyReadGlobs, DisplayCwd, Params, PathNotFoundHints, SearchBackend, SharedResources,
+    display_cwd_or_cwd, resolve_model_path,
 };
 use crate::types::tool::{ToolKind, ToolNamespace};
 use crate::util::truncate::truncate_line;
@@ -290,6 +290,16 @@ impl xai_tool_runtime::Tool for GrepTool {
         ctx: xai_tool_runtime::ToolCallContext,
         input: GrepSearchInput,
     ) -> xai_tool_runtime::ToolStream<GrepSearchOutput> {
+        // Productive Code sessions inject SearchBackend for the Runtime MCP
+        // contract. Keep the terminal result path for that backend: the
+        // Runtime is unary and must never be replaced by a local streaming
+        // ripgrep fallback.
+        if let Ok(resources) = crate::types::tool_metadata::shared_resources(&ctx)
+            && resources.lock().await.get::<SearchBackend>().is_some()
+        {
+            return xai_tool_runtime::terminal_only(self.run(ctx, input).await);
+        }
+
         // Absent extension or spec ⇒ gate off. `Some(spec)` iff the gate is
         // on; the spec borrow is `'static` (LazyLock), so it moves straight
         // into the stream below.
@@ -333,6 +343,10 @@ impl xai_tool_runtime::Tool for GrepTool {
         ctx: xai_tool_runtime::ToolCallContext,
         input: GrepSearchInput,
     ) -> Result<GrepSearchOutput, xai_tool_runtime::ToolError> {
+        if let Some(output) = runtime_search(&ctx, &input).await? {
+            return Ok(output);
+        }
+
         let started = std::time::Instant::now();
         let GrepReady {
             mut child,
@@ -686,6 +700,159 @@ struct GrepReady {
 enum GrepStep {
     Ready(GrepReady),
     Early(GrepSearchOutput),
+}
+
+/// Run grep through the negotiated Simplicio Runtime search contract when a
+/// productive session provides one. Returning `None` is reserved for local
+/// test/legacy sessions that did not inject the backend; Runtime errors are
+/// returned directly and never fall back to `rg`.
+async fn runtime_search(
+    ctx: &xai_tool_runtime::ToolCallContext,
+    input: &GrepSearchInput,
+) -> Result<Option<GrepSearchOutput>, xai_tool_runtime::ToolError> {
+    use crate::types::tool_metadata::{resolve_cwd, shared_resources};
+
+    let resources = shared_resources(ctx)?;
+    let backend = resources.lock().await.get::<SearchBackend>().map(|b| b.0.clone());
+    let Some(backend) = backend else {
+        return Ok(None);
+    };
+
+    // The Runtime v1 search contract does not carry ripgrep context/type/
+    // multiline options. Rejecting these options is safer than silently
+    // changing their meaning while still claiming Runtime ownership.
+    if input.before_context.is_some()
+        || input.after_context.is_some()
+        || input.context.is_some()
+        || input.r#type.as_deref().is_some_and(|v| !v.is_empty())
+        || input.multiline.unwrap_or(false)
+    {
+        return Err(xai_tool_runtime::ToolError::invalid_arguments(
+            "Simplicio Runtime search does not support context, type, or multiline grep options",
+        ));
+    }
+
+    let cwd = resolve_cwd(ctx, &resources).await?;
+    let (display_cwd, deny_read_globs, params) = {
+        let res = resources.lock().await;
+        (
+            res.get::<DisplayCwd>().map(|d| d.0.clone()),
+            res.get::<DenyReadGlobs>()
+                .map(|d| d.0.clone())
+                .unwrap_or_default(),
+            res.get::<Params<GrepParams>>()
+                .cloned()
+                .unwrap_or_default(),
+        )
+    };
+    let display_base = display_cwd_or_cwd(&cwd, display_cwd.as_deref());
+    let display_root = display_base.display().to_string();
+    let search_path = input.path.as_deref().filter(|p| !p.trim().is_empty()).map(|p| {
+        resolve_model_path(&cwd, display_cwd.as_deref(), p)
+    });
+    let mut globs = input
+        .glob
+        .as_deref()
+        .filter(|g| !g.is_empty())
+        .map(|g| vec![g.to_owned()])
+        .unwrap_or_default();
+    globs.extend(deny_read_globs.into_iter().map(|glob| format!("!{glob}")));
+
+    let output_mode = input.output_mode.clone().unwrap_or(OutputMode::Content);
+    let effective_head_limit = resolve_effective_head_limit(input, &output_mode);
+    let outcome = backend
+        .search(
+            &input.pattern,
+            search_path.as_deref(),
+            &globs,
+            input.case_insensitive.unwrap_or(false),
+            false,
+            effective_head_limit,
+            MAX_STDOUT_BYTES.min(crate::DEFAULT_TOOL_OUTPUT_BYTES),
+        )
+        .await
+        .map_err(|error| {
+            xai_tool_runtime::ToolError::execution(
+                xai_tool_protocol::ToolId::new("grep").expect("valid tool id"),
+                format!("Simplicio Runtime search failed: {error}"),
+            )
+        })?;
+
+    let mut lines = Vec::new();
+    let mut file_matches = Vec::new();
+    let mut current_path: Option<String> = None;
+    for item in &outcome.matches {
+        if current_path.as_deref() != Some(item.path.as_str()) {
+            lines.push(item.path.clone());
+            current_path = Some(item.path.clone());
+            file_matches.push(GrepFileMatch {
+                path: item.path.clone(),
+                matches: Vec::new(),
+            });
+        }
+        lines.push(format!("{}:{}", item.line, item.text));
+        if let Some(file) = file_matches.last_mut() {
+            file.matches.push(GrepLineMatch {
+                line_number: item.line as usize,
+                content: truncate_line(&item.text, params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE)),
+            });
+        }
+    }
+
+    let (formatted, match_count) = match output_mode {
+        OutputMode::Content => (
+            format_content_output(
+                lines,
+                outcome.truncated,
+                params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                params.max_output_bytes.unwrap_or(DEFAULT_TOOL_OUTPUT_BYTES),
+            ),
+            outcome.matches.len(),
+        ),
+        OutputMode::FilesWithMatches => {
+            let files = file_matches.iter().map(|f| f.path.clone()).collect::<Vec<_>>();
+            (
+                format_files_with_matches_output(
+                    files.clone(),
+                    outcome.truncated,
+                    params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                    params.max_output_bytes.unwrap_or(DEFAULT_TOOL_OUTPUT_BYTES),
+                ),
+                files.len(),
+            )
+        }
+        OutputMode::Count => {
+            let counts = file_matches
+                .iter()
+                .map(|file| format!("{}:{}", file.path, file.matches.len()))
+                .collect::<Vec<_>>();
+            let total = file_matches.iter().map(|file| file.matches.len()).sum();
+            (
+                format_count_output(
+                    counts,
+                    outcome.truncated,
+                    params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                    params.max_output_bytes.unwrap_or(DEFAULT_TOOL_OUTPUT_BYTES),
+                ),
+                total,
+            )
+        }
+    };
+
+    Ok(Some(GrepSearchOutput {
+        stdout: format!(
+            "<workspace_result workspace_path=\"{display_root}\">\n{formatted}\n</workspace_result>"
+        )
+        .into_bytes(),
+        stderr: Vec::new(),
+        exit_code: if outcome.matches.is_empty() { 1 } else { 0 },
+        match_count,
+        file_matches: if matches!(output_mode, OutputMode::Content) {
+            file_matches
+        } else {
+            Vec::new()
+        },
+    }))
 }
 
 /// Resolve resources, build the ripgrep command, and spawn it; `Early` for
@@ -1468,6 +1635,7 @@ pub fn format_count_output(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::computer::types::{AsyncSearch, ComputerError, SearchMatch, SearchOutcome};
     use crate::types::tool_metadata::test_ctx;
 
     use crate::types::resources::Resources;
@@ -1487,6 +1655,26 @@ mod tests {
             r#type: None,
             head_limit: None,
             multiline: None,
+        }
+    }
+
+    struct FakeRuntimeSearch {
+        result: Result<SearchOutcome, String>,
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncSearch for FakeRuntimeSearch {
+        async fn search(
+            &self,
+            _pattern: &str,
+            _path: Option<&std::path::Path>,
+            _globs: &[String],
+            _case_insensitive: bool,
+            _literal: bool,
+            _max_files: usize,
+            _max_matches: usize,
+        ) -> Result<SearchOutcome, ComputerError> {
+            self.result.clone().map_err(ComputerError::io)
         }
     }
 
@@ -1686,6 +1874,53 @@ mod tests {
         assert!(output.match_count > 0);
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("main"));
+    }
+
+    #[tokio::test]
+    async fn productive_grep_uses_runtime_search_result() {
+        let mut resources = Resources::new();
+        resources.insert(Cwd(std::path::PathBuf::from("/workspace")));
+        resources.insert(crate::types::resources::SearchBackend(
+            std::sync::Arc::new(FakeRuntimeSearch {
+                result: Ok(SearchOutcome {
+                    matches: vec![SearchMatch {
+                        path: "virtual.rs".to_owned(),
+                        line: 7,
+                        text: "runtime_match".to_owned(),
+                    }],
+                    truncated: false,
+                }),
+            }),
+        ));
+        let output = xai_tool_runtime::Tool::run(
+            &GrepTool,
+            test_ctx(resources.into_shared()),
+            make_grep_input("runtime_match"),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output.exit_code, 0);
+        assert!(String::from_utf8_lossy(&output.stdout).contains("virtual.rs"));
+        assert!(String::from_utf8_lossy(&output.stdout).contains("runtime_match"));
+    }
+
+    #[tokio::test]
+    async fn productive_grep_fails_closed_on_runtime_search_error() {
+        let mut resources = Resources::new();
+        resources.insert(Cwd(std::env::temp_dir()));
+        resources.insert(crate::types::resources::SearchBackend(
+            std::sync::Arc::new(FakeRuntimeSearch {
+                result: Err("Runtime unavailable".to_owned()),
+            }),
+        ));
+        let error = xai_tool_runtime::Tool::run(
+            &GrepTool,
+            test_ctx(resources.into_shared()),
+            make_grep_input("must_not_fallback"),
+        )
+        .await
+        .expect_err("Runtime failure must not enter local ripgrep");
+        assert!(error.to_string().contains("Runtime search failed"));
     }
 
     /// `DenyReadGlobs` become ripgrep excludes so a search can't read a

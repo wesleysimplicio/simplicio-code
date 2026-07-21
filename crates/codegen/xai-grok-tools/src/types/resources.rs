@@ -19,7 +19,7 @@ use crate::notification::types::ToolNotificationHandle;
 use serde::Serialize;
 use std::any::{Any, TypeId};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 /// Marker trait for types that can be stored in `Resources`.
@@ -799,15 +799,36 @@ impl std::fmt::Debug for FileSystem {
 ///
 /// Only present in `Resources` when the session was constructed with a
 /// search-capable backend (currently: Simplicio Runtime sessions). Search
-/// tools that find this resource absent keep their existing local
-/// (ripgrep/`tokio::fs`) behavior unchanged; tools that find it present must
-/// use it exclusively and fail closed on its errors — mirroring how
-/// `SimplicioRuntimeFs` is opted into `FileSystem` at only two call sites
-/// rather than replacing `LocalFs` everywhere.
+/// `grep`, `hashline_grep` and `grep_files` use it exclusively and fail closed
+/// on its errors. When absent, local behavior remains available only to
+/// fixtures and explicitly legacy sessions; productive Runtime sessions
+/// always inject this resource.
 pub struct SearchBackend(pub Arc<dyn crate::computer::types::AsyncSearch>);
 impl std::fmt::Debug for SearchBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SearchBackend").finish()
+    }
+}
+/// Runtime-owned directory listing contract.
+///
+/// Productive Code sessions inject this alongside [`FileSystem`]. The
+/// adapter returns the Runtime's typed JSON payload so consumers can validate
+/// the independently versioned `simplicio_fs_list` response before rendering
+/// it. It is intentionally separate from `FileSystem`: local test backends do
+/// not accidentally become productive directory authorities.
+#[async_trait::async_trait]
+pub trait AsyncDirectoryListing: Send + Sync {
+    async fn list_directory(
+        &self,
+        path: &Path,
+        options: serde_json::Value,
+    ) -> Result<serde_json::Value, crate::computer::types::ComputerError>;
+}
+
+pub struct DirectoryBackend(pub Arc<dyn AsyncDirectoryListing>);
+impl std::fmt::Debug for DirectoryBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DirectoryBackend").finish()
     }
 }
 /// Terminal backend abstraction.
