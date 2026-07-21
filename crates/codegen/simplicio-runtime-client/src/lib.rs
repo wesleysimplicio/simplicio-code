@@ -9,6 +9,12 @@
 pub mod component_release;
 pub mod map_cache;
 pub mod loop_hub;
+pub mod loop_hub_transport;
+
+pub use loop_hub_transport::{
+    HubAttachReceipt, HubAttachRequest, HubCursor, SocketPipeHubTransport,
+    SocketPipeHubTransportFactory,
+};
 
 pub mod generated;
 
