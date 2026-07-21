@@ -6,7 +6,15 @@
 //! request. This lets older Runtimes keep the already-supported read path
 //! while rejecting newer operations with an actionable incompatibility error.
 
+pub mod component_release;
 pub mod map_cache;
+
+pub mod generated;
+
+pub use component_release::{
+    BundleManifest, BundleStore, CompatibilityContract, CompatibilityHandshake,
+    ComponentRelease, ReleaseError, ReleaseIdentity, REQUIRED_COMPONENTS,
+};
 
 pub use map_cache::{
     MAP_RESULT_SCHEMA_V1, MapCache, MapResult, MapState, budgeted_summary, compute_repo_hash,
@@ -79,6 +87,8 @@ pub enum Error {
     ExecRejected(String),
     #[error("Simplicio Runtime rejected the file read: {0}")]
     ReadRejected(String),
+    #[error("Simplicio Runtime release is incompatible: {0}")]
+    CompatibilityMismatch(String),
     #[error("search glob rejected: {0}")]
     GlobRejected(String),
 }
@@ -90,6 +100,11 @@ pub struct RuntimeCapabilities {
     pub server_name: String,
     #[serde(default)]
     pub server_version: Option<String>,
+    /// Provenance announced by the Runtime during initialize. Old Runtimes
+    /// may omit this field; callers that need artifact pinning must use
+    /// [`RuntimeClient::spawn_in_with_manifest`].
+    #[serde(default)]
+    pub component_release: Option<ReleaseIdentity>,
     pub tools: BTreeSet<String>,
 }
 
@@ -229,6 +244,7 @@ impl RuntimeClient {
                 protocol_version: String::new(),
                 server_name: String::new(),
                 server_version: None,
+                component_release: None,
                 tools: BTreeSet::new(),
             },
         };
@@ -253,6 +269,36 @@ impl RuntimeClient {
             client.request_with_timeout("tools/list", json!({}), DEFAULT_HANDSHAKE_TIMEOUT_MS)?;
         client.capabilities = parse_capabilities(&initialized, &listed)?;
         Ok(client)
+    }
+
+    /// Spawn and fail closed unless the Runtime advertises the exact pinned
+    /// release and protocol range required by `manifest`.
+    pub fn spawn_in_with_manifest(
+        workspace: &Path,
+        manifest: &BundleManifest,
+    ) -> Result<Self, Error> {
+        let client = Self::spawn_in(workspace)?;
+        client.verify_compatibility(manifest)?;
+        Ok(client)
+    }
+
+    /// Verify the already-negotiated Runtime against the installed bundle.
+    /// This is intentionally explicit so legacy, unpinned callers remain
+    /// readable while release-managed entry points cannot skip provenance.
+    pub fn verify_compatibility(&self, manifest: &BundleManifest) -> Result<(), Error> {
+        let release = self
+            .capabilities
+            .component_release
+            .as_ref()
+            .ok_or_else(|| {
+                Error::CompatibilityMismatch(
+                    "Runtime did not announce component_release provenance".into(),
+                )
+            })?;
+        let handshake = CompatibilityHandshake::from_runtime(release, &self.capabilities.tools);
+        handshake
+            .verify_against(manifest)
+            .map_err(|error| Error::CompatibilityMismatch(error.to_string()))
     }
 
     pub fn capabilities(&self) -> &RuntimeCapabilities {
@@ -564,6 +610,10 @@ fn parse_capabilities(initialized: &Value, listed: &Value) -> Result<RuntimeCapa
             .pointer("/serverInfo/version")
             .and_then(Value::as_str)
             .map(str::to_owned),
+        component_release: initialized
+            .pointer("/serverInfo/metadata/componentRelease")
+            .or_else(|| initialized.pointer("/serverInfo/componentRelease"))
+            .and_then(|value| serde_json::from_value(value.clone()).ok()),
         tools,
     })
 }
@@ -810,6 +860,36 @@ mod tests {
         assert_eq!(capabilities.schema, MCP_CONTRACT_SCHEMA);
         assert!(capabilities.supports("simplicio_file_read"));
         assert!(!capabilities.supports("simplicio_fs_write"));
+    }
+
+    #[test]
+    fn parses_runtime_component_release_metadata_for_pinned_handshake() {
+        let capabilities = parse_capabilities(
+            &json!({
+                "protocolVersion": PROTOCOL_VERSION,
+                "serverInfo": {
+                    "name": "simplicio",
+                    "metadata": {
+                        "componentRelease": {
+                            "name": "runtime",
+                            "version": "0.3.0",
+                            "commit": "a0123456789abcdef",
+                            "protocol": "RuntimeProtocol/v1",
+                            "artifact_digest": "b".repeat(64)
+                        }
+                    }
+                }
+            }),
+            &json!({"tools": []}),
+        )
+        .unwrap();
+        assert_eq!(
+            capabilities
+                .component_release
+                .as_ref()
+                .map(|release| release.name.as_str()),
+            Some("runtime")
+        );
     }
 
     #[test]
