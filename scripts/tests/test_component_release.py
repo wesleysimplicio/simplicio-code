@@ -4,6 +4,7 @@ from scripts.validate_component_release import COMPONENTS, SCHEMA, validate
 def _manifest():
     return {
         "schema": SCHEMA,
+        "bundle_version": "0.3.0",
         "compatibility": {"code_protocol": "CoordinatorProtocol/v1"},
         "components": [
             {"name": name, "version": "0.3.0", "commit": "a" * 40, "artifact_digest": "b" * 64, "protocol": f"{name}/v1"}
