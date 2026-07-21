@@ -474,6 +474,7 @@ mod tests {
     use super::*;
     use crate::loop_hub::{HubMode, LoopHubClient};
     use serde_json::json;
+    #[cfg(unix)]
     use std::{
         io::{BufRead, BufReader, Write},
         thread,
@@ -513,7 +514,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn unix_socket_reconnects_with_the_last_progress_cursor() {
-        use std::os::unix::net::{UnixListener, UnixStream};
+        use std::os::unix::net::UnixListener;
 
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
