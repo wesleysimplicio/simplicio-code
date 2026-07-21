@@ -331,6 +331,17 @@ impl AsyncFileSystem for SimplicioRuntimeFs {
         })
         .await
     }
+
+    /// Routes a complete patch through Runtime's atomic `simplicio_edit`
+    /// contract. A Runtime error is returned as-is; this backend never
+    /// degrades an edit into local per-file writes.
+    #[tracing::instrument(name = "simplicio_runtime.fs.apply_edit", skip_all)]
+    async fn apply_edit(
+        &self,
+        plan: serde_json::Value,
+    ) -> Result<Option<serde_json::Value>, ComputerError> {
+        self.edit_workspace(plan).await.map(Some)
+    }
 }
 
 #[cfg(test)]

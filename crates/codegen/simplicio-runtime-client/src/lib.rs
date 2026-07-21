@@ -796,18 +796,28 @@ fn secure_glob(glob: &str) -> Result<String, Error> {
 }
 
 fn validate_plan_paths(repo: &Path, plan: &Value) -> Result<(), Error> {
-    let files = plan
-        .get("files")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .chain(
-            plan.as_object()
-                .into_iter()
-                .filter_map(|object| object.get("file")),
-        )
-        .collect::<Vec<_>>();
-    for file in files.into_iter().filter_map(Value::as_str) {
+    let mut paths = Vec::new();
+    if let Some(files) = plan.get("files").and_then(Value::as_array) {
+        for file in files {
+            if let Some(path) = file.as_str() {
+                paths.push(path);
+            } else if let Some(object) = file.as_object() {
+                for key in ["file", "move_to"] {
+                    if let Some(path) = object.get(key).and_then(Value::as_str) {
+                        paths.push(path);
+                    }
+                }
+            }
+        }
+    }
+    if let Some(object) = plan.as_object() {
+        for key in ["file", "move_to"] {
+            if let Some(path) = object.get(key).and_then(Value::as_str) {
+                paths.push(path);
+            }
+        }
+    }
+    for file in paths {
         secure_relative_path(repo, Path::new(file))?;
     }
     Ok(())

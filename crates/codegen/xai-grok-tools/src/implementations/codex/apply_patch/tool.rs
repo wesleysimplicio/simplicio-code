@@ -1,7 +1,8 @@
 //! `ApplyPatchTool` — Tool trait implementation for the codex apply-patch format.
 //!
 //! Wires the pure-library patch engine (parser + apply) through `AsyncFileSystem`
-//! for all I/O and emits `FileWritten` notifications.
+//! for reads and emits `FileWritten` notifications. Runtime-backed sessions
+//! submit the complete change set through the backend's atomic edit capability.
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 
 use crate::computer::types::AsyncFileSystem;
 use crate::notification::types::FileWritten;
+use serde_json::{Value, json};
 
 use crate::types::output::{ApplyPatchFileResult, ApplyPatchOutput};
 use crate::types::requirements::Expr;
@@ -159,8 +161,19 @@ async fn compute_all_changes(
     let mut changes = Vec::new();
 
     for hunk in hunks {
+        let reject_unsafe_path = |path: &std::path::Path| {
+            if path.is_absolute()
+                || path
+                    .components()
+                    .any(|component| component == std::path::Component::ParentDir)
+            {
+                return Err(format!("patch path escapes workspace: {}", path.display()));
+            }
+            Ok(())
+        };
         match hunk {
             Hunk::AddFile { path, contents } => {
+                reject_unsafe_path(path)?;
                 let resolved = cwd.join(path);
                 changes.push(FileChange::Add {
                     path: resolved,
@@ -168,6 +181,7 @@ async fn compute_all_changes(
                 });
             }
             Hunk::DeleteFile { path } => {
+                reject_unsafe_path(path)?;
                 let resolved = cwd.join(path);
                 let original_content = read_file_as_string(fs, &resolved)
                     .await
@@ -182,6 +196,10 @@ async fn compute_all_changes(
                 move_path,
                 chunks,
             } => {
+                reject_unsafe_path(path)?;
+                if let Some(move_path) = move_path {
+                    reject_unsafe_path(move_path)?;
+                }
                 let resolved = cwd.join(path);
                 let original_content = read_file_as_string(fs, &resolved).await.map_err(|e| {
                     format!("Failed to read file to update: {}, {e}", resolved.display())
@@ -222,6 +240,158 @@ async fn read_file_as_string(
 ) -> Result<String, String> {
     let bytes = fs.read_file(path).await.map_err(|e| format!("{e}"))?;
     Ok(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// Translate the already-computed patch into the Runtime `simplicio_edit`
+/// plan shape. Paths stay repo-relative at this boundary; RuntimeClient then
+/// performs its own canonical containment check before sending the request.
+fn build_runtime_edit_plan(
+    cwd: &std::path::Path,
+    changes: &[FileChange],
+) -> Result<Value, String> {
+    let relative = |path: &std::path::Path| {
+        path.strip_prefix(cwd)
+            .map(|path| path.to_string_lossy().replace('\\', "/"))
+            .map_err(|_| format!("edit path escapes workspace: {}", path.display()))
+    };
+
+    let files = changes
+        .iter()
+        .map(|change| match change {
+            FileChange::Add { path, content } => Ok(json!({
+                "file": relative(path)?,
+                "operation": "add",
+                "content": content,
+            })),
+            FileChange::Delete { path, .. } => Ok(json!({
+                "file": relative(path)?,
+                "operation": "delete",
+            })),
+            FileChange::Update {
+                path, new_content, ..
+            } => Ok(json!({
+                "file": relative(path)?,
+                "operation": "update",
+                "content": new_content,
+            })),
+            FileChange::Move {
+                source_path,
+                dest_path,
+                new_content,
+                ..
+            } => Ok(json!({
+                "file": relative(source_path)?,
+                "operation": "move",
+                "move_to": relative(dest_path)?,
+                "content": new_content,
+            })),
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(json!({ "files": files }))
+}
+
+fn file_result(change: &FileChange) -> ApplyPatchFileResult {
+    match change {
+        FileChange::Add { path, content } => ApplyPatchFileResult {
+            path: path.clone(),
+            action: "added".to_string(),
+            old_text: None,
+            new_text: content.clone(),
+            move_to: None,
+        },
+        FileChange::Delete {
+            path,
+            original_content,
+        } => ApplyPatchFileResult {
+            path: path.clone(),
+            action: "deleted".to_string(),
+            old_text: Some(original_content.clone()),
+            new_text: String::new(),
+            move_to: None,
+        },
+        FileChange::Update {
+            path,
+            original_content,
+            new_content,
+        } => ApplyPatchFileResult {
+            path: path.clone(),
+            action: "modified".to_string(),
+            old_text: Some(original_content.clone()),
+            new_text: new_content.clone(),
+            move_to: None,
+        },
+        FileChange::Move {
+            source_path,
+            original_content,
+            new_content,
+            dest_path,
+        } => ApplyPatchFileResult {
+            path: source_path.clone(),
+            action: "moved".to_string(),
+            old_text: Some(original_content.clone()),
+            new_text: new_content.clone(),
+            move_to: Some(dest_path.clone()),
+        },
+    }
+}
+
+fn notify_change(
+    notification_handle: &crate::notification::types::ToolNotificationHandle,
+    tool_call_id: &str,
+    change: &FileChange,
+) {
+    match change {
+        FileChange::Add { path, content } => notification_handle.send_file_written(FileWritten {
+            tool_call_id: tool_call_id.to_owned(),
+            absolute_path: path.clone(),
+            content: content.clone(),
+            previous_content: None,
+            is_new_file: true,
+        }),
+        FileChange::Delete {
+            path,
+            original_content,
+        } => notification_handle.send_file_written(FileWritten {
+            tool_call_id: tool_call_id.to_owned(),
+            absolute_path: path.clone(),
+            content: String::new(),
+            previous_content: Some(original_content.clone()),
+            is_new_file: false,
+        }),
+        FileChange::Update {
+            path,
+            original_content,
+            new_content,
+        } => notification_handle.send_file_written(FileWritten {
+            tool_call_id: tool_call_id.to_owned(),
+            absolute_path: path.clone(),
+            content: new_content.clone(),
+            previous_content: Some(original_content.clone()),
+            is_new_file: false,
+        }),
+        FileChange::Move {
+            source_path,
+            dest_path,
+            original_content,
+            new_content,
+        } => {
+            notification_handle.send_file_written(FileWritten {
+                tool_call_id: tool_call_id.to_owned(),
+                absolute_path: dest_path.clone(),
+                content: new_content.clone(),
+                previous_content: None,
+                is_new_file: true,
+            });
+            notification_handle.send_file_written(FileWritten {
+                tool_call_id: tool_call_id.to_owned(),
+                absolute_path: source_path.clone(),
+                content: String::new(),
+                previous_content: Some(original_content.clone()),
+                is_new_file: false,
+            });
+        }
+    }
 }
 
 /// Build the codex-style summary string.
@@ -333,6 +503,33 @@ impl xai_tool_runtime::Tool for ApplyPatchTool {
             Ok(c) => c,
             Err(msg) => return Ok(ApplyPatchOutput::ApplicationError(msg)),
         };
+
+        // Runtime-backed sessions expose an atomic edit capability through
+        // the same filesystem resource. Once selected, every error is
+        // terminal: there is deliberately no local per-file fallback.
+        let runtime_plan = match build_runtime_edit_plan(&cwd, &changes) {
+            Ok(plan) => plan,
+            Err(msg) => return Ok(ApplyPatchOutput::ApplicationError(msg)),
+        };
+        match fs.apply_edit(runtime_plan).await {
+            Ok(Some(_runtime_result)) => {
+                let file_results = changes.iter().map(file_result).collect::<Vec<_>>();
+                for change in &changes {
+                    notify_change(&notification_handle, &tool_call_id, change);
+                }
+                return Ok(ApplyPatchOutput::Success {
+                    tool_output_for_prompt: build_summary(&file_results),
+                    files: file_results,
+                });
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return Err(xai_tool_runtime::ToolError::execution(
+                    xai_tool_protocol::ToolId::new("apply_patch").expect("valid"),
+                    format!("Runtime atomic edit failed: {error}"),
+                ));
+            }
+        }
 
         // ── Phase 3: Apply all changes (write to filesystem) ─────
         let mut file_results = Vec::new();
@@ -486,10 +683,11 @@ impl xai_tool_runtime::Tool for ApplyPatchTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::computer::local::LocalFs;
+    use crate::computer::{local::LocalFs, types::{AsyncFileSystem, ComputerError}};
     use crate::notification::types::ToolNotificationHandle;
     use crate::types::resources::Resources;
     use crate::types::tool_metadata::test_ctx;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use tempfile::TempDir;
 
     /// Set up Resources with real filesystem for tests.
@@ -499,6 +697,45 @@ mod tests {
         resources.insert(FileSystem(Arc::new(LocalFs)));
         resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
         resources
+    }
+
+    struct RuntimeEditFs {
+        plans: std::sync::Mutex<Vec<Value>>,
+        writes: AtomicUsize,
+        deletes: AtomicUsize,
+        fail_edit: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncFileSystem for RuntimeEditFs {
+        async fn read_file(&self, path: &std::path::Path) -> Result<Vec<u8>, ComputerError> {
+            std::fs::read(path).map_err(ComputerError::from)
+        }
+
+        async fn write_file(
+            &self,
+            _path: &std::path::Path,
+            _data: &[u8],
+        ) -> Result<(), ComputerError> {
+            self.writes.fetch_add(1, Ordering::Relaxed);
+            Err(ComputerError::io("local write must not be used by Runtime edits"))
+        }
+
+        async fn delete_file(&self, _path: &std::path::Path) -> Result<(), ComputerError> {
+            self.deletes.fetch_add(1, Ordering::Relaxed);
+            Err(ComputerError::io("local delete must not be used by Runtime edits"))
+        }
+
+        async fn apply_edit(
+            &self,
+            plan: Value,
+        ) -> Result<Option<Value>, ComputerError> {
+            if self.fail_edit {
+                return Err(ComputerError::io("Runtime rejected atomic edit"));
+            }
+            self.plans.lock().unwrap().push(plan);
+            Ok(Some(json!({ "accepted": true })))
+        }
     }
 
     /// Build a runtime `ToolCallContext` with the given shared resources.
@@ -673,6 +910,96 @@ mod tests {
             }
             other => panic!("Expected Success, got: {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn runtime_backend_uses_one_atomic_plan_without_local_writes() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("update.txt"), "old\n").unwrap();
+        std::fs::write(tmp.path().join("delete.txt"), "gone\n").unwrap();
+        std::fs::write(tmp.path().join("move.txt"), "move\n").unwrap();
+        let fs = Arc::new(RuntimeEditFs {
+            plans: std::sync::Mutex::new(Vec::new()),
+            writes: AtomicUsize::new(0),
+            deletes: AtomicUsize::new(0),
+            fail_edit: false,
+        });
+
+        let mut resources = Resources::new();
+        resources.insert(Cwd(tmp.path().to_path_buf()));
+        resources.insert(FileSystem(fs.clone()));
+        resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
+        let patch = wrap_patch(
+            "*** Add File: add.txt\n+added\n\
+             *** Update File: update.txt\n@@\n-old\n+new\n\
+             *** Delete File: delete.txt\n\
+             *** Update File: move.txt\n*** Move to: moved.txt\n@@\n-move\n+moved",
+        );
+
+        let result = xai_tool_runtime::Tool::run(
+            &ApplyPatchTool,
+            test_ctx(resources.into_shared()),
+            make_input(&patch),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(result, ApplyPatchOutput::Success { files, .. } if files.len() == 4));
+        assert_eq!(fs.writes.load(Ordering::Relaxed), 0);
+        assert_eq!(fs.deletes.load(Ordering::Relaxed), 0);
+        let plans = fs.plans.lock().unwrap();
+        assert_eq!(plans.len(), 1);
+        assert_eq!(plans[0]["files"].as_array().unwrap().len(), 4);
+        assert_eq!(plans[0]["files"][0]["file"], "add.txt");
+        assert_eq!(plans[0]["files"][0]["operation"], "add");
+        assert_eq!(plans[0]["files"][3]["move_to"], "moved.txt");
+    }
+
+    #[tokio::test]
+    async fn runtime_edit_error_does_not_fall_back_to_local_writes() {
+        let tmp = TempDir::new().unwrap();
+        std::fs::write(tmp.path().join("update.txt"), "old\n").unwrap();
+        let fs = Arc::new(RuntimeEditFs {
+            plans: std::sync::Mutex::new(Vec::new()),
+            writes: AtomicUsize::new(0),
+            deletes: AtomicUsize::new(0),
+            fail_edit: true,
+        });
+        let mut resources = Resources::new();
+        resources.insert(Cwd(tmp.path().to_path_buf()));
+        resources.insert(FileSystem(fs.clone()));
+        resources.insert(NotificationHandle(ToolNotificationHandle::noop()));
+        let patch = wrap_patch("*** Update File: update.txt\n@@\n-old\n+new");
+
+        let error = xai_tool_runtime::Tool::run(
+            &ApplyPatchTool,
+            test_ctx(resources.into_shared()),
+            make_input(&patch),
+        )
+        .await
+        .expect_err("Runtime edit failure must be surfaced");
+
+        assert!(error.to_string().contains("Runtime atomic edit failed"));
+        assert_eq!(fs.writes.load(Ordering::Relaxed), 0);
+        assert_eq!(fs.deletes.load(Ordering::Relaxed), 0);
+        assert_eq!(std::fs::read_to_string(tmp.path().join("update.txt")).unwrap(), "old\n");
+    }
+
+    #[tokio::test]
+    async fn patch_paths_cannot_escape_workspace() {
+        let tmp = TempDir::new().unwrap();
+        let outside = tmp.path().parent().unwrap().join("apply-patch-escape.txt");
+        let resources = test_resources(tmp.path());
+        let result = xai_tool_runtime::Tool::run(
+            &ApplyPatchTool,
+            test_ctx(resources.into_shared()),
+            make_input(&wrap_patch("*** Add File: ../apply-patch-escape.txt\n+blocked")),
+        )
+        .await
+        .unwrap();
+
+        assert!(matches!(result, ApplyPatchOutput::ApplicationError(message) if message.contains("escapes workspace")));
+        assert!(!outside.exists());
     }
 
     // ── Parse error ──────────────────────────────────────────────

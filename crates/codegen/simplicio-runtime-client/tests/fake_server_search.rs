@@ -96,6 +96,22 @@ fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contr
         .delete_file(repo.path(), Path::new("existing.txt"))
         .expect("delete should still round-trip");
 
+    // --- edit: the atomic patch consumer uses the existing Runtime contract ---
+    let edit = client
+        .edit(
+            repo.path(),
+            serde_json::json!({
+                "files": [{
+                    "file": "new.txt",
+                    "operation": "update",
+                    "content": "updated"
+                }]
+            }),
+        )
+        .expect("edit should round-trip through the fake Runtime");
+    assert_eq!(edit["schema"], "simplicio.edit-result/v1");
+    assert_eq!(edit["plan"]["files"][0]["file"], "new.txt");
+
     // --- regression: read/write/delete still fail closed on path escape ---
     let read_escape = client.read_file(repo.path(), Path::new("../outside.txt"), 4096);
     assert!(matches!(read_escape, Err(Error::PathRejected(_))));
@@ -103,6 +119,17 @@ fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contr
     assert!(matches!(write_escape, Err(Error::PathRejected(_))));
     let delete_escape = client.delete_file(repo.path(), Path::new("../outside.txt"));
     assert!(matches!(delete_escape, Err(Error::PathRejected(_))));
+    let edit_escape = client.edit(
+        repo.path(),
+        serde_json::json!({
+            "files": [{
+                "file": "inside.txt",
+                "operation": "move",
+                "move_to": "../outside.txt"
+            }]
+        }),
+    );
+    assert!(matches!(edit_escape, Err(Error::PathRejected(_))));
 
     drop(client);
     // SAFETY: same single-test-function invariant as the `set_var` above.

@@ -28,7 +28,7 @@ error.
 Runtime handshake error.
 
 - The Simplicio Runtime is fail-closed by design (see
-  [docs/ARCHITECTURE.md](ARCHITECTURE.md#runtime-e-code-como-um-produto)):
+  [docs/ARCHITECTURE.md](ARCHITECTURE.md#agent-runtime-e-code-como-um-produto)):
   if the Runtime process fails its identity/protocol handshake, the client
   refuses to fall back to direct disk reads rather than silently bypassing
   the sandbox.
