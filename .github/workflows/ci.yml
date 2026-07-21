@@ -226,3 +226,20 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check all
+
+  # Keep one bounded, credential-safe artifact when any mandatory job fails.
+  # This makes setup failures auditable without rerunning Actions or dumping env.
+  ci-diagnostics:
+    name: CI failure diagnostics
+    if: ${{ always() && (needs.fmt.result == 'failure' || needs.coverage.result == 'failure' || needs.simplicio-owned-reports.result == 'failure' || needs.secret-scan.result == 'failure' || needs.lint-build-test.result == 'failure' || needs.windows-scoped.result == 'failure' || needs.cargo-deny.result == 'failure') }}
+    needs: [fmt, coverage, simplicio-owned-reports, secret-scan, lint-build-test, windows-scoped, cargo-deny]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect bounded diagnostics
+        run: python3 scripts/ci_diagnostics.py --root . --output ci-diagnostics.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-failure-diagnostics
+          if-no-files-found: error
+          path: ci-diagnostics.json
