@@ -1,0 +1,23 @@
+name: JSON boundary inventory
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      strict:
+        description: "Fail until all pending internal JSON has migrated"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/check_json_boundaries.py --mode baseline --max-findings 100
+      - if: ${{ inputs.strict == true }}
+        run: python scripts/check_json_boundaries.py --mode strict --max-findings 100
