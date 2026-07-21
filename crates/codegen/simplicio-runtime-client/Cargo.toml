@@ -8,10 +8,10 @@ description = "Typed MCP client for the embedded Simplicio Runtime"
 [dependencies]
 base64 = { workspace = true }
 blake3 = { workspace = true }
+simplicio-code-formats = { path = "../simplicio-code-formats" }
 dunce = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
