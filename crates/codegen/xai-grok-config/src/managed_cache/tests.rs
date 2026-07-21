@@ -333,9 +333,8 @@ fn managed_config_stale_at_is_true_for_old_sync() {
         - 60 * 60;
     std::fs::write(
         dir.join(MANAGED_CONFIG_CACHE_FILE),
-        format!("{{\"synced_at\":{hour_ago}}}"),
-    )
-    .unwrap();
+        encode_marker(&ManagedConfigCache { synced_at: Some(hour_ago), ..Default::default() }).unwrap(),
+    ).unwrap();
     // An hour-old sync exceeds the default 30-minute threshold.
     assert!(managed_config_stale_at(Some(&dir), &ServingIdentity::None));
     let _ = std::fs::remove_dir_all(&dir);
@@ -416,9 +415,8 @@ fn managed_config_legacy_marker_is_conservative() {
         .as_secs();
     std::fs::write(
         dir.join(MANAGED_CONFIG_CACHE_FILE),
-        format!("{{\"synced_at\":{now}}}"),
-    )
-    .unwrap();
+        encode_marker(&ManagedConfigCache { synced_at: Some(now), ..Default::default() }).unwrap(),
+    ).unwrap();
     assert!(!managed_config_stale_at(Some(&dir), &ServingIdentity::None));
     // A legacy marker (no principal) reads stale once via identity mismatch, so it self-upgrades next sync.
     assert!(managed_config_stale_at(Some(&dir), &team("team-x")));
@@ -469,7 +467,7 @@ fn corrupt_marker_reads_as_no_marker_and_allows() {
     let dir = std::env::temp_dir().join(format!("grok-corrupt-marker-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("requirements.toml"), "fail_closed = true\n").unwrap();
-    std::fs::write(dir.join(MANAGED_CONFIG_CACHE_FILE), "{ not valid json").unwrap();
+    std::fs::write(dir.join(MANAGED_CONFIG_CACHE_FILE), b"not an HBI marker").unwrap();
 
     assert!(read_managed_config_cache(&dir).is_none());
     // No usable marker → not compromised, so corruption can't lock a managed user out...
@@ -519,9 +517,8 @@ fn pre_upgrade_marker_without_fingerprint_does_not_fire_on_key() {
     // Legacy marker: synced, an artifact served, but no key_fingerprint field.
     std::fs::write(
         dir.join(MANAGED_CONFIG_CACHE_FILE),
-        format!("{{\"synced_at\":{now},\"had_requirements\":true}}"),
-    )
-    .unwrap();
+        encode_marker(&ManagedConfigCache { synced_at: Some(now), had_requirements: true, ..Default::default() }).unwrap(),
+    ).unwrap();
     std::fs::write(dir.join("requirements.toml"), "[features]\n").unwrap();
     // A key is configured now but the marker has none → no key mismatch, no spurious refetch.
     assert!(!is_managed_config_hard_stale_for_at(
@@ -553,12 +550,8 @@ fn team_path_keys_on_principal_not_key_fingerprint() {
     // A team switch is still detected via principal (unchanged behavior).
     assert!(is_managed_config_hard_stale_for_at(&dir, &team("team-b")));
     // No key fingerprint is recorded on the team path.
-    let marker = std::fs::read_to_string(dir.join(MANAGED_CONFIG_CACHE_FILE)).unwrap();
-    let v: serde_json::Value = serde_json::from_str(&marker).unwrap();
-    assert!(
-        v["key_fingerprint"].is_null(),
-        "team path must not record a key fingerprint: {marker}"
-    );
+    let marker = read_managed_config_cache(&dir).unwrap();
+    assert!(marker.key_fingerprint.is_none(), "team path must not record a key fingerprint");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
