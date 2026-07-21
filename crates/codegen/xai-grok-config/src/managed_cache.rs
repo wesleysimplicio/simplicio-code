@@ -9,14 +9,17 @@
 use std::path::Path;
 
 use crate::paths::user_grok_home;
+use simplicio_code_formats::{HbiReader, HbiSection, encode_hbi};
 
 /// Sync marker; staleness keys on this, not mtimes. Public so removal code can name it
 /// apart from the policy artifacts (removed last).
-pub const MANAGED_CONFIG_CACHE_FILE: &str = "managed_config_cache.json";
+pub const MANAGED_CONFIG_CACHE_FILE: &str = "managed_config_cache.hbi";
+const MANAGED_CONFIG_CACHE_SCHEMA: &str = "simplicio.managed-config-marker/v1";
+const MANAGED_CONFIG_CACHE_SECTION: u32 = 1;
 
 /// The on-disk marker: unsigned, detects only deletion / identity change, not
 /// in-place edits (see the module doc).
-#[derive(serde::Serialize, serde::Deserialize, Default)]
+#[derive(Default)]
 struct ManagedConfigCache {
     /// Unix seconds of the last successful fetch.
     synced_at: Option<u64>,
@@ -24,16 +27,67 @@ struct ManagedConfigCache {
     /// [`managed_deployment_id`]; identity is `key_fingerprint`).
     principal: Option<String>,
     /// Artifacts this sync served, so staleness spots a later deletion; `default` false so pre-upgrade markers don't over-claim.
-    #[serde(default)]
     had_managed_config: bool,
-    #[serde(default)]
     had_requirements: bool,
     /// Deploy-key fingerprint (never the raw key) — the deploy-key identity (see [`ServingIdentity`]); `None` on the team path.
-    #[serde(default)]
     key_fingerprint: Option<String>,
     /// Served opt-in (`fail_closed = true`); `default` false so a pre-upgrade or un-opted marker never fails closed.
-    #[serde(default)]
     fail_closed: bool,
+}
+
+fn encode_marker(cache: &ManagedConfigCache) -> std::io::Result<Vec<u8>> {
+    fn put_string(out: &mut Vec<u8>, value: Option<&str>) -> std::io::Result<()> {
+        let bytes = value.unwrap_or_default().as_bytes();
+        let len = u32::try_from(bytes.len()).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string too large"))?;
+        out.extend_from_slice(&len.to_le_bytes());
+        out.extend_from_slice(bytes);
+        Ok(())
+    }
+    let mut payload = Vec::new();
+    payload.extend_from_slice(b"MCMK");
+    payload.extend_from_slice(&1u16.to_le_bytes());
+    payload.extend_from_slice(&[0, 0]);
+    payload.extend_from_slice(&cache.synced_at.unwrap_or(u64::MAX).to_le_bytes());
+    put_string(&mut payload, cache.principal.as_deref())?;
+    payload.push(cache.had_managed_config as u8);
+    payload.push(cache.had_requirements as u8);
+    put_string(&mut payload, cache.key_fingerprint.as_deref())?;
+    payload.push(cache.fail_closed as u8);
+    encode_hbi(MANAGED_CONFIG_CACHE_SCHEMA, &[HbiSection { kind: MANAGED_CONFIG_CACHE_SECTION, bytes: payload }])
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+}
+
+fn decode_marker(bytes: &[u8]) -> std::io::Result<ManagedConfigCache> {
+    let reader = HbiReader::open(bytes).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    if reader.schema() != MANAGED_CONFIG_CACHE_SCHEMA || reader.section_count() != 1 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "managed config marker schema mismatch"));
+    }
+    let payload = reader.section(0).unwrap().1;
+    if payload.len() < 16 || &payload[..4] != b"MCMK" || u16::from_le_bytes(payload[4..6].try_into().unwrap()) != 1 {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "managed config marker payload mismatch"));
+    }
+    let mut offset = 8;
+    let synced_raw = u64::from_le_bytes(payload[offset..offset + 8].try_into().unwrap());
+    offset += 8;
+    fn take_string(payload: &[u8], offset: &mut usize) -> std::io::Result<Option<String>> {
+        if payload.len().saturating_sub(*offset) < 4 { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string length is truncated")); }
+        let len = u32::from_le_bytes(payload[*offset..*offset + 4].try_into().unwrap()) as usize;
+        *offset += 4;
+        let end = (*offset).checked_add(len).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string length overflow"))?;
+        if end > payload.len() { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string is truncated")); }
+        let value = std::str::from_utf8(&payload[*offset..end]).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string is not UTF-8"))?;
+        *offset = end;
+        Ok((!value.is_empty()).then(|| value.to_owned()))
+    }
+    let principal = take_string(payload, &mut offset)?;
+    if payload.len().saturating_sub(offset) < 2 { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker flags are truncated")); }
+    let had_managed_config = payload[offset] != 0;
+    let had_requirements = payload[offset + 1] != 0;
+    offset += 2;
+    let key_fingerprint = take_string(payload, &mut offset)?;
+    if offset >= payload.len() { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker fail-closed flag is truncated")); }
+    let fail_closed = payload[offset] != 0;
+    Ok(ManagedConfigCache { synced_at: (synced_raw != u64::MAX).then_some(synced_raw), principal, had_managed_config, had_requirements, key_fingerprint, fail_closed })
 }
 
 /// What the cache is bound to (one value, so a (team, key) combo can't form). The
@@ -111,16 +165,16 @@ pub fn mark_managed_config_synced_at(home: &Path, marker: SyncMarker<'_>) {
         key_fingerprint: normalize_identity(key_fingerprint),
         fail_closed,
     };
-    match serde_json::to_string(&cache) {
-        Ok(json) => write_marker_atomically(home, &json),
+    match encode_marker(&cache) {
+        Ok(bytes) => write_marker_atomically(home, &bytes),
         Err(e) => tracing::warn!("failed to serialize managed config cache: {e}"),
     }
 }
 
 /// Atomic write of the marker; best-effort (failure is logged, never surfaced).
-fn write_marker_atomically(home: &Path, json: &str) {
+fn write_marker_atomically(home: &Path, bytes: &[u8]) {
     if let Err(e) =
-        crate::fs_atomic::write_atomically(&home.join(MANAGED_CONFIG_CACHE_FILE), json, None)
+        crate::fs_atomic::write_atomically(&home.join(MANAGED_CONFIG_CACHE_FILE), bytes, None)
     {
         tracing::warn!("failed to write managed config cache: {e}");
     }
@@ -130,15 +184,15 @@ fn write_marker_atomically(home: &Path, json: &str) {
 /// a read blip or torn write mustn't lock out a managed user. Unreadable/corrupt are
 /// logged (a corruption-to-disarm isn't silent) and self-heal on the next sync.
 fn read_managed_config_cache(home: &Path) -> Option<ManagedConfigCache> {
-    let json = match std::fs::read_to_string(home.join(MANAGED_CONFIG_CACHE_FILE)) {
-        Ok(json) => json,
+    let bytes = match std::fs::read(home.join(MANAGED_CONFIG_CACHE_FILE)) {
+        Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
         Err(e) => {
             tracing::warn!("managed config cache unreadable; treating as no marker: {e}");
             return None;
         }
     };
-    match serde_json::from_str(&json) {
+    match decode_marker(&bytes) {
         Ok(cache) => Some(cache),
         Err(e) => {
             tracing::warn!(
