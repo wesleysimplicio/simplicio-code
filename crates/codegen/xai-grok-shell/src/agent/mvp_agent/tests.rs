@@ -1065,6 +1065,7 @@ async fn file_toolset_override_e2e_to_finalized_toolset() {
         backend: std::sync::Arc::new(LocalTerminalBackend::new()),
         fs: std::sync::Arc::new(LocalFs),
         search: None,
+        directory: None,
         cwd: tmp.path().to_path_buf(),
         session_folder: tmp.path().join("session"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),
