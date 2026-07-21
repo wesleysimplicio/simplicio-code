@@ -19,6 +19,7 @@ pub use crate::generated::ComponentRelease;
 pub const COMPONENT_RELEASE_SCHEMA: &str = "simplicio.component-release/v1";
 pub const COMPATIBILITY_HANDSHAKE_SCHEMA: &str = "simplicio.compatibility-handshake/v1";
 pub const BUNDLE_RECEIPT_SCHEMA: &str = "simplicio.bundle-receipt/v1";
+pub const CODE_VERSIONS_SCHEMA: &str = "simplicio.code-versions/v1";
 pub const REQUIRED_COMPONENTS: [&str; 4] = ["agent-contracts", "code", "loop-hub", "runtime"];
 
 pub type ReleaseIdentity = ComponentRelease;
@@ -387,28 +388,92 @@ impl BundleStore {
     }
 
     /// Machine-readable equivalent of `code doctor/versions --json` for an
-    /// installed bundle. No network lookup is performed; missing active state
-    /// is reported as drift with an actionable next step.
+    /// installed bundle. If a pinned manifest was persisted at the bundle
+    /// root, compare against it; otherwise retain the historical installed
+    /// bundle report.
     pub fn versions_json(&self) -> Result<serde_json::Value, ReleaseError> {
         let active = self.root.join("slots/active");
         if !active.is_dir() {
-            return Ok(serde_json::json!({
-                "schema": "simplicio.code-versions/v1",
-                "status": "drift",
-                "installed": serde_json::Value::Null,
-                "manifest_digest": serde_json::Value::Null,
-                "next_action": "stage and canary a pinned component-release/v1 bundle"
-            }));
+            return Ok(missing_bundle_report("active bundle is missing"));
         }
-        let manifest = read_manifest(&active)?;
-        let digest = manifest.digest()?;
-        Ok(serde_json::json!({
-            "schema": "simplicio.code-versions/v1",
-            "status": "ready",
-            "installed": manifest,
-            "manifest_digest": digest,
-            "next_action": "none"
-        }))
+        let manifest = match read_manifest(&active) {
+            Ok(manifest) => manifest,
+            Err(error) => return Ok(blocked_report(format!("installed bundle: {error}"))),
+        };
+        let pinned = self.root.join("component-release.json");
+        if pinned.is_file() {
+            return self.doctor_versions_json(&pinned);
+        }
+        version_report(&manifest, &manifest, Vec::new())
+    }
+
+    /// Read a pinned `component-release/v1` manifest and compare it with the
+    /// active installed bundle. This is intentionally local and read-only:
+    /// it never resolves a release, downloads an artifact, or starts Runtime.
+    /// Any missing, malformed, or incompatible state produces a non-ready
+    /// report so callers can fail closed without parsing human diagnostics.
+    pub fn doctor_versions_json(
+        &self,
+        pinned_manifest: &Path,
+    ) -> Result<serde_json::Value, ReleaseError> {
+        let pinned = match read_manifest_file(pinned_manifest) {
+            Ok(manifest) => manifest,
+            Err(error) => return Ok(blocked_report(format!("pinned manifest: {error}"))),
+        };
+        let active = self.root.join("slots/active");
+        if !active.is_dir() {
+            return Ok(blocked_report("active bundle is missing"));
+        }
+        let installed = match read_manifest(&active) {
+            Ok(manifest) => manifest,
+            Err(error) => return Ok(blocked_report(format!("installed bundle: {error}"))),
+        };
+
+        let mut drift = Vec::new();
+        if pinned.bundle_version != installed.bundle_version {
+            drift.push("bundle_version".to_owned());
+        }
+        if pinned.compatibility.code_protocol != installed.compatibility.code_protocol {
+            drift.push("compatibility.code_protocol".to_owned());
+        }
+        if pinned.compatibility.protocol_ranges != installed.compatibility.protocol_ranges {
+            drift.push("compatibility.protocol_ranges".to_owned());
+        }
+        for name in REQUIRED_COMPONENTS {
+            let expected = pinned.component(name);
+            let actual = installed.component(name);
+            match (expected, actual) {
+                (Some(expected), Some(actual)) => {
+                    if expected.version != actual.version {
+                        drift.push(format!("{name}.version"));
+                    }
+                    if expected.artifact_digest != actual.artifact_digest {
+                        drift.push(format!("{name}.digest"));
+                    }
+                    if expected.protocol != actual.protocol {
+                        drift.push(format!("{name}.protocol"));
+                    }
+                    if let Some(range) = pinned
+                        .compatibility
+                        .protocol_ranges
+                        .get(protocol_family(&actual.protocol))
+                        && !range.accepts(&actual.protocol)
+                    {
+                        drift.push(format!("{name}.protocol.incompatible"));
+                    }
+                }
+                (Some(_), None) => drift.push(format!("{name}.missing")),
+                (None, Some(_)) => drift.push(format!("{name}.unexpected")),
+                (None, None) => drift.push(format!("{name}.missing")),
+            }
+        }
+
+        let pinned_digest = pinned.digest()?;
+        let installed_digest = installed.digest()?;
+        if pinned_digest != installed_digest {
+            drift.push("manifest_digest".to_owned());
+        }
+        version_report(&pinned, &installed, drift)
     }
 
     pub fn active_manifest(&self) -> Result<BundleManifest, ReleaseError> {
@@ -492,10 +557,106 @@ fn hex_digest(bytes: &[u8]) -> String {
 }
 
 fn read_manifest(slot: &Path) -> Result<BundleManifest, ReleaseError> {
-    let bytes = fs::read(slot.join("component-release.json"))?;
+    read_manifest_file(&slot.join("component-release.json"))
+}
+
+fn read_manifest_file(path: &Path) -> Result<BundleManifest, ReleaseError> {
+    let bytes = fs::read(path)?;
     let manifest: BundleManifest = serde_json::from_slice(&bytes)?;
     manifest.validate()?;
     Ok(manifest)
+}
+
+fn component_summary(component: Option<&ComponentRelease>) -> serde_json::Value {
+    component.map_or(serde_json::Value::Null, |component| {
+        let mut summary = BTreeMap::<String, serde_json::Value>::new();
+        summary.insert("digest".into(), serde_json::json!(component.artifact_digest));
+        summary.insert("protocol".into(), serde_json::json!(component.protocol));
+        summary.insert("version".into(), serde_json::json!(component.version));
+        serde_json::Value::Object(summary.into_iter().collect())
+    })
+}
+
+fn manifest_summary(manifest: &BundleManifest) -> Result<serde_json::Value, ReleaseError> {
+    let mut components = BTreeMap::<String, serde_json::Value>::new();
+    for name in REQUIRED_COMPONENTS {
+        components.insert(name.to_owned(), component_summary(manifest.component(name)));
+    }
+    let mut summary = BTreeMap::<String, serde_json::Value>::new();
+    summary.insert("bundle_version".into(), serde_json::json!(manifest.bundle_version));
+    summary.insert("components".into(), serde_json::json!(components));
+    summary.insert(
+        "manifest_digest".into(),
+        serde_json::json!(manifest.digest()?),
+    );
+    summary.insert(
+        "protocol".into(),
+        serde_json::json!(manifest.compatibility.code_protocol),
+    );
+    Ok(serde_json::Value::Object(summary.into_iter().collect()))
+}
+
+fn version_report(
+    pinned: &BundleManifest,
+    installed: &BundleManifest,
+    drift: Vec<String>,
+) -> Result<serde_json::Value, ReleaseError> {
+    let blocked = drift.iter().any(|entry| {
+        entry.ends_with(".incompatible")
+            || entry.ends_with(".missing")
+            || entry.ends_with(".unexpected")
+            || entry.starts_with("compatibility.")
+    });
+    let status = if blocked {
+        "blocked"
+    } else if drift.is_empty() {
+        "ready"
+    } else {
+        "drift"
+    };
+    let next_action = if drift.is_empty() {
+        "none"
+    } else {
+        "install or promote the pinned compatible bundle"
+    };
+    let mut report = BTreeMap::<String, serde_json::Value>::new();
+    report.insert("drift".into(), serde_json::json!(drift));
+    report.insert("installed".into(), serde_json::to_value(installed)?);
+    report.insert(
+        "installed_summary".into(),
+        manifest_summary(installed)?,
+    );
+    report.insert(
+        "manifest_digest".into(),
+        serde_json::json!(installed.digest()?),
+    );
+    report.insert("next_action".into(), serde_json::json!(next_action));
+    report.insert("pinned".into(), serde_json::to_value(pinned)?);
+    report.insert("pinned_summary".into(), manifest_summary(pinned)?);
+    report.insert("ready".into(), serde_json::json!(drift.is_empty()));
+    report.insert("schema".into(), serde_json::json!(CODE_VERSIONS_SCHEMA));
+    report.insert("status".into(), serde_json::json!(status));
+    Ok(serde_json::Value::Object(report.into_iter().collect()))
+}
+
+fn blocked_report(reason: impl Into<String>) -> serde_json::Value {
+    let reason = reason.into();
+    let mut report = BTreeMap::<String, serde_json::Value>::new();
+    report.insert("drift".into(), serde_json::json!([reason]));
+    report.insert("installed".into(), serde_json::Value::Null);
+    report.insert(
+        "next_action".into(),
+        serde_json::json!("install or promote the pinned compatible bundle"),
+    );
+    report.insert("pinned".into(), serde_json::Value::Null);
+    report.insert("ready".into(), serde_json::json!(false));
+    report.insert("schema".into(), serde_json::json!(CODE_VERSIONS_SCHEMA));
+    report.insert("status".into(), serde_json::json!("blocked"));
+    serde_json::Value::Object(report.into_iter().collect())
+}
+
+fn missing_bundle_report(reason: &str) -> serde_json::Value {
+    blocked_report(reason)
 }
 
 fn remove_dir_if_present(path: &Path) -> Result<(), io::Error> {
@@ -637,5 +798,96 @@ mod tests {
         store.rollback().unwrap();
         assert_eq!(store.active_manifest().unwrap().bundle_version, "0.3.0-beta.2");
         assert_eq!(fs::read_to_string(temp.path().join("bundles/sessions/session.json")).unwrap(), "keep");
+    }
+
+    #[test]
+    fn doctor_versions_report_is_deterministic_and_exposes_component_drift() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = BundleStore::new(temp.path().join("bundles"));
+        let source = temp.path().join("source");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("runtime.bin"), "runtime").unwrap();
+
+        let pinned = manifest("RuntimeProtocol/v1");
+        let pinned_path = temp.path().join("pinned.json");
+        fs::write(&pinned_path, serde_json::to_vec(&pinned).unwrap()).unwrap();
+
+        let mut installed = pinned.clone();
+        installed.bundle_version = "0.3.1".into();
+        installed
+            .components
+            .iter_mut()
+            .find(|component| component.name == "runtime")
+            .unwrap()
+            .version = "0.3.1".into();
+        installed
+            .components
+            .iter_mut()
+            .find(|component| component.name == "runtime")
+            .unwrap()
+            .artifact_digest = "d".repeat(64);
+        installed
+            .components
+            .iter_mut()
+            .find(|component| component.name == "runtime")
+            .unwrap()
+            .protocol = "RuntimeProtocol/v2".into();
+        let digest = store.stage(&installed, &source).unwrap();
+        store.promote(&digest, |_| Ok(())).unwrap();
+
+        let first = store.doctor_versions_json(&pinned_path).unwrap();
+        let second = store.doctor_versions_json(&pinned_path).unwrap();
+        assert_eq!(serde_json::to_vec(&first).unwrap(), serde_json::to_vec(&second).unwrap());
+        assert_eq!(first["status"], "drift");
+        assert_eq!(first["ready"], false);
+        assert!(first["drift"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("runtime.version")));
+        assert!(first["drift"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("runtime.digest")));
+        assert!(first["drift"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("runtime.protocol")));
+    }
+
+    #[test]
+    fn doctor_versions_fails_closed_for_missing_or_incompatible_bundle() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = BundleStore::new(temp.path().join("bundles"));
+        let mut pinned = manifest("RuntimeProtocol/v1");
+        pinned.compatibility.protocol_ranges.insert(
+            "RuntimeProtocol".into(),
+            ProtocolRange { min: 1, max: 1 },
+        );
+        let pinned_path = temp.path().join("pinned.json");
+        fs::write(&pinned_path, serde_json::to_vec(&pinned).unwrap()).unwrap();
+
+        let missing = store.doctor_versions_json(&pinned_path).unwrap();
+        assert_eq!(missing["status"], "blocked");
+        assert_eq!(missing["ready"], false);
+
+        let source = temp.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let mut incompatible = pinned.clone();
+        incompatible
+            .components
+            .iter_mut()
+            .find(|component| component.name == "runtime")
+            .unwrap()
+            .protocol = "RuntimeProtocol/v2".into();
+        let digest = store.stage(&incompatible, &source).unwrap();
+        store.promote(&digest, |_| Ok(())).unwrap();
+
+        let report = store.doctor_versions_json(&pinned_path).unwrap();
+        assert_eq!(report["status"], "blocked");
+        assert_eq!(report["ready"], false);
+        assert!(report["drift"]
+            .as_array()
+            .unwrap()
+            .contains(&serde_json::json!("runtime.protocol.incompatible")));
     }
 }
