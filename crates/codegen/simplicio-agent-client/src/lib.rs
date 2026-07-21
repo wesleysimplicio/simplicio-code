@@ -55,6 +55,12 @@ pub enum Error {
     ProtocolMismatch(String),
     #[error("Simplicio Agent host lacks required capabilities: {missing}")]
     CapabilityMismatch { missing: String },
+    #[error("invalid coordinator causal identity: {0}")]
+    InvalidCausalIdentity(String),
+    #[error("coordinator rejected a second active turn")]
+    TurnAlreadyActive,
+    #[error("coordinator operation is invalid while in state {0:?}")]
+    InvalidCoordinatorState(CoordinatorState),
 }
 
 /// Opaque, process-lifetime identity for one Agent host incarnation.
@@ -154,10 +160,90 @@ impl AdvisoryPage {
     }
 }
 
+/// Causal identity carried across Code, AgentHost, and Runtime.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CausalIdentity {
+    pub workspace_id: String,
+    pub session_id: String,
+    pub turn_id: String,
+    pub attempt_id: String,
+    pub idempotency_key: String,
+    pub run_id: String,
+    pub stage_id: String,
+    pub fence: String,
+    pub policy_revision: u64,
+}
+
+impl CausalIdentity {
+    pub fn new(
+        workspace_id: impl Into<String>,
+        session_id: impl Into<String>,
+        idempotency_key: impl Into<String>,
+    ) -> Result<Self, Error> {
+        let idempotency_key = idempotency_key.into();
+        let identity = Self {
+            workspace_id: workspace_id.into(),
+            session_id: session_id.into(),
+            turn_id: idempotency_key.clone(),
+            attempt_id: "0".into(),
+            idempotency_key: idempotency_key.clone(),
+            run_id: idempotency_key,
+            stage_id: "conversation".into(),
+            fence: "0".into(),
+            policy_revision: 0,
+        };
+        identity.validate()?;
+        Ok(identity)
+    }
+
+    pub fn validate(&self) -> Result<(), Error> {
+        for (field, value) in [
+            ("workspace_id", &self.workspace_id),
+            ("session_id", &self.session_id),
+            ("turn_id", &self.turn_id),
+            ("attempt_id", &self.attempt_id),
+            ("idempotency_key", &self.idempotency_key),
+            ("run_id", &self.run_id),
+            ("stage_id", &self.stage_id),
+            ("fence", &self.fence),
+        ] {
+            if value.trim().is_empty() {
+                return Err(Error::InvalidCausalIdentity(format!("{field} is required")));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CoordinatorState {
+    Disconnected,
+    Ready,
+    Running,
+    AwaitingApproval,
+    Cancelled,
+    Completed,
+    EffectUnknown,
+    Terminal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CoordinatorSnapshot {
+    pub schema: String,
+    pub profile: String,
+    pub state: CoordinatorState,
+    pub cursor: u64,
+    pub active_turn_id: Option<String>,
+}
+
+pub const COORDINATOR_SNAPSHOT_SCHEMA: &str = "simplicio.code-coordinator-snapshot/v1";
+
 /// Immutable, validated request for one AgentHost turn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct AgentTurnRequest {
     pub profile: String,
+    pub workspace_id: String,
     pub session_id: String,
     pub user_message: String,
     pub idempotency_key: String,
@@ -165,6 +251,9 @@ pub struct AgentTurnRequest {
     pub attempt_id: String,
     pub incarnation: String,
     pub revision: u64,
+    pub run_id: String,
+    pub stage_id: String,
+    pub fence: String,
 }
 impl AgentTurnRequest {
     pub fn new(
@@ -176,16 +265,44 @@ impl AgentTurnRequest {
         let idempotency_key = idempotency_key.into();
         let request = Self {
             profile: profile.into(),
+            workspace_id: "code".into(),
             session_id: session_id.into(),
             user_message: user_message.into(),
             // The client-side idempotency key is also the stable turn
             // identity. A retry therefore addresses the same lifecycle entry
             // instead of manufacturing a second cancellable turn.
             turn_id: Some(idempotency_key.clone()),
-            idempotency_key,
+            idempotency_key: idempotency_key.clone(),
             attempt_id: "0".into(),
             incarnation: "default".into(),
             revision: 0,
+            run_id: idempotency_key.clone(),
+            stage_id: "conversation".into(),
+            fence: "0".into(),
+        };
+        request.validate()?;
+        Ok(request)
+    }
+
+    pub fn with_identity(
+        profile: impl Into<String>,
+        identity: &CausalIdentity,
+        user_message: impl Into<String>,
+    ) -> Result<Self, Error> {
+        identity.validate()?;
+        let request = Self {
+            profile: profile.into(),
+            workspace_id: identity.workspace_id.clone(),
+            session_id: identity.session_id.clone(),
+            user_message: user_message.into(),
+            idempotency_key: identity.idempotency_key.clone(),
+            turn_id: Some(identity.turn_id.clone()),
+            attempt_id: identity.attempt_id.clone(),
+            incarnation: identity.run_id.clone(),
+            revision: identity.policy_revision,
+            run_id: identity.run_id.clone(),
+            stage_id: identity.stage_id.clone(),
+            fence: identity.fence.clone(),
         };
         request.validate()?;
         Ok(request)
@@ -193,11 +310,15 @@ impl AgentTurnRequest {
     fn validate(&self) -> Result<(), Error> {
         for (field, value) in [
             ("profile", &self.profile),
+            ("workspace_id", &self.workspace_id),
             ("session_id", &self.session_id),
             ("user_message", &self.user_message),
             ("idempotency_key", &self.idempotency_key),
             ("attempt_id", &self.attempt_id),
             ("incarnation", &self.incarnation),
+            ("run_id", &self.run_id),
+            ("stage_id", &self.stage_id),
+            ("fence", &self.fence),
         ] {
             if value.trim().is_empty() {
                 return Err(Error::InvalidTurnRequest(format!("{field} is required")));
@@ -282,7 +403,22 @@ impl AgentHostClient {
         turn.validate()?;
         let response = request(
             &self.socket_path,
-            &json!({"op":"turn.start","host_instance_id":self.capabilities.host_instance_id.as_protocol_str(),"profile":turn.profile,"session_id":turn.session_id,"message":turn.user_message,"idempotency_key":turn.idempotency_key,"turn_id":turn.turn_id,"attempt_id":turn.attempt_id,"incarnation":turn.incarnation,"revision":turn.revision}),
+            &json!({
+                "op": "turn.start",
+                "host_instance_id": self.capabilities.host_instance_id.as_protocol_str(),
+                "profile": turn.profile,
+                "workspace_id": turn.workspace_id,
+                "session_id": turn.session_id,
+                "message": turn.user_message,
+                "idempotency_key": turn.idempotency_key,
+                "turn_id": turn.turn_id,
+                "attempt_id": turn.attempt_id,
+                "incarnation": turn.incarnation,
+                "revision": turn.revision,
+                "run_id": turn.run_id,
+                "stage_id": turn.stage_id,
+                "fence": turn.fence,
+            }),
         )?;
         validate_host_response(&response, Some(self.capabilities.host_instance_id()))?;
         parse_turn_result(&response)
@@ -333,6 +469,174 @@ impl AgentHostClient {
             Err(error) => return Err(error),
         }
         parse_advisory_page(&response, after, self.capabilities.host_instance_id())
+    }
+}
+
+/// Stateful Code-side coordinator adapter for one AgentHost incarnation.
+///
+/// It serializes turns, keeps causal identity stable across retries, and
+/// treats a reconnect before reconciliation as effect_unknown. Runtime
+/// effects remain outside this type and use the Runtime-backed tool boundary.
+#[derive(Debug)]
+pub struct AgentHostCoordinator {
+    profile: String,
+    client: AgentHostClient,
+    state: CoordinatorState,
+    cursor: u64,
+    active_turn_id: Option<String>,
+}
+
+impl AgentHostCoordinator {
+    pub fn connect(profile: impl Into<String>) -> Result<Self, Error> {
+        Self::connect_at(profile, resolve_socket_path())
+    }
+
+    pub fn connect_at(
+        profile: impl Into<String>,
+        socket_path: impl Into<PathBuf>,
+    ) -> Result<Self, Error> {
+        let profile = profile.into();
+        let client = AgentHostClient::connect(socket_path)?;
+        Self::from_client(profile, client)
+    }
+
+    pub fn from_client(profile: impl Into<String>, client: AgentHostClient) -> Result<Self, Error> {
+        let profile = profile.into();
+        if client.capabilities().profile != profile {
+            return Err(Error::ProtocolMismatch(format!(
+                "AgentHost profile '{}', expected '{profile}'",
+                client.capabilities().profile
+            )));
+        }
+        Ok(Self {
+            profile,
+            client,
+            state: CoordinatorState::Ready,
+            cursor: 0,
+            active_turn_id: None,
+        })
+    }
+
+    pub fn ensure_ready(&mut self) -> Result<(), Error> {
+        let expected = self.client.capabilities().profile.clone();
+        let before = self.client.capabilities().clone();
+        match self.client.refresh_status() {
+            Ok(capabilities) if capabilities.profile == expected => {
+                let changed = before != capabilities.clone();
+                if changed && self.active_turn_id.is_some() {
+                    self.state = CoordinatorState::EffectUnknown;
+                } else if self.state == CoordinatorState::Disconnected {
+                    self.state = CoordinatorState::Ready;
+                }
+                Ok(())
+            }
+            Ok(capabilities) => Err(Error::ProtocolMismatch(format!(
+                "AgentHost profile '{}', expected '{expected}'",
+                capabilities.profile
+            ))),
+            Err(error) => {
+                self.state = CoordinatorState::Disconnected;
+                Err(error)
+            }
+        }
+    }
+
+    pub fn start_turn(
+        &mut self,
+        identity: &CausalIdentity,
+        message: impl Into<String>,
+    ) -> Result<AgentTurnResult, Error> {
+        identity.validate()?;
+        if self.active_turn_id.is_some()
+            || matches!(
+                self.state,
+                CoordinatorState::Running | CoordinatorState::AwaitingApproval
+            )
+        {
+            return Err(Error::TurnAlreadyActive);
+        }
+        if self.state == CoordinatorState::Disconnected {
+            self.ensure_ready()?;
+        }
+        self.active_turn_id = Some(identity.turn_id.clone());
+        self.state = CoordinatorState::Running;
+        let request = AgentTurnRequest::with_identity(&self.profile, identity, message)?;
+        let result = match self.client.start_turn(&request) {
+            Ok(result) => result,
+            Err(error) => {
+                self.state = CoordinatorState::EffectUnknown;
+                return Err(error);
+            }
+        };
+        self.state = if result.completed {
+            CoordinatorState::Completed
+        } else if result.interrupted {
+            CoordinatorState::Cancelled
+        } else {
+            CoordinatorState::Terminal
+        };
+        self.active_turn_id = None;
+        Ok(result)
+    }
+
+    pub fn cancel_turn(&mut self, turn_id: &str) -> Result<AgentTurnCancelOutcome, Error> {
+        if self.active_turn_id.as_deref() != Some(turn_id) {
+            return Err(Error::InvalidCoordinatorState(self.state));
+        }
+        let outcome = self.client.cancel_turn(turn_id)?;
+        self.state = match outcome {
+            AgentTurnCancelOutcome::Cancelled => CoordinatorState::Cancelled,
+            AgentTurnCancelOutcome::Running => CoordinatorState::Running,
+            AgentTurnCancelOutcome::Terminal => CoordinatorState::Terminal,
+            AgentTurnCancelOutcome::NotFound => CoordinatorState::EffectUnknown,
+        };
+        if !matches!(outcome, AgentTurnCancelOutcome::Running) {
+            self.active_turn_id = None;
+        }
+        Ok(outcome)
+    }
+
+    pub fn reconnect(&mut self) -> Result<CoordinatorSnapshot, Error> {
+        let before = self.client.capabilities().clone();
+        if let Err(error) = self.client.refresh_status() {
+            self.state = CoordinatorState::Disconnected;
+            return Err(error);
+        }
+        if before != self.client.capabilities().clone() {
+            self.cursor = 0;
+            if self.active_turn_id.is_some() {
+                self.state = CoordinatorState::EffectUnknown;
+            }
+        }
+        if self.state == CoordinatorState::Disconnected {
+            self.state = CoordinatorState::Ready;
+        }
+        Ok(self.snapshot())
+    }
+
+    pub fn replay(&mut self, after: Option<u64>) -> Result<AdvisoryPage, Error> {
+        let cursor = after.unwrap_or(self.cursor);
+        let page = self.client.advisories(cursor)?;
+        self.cursor = page.next_cursor;
+        Ok(page)
+    }
+
+    pub fn snapshot(&self) -> CoordinatorSnapshot {
+        CoordinatorSnapshot {
+            schema: COORDINATOR_SNAPSHOT_SCHEMA.into(),
+            profile: self.profile.clone(),
+            state: self.state,
+            cursor: self.cursor,
+            active_turn_id: self.active_turn_id.clone(),
+        }
+    }
+
+    pub fn state(&self) -> CoordinatorState {
+        self.state
+    }
+
+    pub fn active_turn_id(&self) -> Option<&str> {
+        self.active_turn_id.as_deref()
     }
 }
 
@@ -765,6 +1069,40 @@ mod tests {
         ));
         let request = AgentTurnRequest::new("desktop", "session", "message", "key").unwrap();
         assert_eq!(request.turn_id.as_deref(), Some("key"));
+    }
+
+    #[test]
+    fn causal_identity_is_complete_and_serializable_at_the_turn_boundary() {
+        let identity = CausalIdentity::new("workspace-1", "session-1", "turn-1").unwrap();
+        let request =
+            AgentTurnRequest::with_identity("desktop", &identity, "inspect").unwrap();
+        let wire = serde_json::to_value(request).unwrap();
+        for field in [
+            "workspace_id",
+            "session_id",
+            "turn_id",
+            "attempt_id",
+            "idempotency_key",
+            "run_id",
+            "stage_id",
+            "fence",
+        ] {
+            assert!(wire.get(field).is_some(), "missing causal field {field}");
+        }
+    }
+
+    #[test]
+    fn coordinator_snapshot_has_explicit_effect_unknown_state() {
+        let snapshot = CoordinatorSnapshot {
+            schema: COORDINATOR_SNAPSHOT_SCHEMA.into(),
+            profile: "desktop".into(),
+            state: CoordinatorState::EffectUnknown,
+            cursor: 7,
+            active_turn_id: Some("turn-1".into()),
+        };
+        let wire = serde_json::to_value(snapshot).unwrap();
+        assert_eq!(wire["state"], "effect_unknown");
+        assert_eq!(wire["cursor"], 7);
     }
     #[test]
     fn turn_result_requires_one_terminal_state() {
