@@ -28,6 +28,17 @@ starting the update at once; the store does not start Runtime or map/queue
 authorities.
 
 This repository provides the contract, deterministic generation, handshake,
-and local promotion primitives. Release-event automation, external artifact
-publication, and the shared installer remain dependencies of the ecosystem and
-must supply real pins/digests before a production bundle can be promoted.
+and local promotion primitives. The Code-side release-event boundary is
+[`docs/contracts/release-event-v1.schema.json`](contracts/release-event-v1.schema.json).
+`SignedReleaseEvent` verifies an Ed25519 signature over canonical payload bytes
+using only caller-provided trusted keys, then checks the event id, producer
+sequence, manifest compatibility, and manifest digest. `BundleStore::ingest_release_event`
+persists event ids, rejects conflicting or stale events, checks active-receipt
+drift, and invokes the existing stage/canary/active/previous promotion path.
+Duplicate delivery is a no-op and never runs the canary again.
+
+This is a Code-side ingestion boundary, not an external release publisher. It
+does not fabricate events, fetch `latest`, publish artifacts, or claim installed
+Windows/Linux/macOS E2E. External ecosystem event delivery, signed provenance
+publication, generated bump PR automation, and installed cross-platform evidence
+remain dependencies of issue #110.
