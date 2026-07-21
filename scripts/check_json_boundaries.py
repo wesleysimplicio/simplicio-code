@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Audit JSON use against the exact boundary inventory.
+"""Audit source, artifacts and package contents against the JSON inventory.
 
-The baseline mode is intentionally non-blocking while the Runtime publishes
-HBI v1. Strict mode is the release gate: every finding must be an explicit
-exception or already migrated to HBP/HBI/TOML. Paths in the inventory are
-exact; glob entries are rejected.
+The scanner is deliberately conservative: a JSON-looking source token, a JSON
+file, or a generated/package artifact is a finding until its *exact* path is
+reviewed in ``config/json-boundaries.toml``. It emits text by default so the
+report itself is not another internal JSON artifact. Use ``--format markdown``
+for a publishable human report.
 """
 from __future__ import annotations
 
@@ -21,7 +22,11 @@ TOKENS = re.compile(
     re.IGNORECASE,
 )
 SKIP = {".git", "node_modules", "target", "dist", "build", ".venv", "__pycache__", ".orchestrator"}
-SOURCE_SUFFIXES = {".py", ".mjs", ".js", ".ts", ".tsx", ".rs", ".go", ".java", ".cs"}
+SOURCE_SUFFIXES = {".py", ".mjs", ".js", ".ts", ".tsx", ".rs", ".go", ".java", ".cs", ".toml", ".yaml", ".yml"}
+ARTIFACT_SUFFIXES = {".json", ".jsonl", ".ndjson"}
+BUILD_MANIFESTS = {"Cargo.toml", "Cargo.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
+NON_CODE_TEXT_SUFFIXES = {".md", ".rst", ".txt", ".lock"}
+NON_CODE_FILENAMES = {"THIRD-PARTY-NOTICES", "LICENSE", "README", "NOTICE"}
 
 
 def load_inventory(path: pathlib.Path) -> dict[str, dict]:
@@ -48,7 +53,7 @@ def load_inventory(path: pathlib.Path) -> dict[str, dict]:
                 raise ValueError(f"inventory path must be exact: {name!r}")
             if name in result:
                 raise ValueError(f"duplicate inventory path: {name}")
-            for field in ("owner", "reason", "expires", "category", "target_format", "status"):
+            for field in ("owner", "reason", "expires", "category", "target_format", "status", "producer", "consumer", "lifecycle"):
                 if not entry.get(field):
                     raise ValueError(f"{name}: missing {field}")
             try:
@@ -59,14 +64,34 @@ def load_inventory(path: pathlib.Path) -> dict[str, dict]:
     return result
 
 
-def findings(root: pathlib.Path) -> list[tuple[str, int, str]]:
+def findings(root: pathlib.Path, include_generated: bool = False) -> list[tuple[str, int, str]]:
     out: list[tuple[str, int, str]] = []
     for path in root.rglob("*"):
         rel_path = path.relative_to(root)
-        if (not path.is_file() or any(part in SKIP for part in rel_path.parts)
-                or path.suffix.lower() not in SOURCE_SUFFIXES
+        skipped_generated = any(part in {"target", "dist", "build"} for part in rel_path.parts)
+        if (not path.is_file() or any(part in (SKIP - {"target", "dist", "build"}) for part in rel_path.parts)
+                or (skipped_generated and not include_generated)
                 or rel_path.as_posix() == "scripts/check_json_boundaries.py"):
             continue
+        is_artifact = path.suffix.lower() in ARTIFACT_SUFFIXES
+        is_source = path.suffix.lower() in SOURCE_SUFFIXES
+        if path.name in BUILD_MANIFESTS and not is_artifact:
+            continue
+        if path.name in NON_CODE_FILENAMES:
+            continue
+        if not is_source and path.suffix.lower() in NON_CODE_TEXT_SUFFIXES:
+            continue
+        if is_artifact:
+            out.append((rel_path.as_posix(), 1, f"artifact:{path.suffix.lower()}"))
+            continue
+        # Extensionless and renamed text artifacts are part of the audit too;
+        # attempting UTF-8 decoding is the portable binary/text discriminator.
+        if not is_source:
+            try:
+                if path.stat().st_size > 4 * 1024 * 1024:
+                    continue
+            except OSError:
+                continue
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -84,6 +109,8 @@ def main() -> int:
     parser.add_argument("--inventory", type=pathlib.Path)
     parser.add_argument("--mode", choices=("baseline", "strict"), default="baseline")
     parser.add_argument("--max-findings", type=int, default=50)
+    parser.add_argument("--include-generated", action="store_true", help="include target/dist/build and package output")
+    parser.add_argument("--format", choices=("text", "markdown"), default="text")
     args = parser.parse_args()
     inventory_path = args.inventory or args.root / "config" / "json-boundaries.toml"
     try:
@@ -95,7 +122,8 @@ def main() -> int:
     pending: list[tuple[str, int, str]] = []
     expired: list[str] = []
     today = dt.date.today()
-    for path, line, token in findings(args.root):
+    all_findings = findings(args.root, include_generated=args.include_generated)
+    for path, line, token in all_findings:
         entry = inventory.get(path)
         if entry is None:
             unknown.append((path, line, token))
@@ -103,11 +131,27 @@ def main() -> int:
             expired.append(path)
         elif entry["status"] == "migration_pending":
             pending.append((path, line, token))
-    print(f"json-boundaries: findings={len(unknown)+len(pending)} unknown={len(unknown)} pending={len(pending)} expired={len(expired)}")
-    for path, line, token in unknown[: max(0, args.max_findings)]:
-        print(f"UNCLASSIFIED {path}:{line}: {token}")
-    for path in expired:
-        print(f"EXPIRED {path}")
+    total = len(unknown) + len(pending) + len(expired)
+    if args.format == "markdown":
+        print("# JSON boundary audit\n")
+        print(f"- Findings: `{total}`  ")
+        print(f"- Unclassified: `{len(unknown)}`  ")
+        print(f"- Pending migration: `{len(pending)}`  ")
+        print(f"- Expired: `{len(expired)}`\n")
+        print("| Status | Path | Line | Match |\n|---|---|---:|---|")
+        for path, line, token in (unknown + pending)[: max(0, args.max_findings)]:
+            status = "unclassified" if (path, line, token) in unknown else "migration_pending"
+            print(f"| {status} | `{path}` | {line} | `{token}` |")
+        for path in expired[: max(0, args.max_findings)]:
+            print(f"| expired | `{path}` |  |  |")
+    else:
+        print(f"json-boundaries: findings={total} unknown={len(unknown)} pending={len(pending)} expired={len(expired)}")
+        for path, line, token in unknown[: max(0, args.max_findings)]:
+            print(f"UNCLASSIFIED {path}:{line}: {token}")
+        for path, line, token in pending[: max(0, args.max_findings)]:
+            print(f"MIGRATION_PENDING {path}:{line}: {token}")
+        for path in expired:
+            print(f"EXPIRED {path}")
     if args.mode == "strict" and (unknown or pending or expired):
         return 1
     return 0
