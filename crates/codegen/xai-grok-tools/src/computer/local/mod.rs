@@ -6,12 +6,17 @@ pub mod mock_fs;
 #[cfg(unix)]
 pub mod shell_state;
 pub mod simplicio_runtime;
+pub mod preflight;
 pub mod terminal;
 
 pub use cgroup::{CgroupMemoryConfig, PROCESS_OOM_EXIT_CODE};
 pub use file_system::LocalFs;
 pub use mock_fs::MockFs;
 pub use simplicio_runtime::SimplicioRuntimeFs;
+pub use preflight::{
+    CheckDiagnostic, CheckStatus, CausalIdentityDiagnostic, OfflineContractFixture,
+    ProductivePreflightReport, run_installed_preflight,
+};
 pub use terminal::{ExitStatus, LocalTerminalBackend};
 
 /// Per-backend enable state for the bash-harness `find`→`bfs` / `grep`→`ugrep`
