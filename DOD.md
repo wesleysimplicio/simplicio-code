@@ -81,6 +81,19 @@ aimed specifically at that gap.
 
 ## The gates
 
+### 0. Mandatory aggregate and coverage evidence
+
+`.github/workflows/ci.yml` exposes one `mandatory-gate` aggregate check. It
+depends on formatting, owned reports, secret scanning, platform build/test,
+dependency policy, and the 85% line-coverage gate for the Simplicio-owned
+Runtime/Agent/model boundary crates. Branch protection should require this
+aggregate check rather than relying on a matrix leg whose name can change.
+
+Every CI job also has a failure-only diagnostics upload. The report is safe to
+publish because it contains no environment dump or credential-shaped values;
+it records the commit, workflow metadata, tool versions and bounded command
+output needed to distinguish setup failures from product failures.
+
 ### 1. Build & lint (existing CI gates, scoped)
 
 - `cargo check -p simplicio-runtime-client` / `cargo check -p
