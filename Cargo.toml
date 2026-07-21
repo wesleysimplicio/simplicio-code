@@ -9,6 +9,7 @@ members = [
     "crates/codegen/simplicio-account-client",
     "crates/codegen/simplicio-agent-client",
     "crates/codegen/simplicio-code-gateway",
+    "crates/codegen/simplicio-code-formats",
     "crates/codegen/simplicio-perf-bench",
     "crates/codegen/simplicio-runtime-client",
     "crates/codegen/xai-acp-lib",
