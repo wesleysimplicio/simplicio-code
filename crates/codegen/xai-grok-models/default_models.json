@@ -1,14 +1,14 @@
 {
-  "default": "simplicio-1",
-  "web_search": "simplicio-1",
-  "image_description": "simplicio-1",
-  "session_summary": "simplicio-1",
+  "default": "deepseek/deepseek-v4-flash",
+  "web_search": "deepseek/deepseek-v4-flash",
+  "image_description": "deepseek/deepseek-v4-flash",
+  "session_summary": "deepseek/deepseek-v4-flash",
   "models": [
     {
-      "id": "simplicio-1",
-      "model": "tencent/hy3:free",
-      "name": "Simplicio-1",
-      "description": "Simplicio Code beta, powered through OpenRouter",
+      "id": "deepseek/deepseek-v4-flash",
+      "model": "deepseek/deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "description": "Simplicio Agent default through OpenRouter; live OpenRouter /models catalog supplies the available providers",
       "base_url": "https://openrouter.ai/api/v1",
       "env_key": "OPENROUTER_API_KEY",
       "context_window": 262144,
