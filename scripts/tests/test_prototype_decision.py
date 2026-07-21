@@ -1,4 +1,4 @@
-from scripts.validate_prototype_decision import SCHEMA, validate
+from scripts.validate_prototype_decision import ARTIFACT_TYPES, SCHEMA, render, validate
 
 
 def _receipt(**overrides):
@@ -11,7 +11,9 @@ def _receipt(**overrides):
         "decision": "accept",
         "assumptions": ["uses existing API"],
         "limitations": ["preview is not production code"],
-        "artifacts": [{"id": "wire-1", "type": "wireframe", "title": "Home", "summary": "Main flow", "uri": "artifact://wire-1"}],
+        "provenance": ["runtime://map/repo"],
+        "ac_coverage": ["AC-1"],
+        "artifacts": [{"id": "wire-1", "type": "wireframe", "title": "Home", "summary": "Main flow", "uri": "artifact://wire-1", "source_revision": "source-1", "digest": "sha256:wire-1", "evidence": [{"id": "e1", "label": "test", "uri": "runtime://evidence/e1"}], "ac_coverage": ["AC-1"]}],
     }
     value.update(overrides)
     return value
@@ -40,3 +42,40 @@ def test_malicious_artifact_uri_is_blocked():
     result = validate(_receipt(artifacts=[artifact]))
     assert result["status"] == "blocked"
     assert any("sandbox" in error for error in result["errors"])
+
+
+def test_source_revision_argument_invalidates_receipt():
+    result = validate(_receipt(), current_source_revision="source-2", build_requested=True)
+    assert result["state"] == "stale"
+    assert result["build_authorized"] is False
+
+
+def test_all_text_surfaces_share_decision_state():
+    receipt = _receipt()
+    for surface in ("tui", "ui", "headless", "acp"):
+        output = render(receipt, surface=surface, current_source_revision="source-1")
+        assert "accept" in output
+        assert "build_authorized" in output or "Build: AUTHORIZED" in output
+
+
+def test_missing_evidence_and_coverage_block_accept():
+    artifact = _receipt()["artifacts"][0]
+    artifact.pop("evidence")
+    artifact.pop("ac_coverage")
+    result = validate(_receipt(artifacts=[artifact]), build_requested=True)
+    assert result["status"] == "blocked"
+    assert any("evidence" in error for error in result["errors"])
+    assert any("coverage" in error for error in result["errors"])
+
+
+def test_adjacent_decision_wire_format_is_supported():
+    assert validate(_receipt(decision={"type": "accept"}))['status'] == "ready"
+    assert validate(_receipt(decision={"type": "revise", "data": {"feedback": "change"}}))['state'] == "revise_requested"
+    assert validate(_receipt(decision={"type": "reject", "data": {"reason": "no"}}))['state'] == "rejected"
+
+
+def test_all_prototype_artifact_types_are_accepted():
+    for artifact_type in ARTIFACT_TYPES:
+        artifact = _receipt()["artifacts"][0].copy()
+        artifact["type"] = artifact_type
+        assert validate(_receipt(artifacts=[artifact]))["status"] == "ready"
