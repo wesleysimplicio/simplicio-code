@@ -4,7 +4,9 @@
 //! operations. It never turns an advisory into an effect: this state is a
 //! read-only input to the side panel.
 
-use simplicio_agent_client::{AgentAttentionState, AgentHostClient, Error, HostInstanceId};
+use simplicio_agent_client::{
+    AgentAttentionState, AgentHostClient, AgentHostCoordinator, Error, HostInstanceId,
+};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
@@ -366,13 +368,23 @@ pub fn poll_agent_attention(
     if cancel.is_cancelled() {
         return AgentAttentionPollResult::Cancelled { request };
     }
-    let profile = AgentHostProfile::from_untrusted(&client.capabilities().profile);
+    let profile_name = client.capabilities().profile.clone();
     let host_instance_id = client.capabilities().host_instance_id().clone();
+    let mut coordinator = match AgentHostCoordinator::from_client(profile_name.clone(), client) {
+        Ok(coordinator) => coordinator,
+        Err(error) => {
+            return AgentAttentionPollResult::Degraded {
+                request,
+                reason: safe_reason(&error),
+            };
+        }
+    };
+    let profile = AgentHostProfile::from_untrusted(&profile_name);
     let replayed_from_cursor = match request.expected_host_instance_id.as_ref() {
         Some(expected) if expected != &host_instance_id => 0,
         _ => request.cursor,
     };
-    let page = match client.advisories(replayed_from_cursor) {
+    let page = match coordinator.replay(Some(replayed_from_cursor)) {
         Ok(page) => page,
         Err(error) => {
             return AgentAttentionPollResult::Degraded {
@@ -450,6 +462,10 @@ pub(crate) fn safe_reason(error: &Error) -> AgentHostDegradedReason {
         Error::InvalidResponse(_) | Error::InvalidTurnRequest(_) => {
             AgentHostDegradedReason::InvalidResponse
         }
+        Error::InvalidCausalIdentity(_) | Error::InvalidCoordinatorState(_) => {
+            AgentHostDegradedReason::InvalidResponse
+        }
+        Error::TurnAlreadyActive => AgentHostDegradedReason::HostNotReady,
         Error::OperationRejected => AgentHostDegradedReason::HostNotReady,
         Error::ProtocolMismatch(_) => AgentHostDegradedReason::ProtocolMismatch,
         Error::CapabilityMismatch { .. } => AgentHostDegradedReason::CapabilityMismatch,
