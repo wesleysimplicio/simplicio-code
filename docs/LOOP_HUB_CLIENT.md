@@ -23,11 +23,41 @@ required to return an endpoint for an already-running Hub and must not spawn a
 daemon or scheduler. `HubTransport` remains the injected handshake and request
 boundary, so endpoint discovery does not imply that Code owns the transport.
 
-The contract prevents duplicate daemon declarations and provides the admission
-gate needed by issue #55. The external Loop Hub daemon, cross-process endpoint
-discovery contract, Mapper service, and transport adapter are not implemented
-in this repository yet; a product adapter must supply both
-`HubEndpointDiscovery`/`HubTransport` and connect to an already-running Hub.
-Until then `required` mode fails closed. The Rust tests cover this seam with a
-fake already-running Hub and assert the exact v1 handshake request; they do not
-start a daemon, scheduler, or local resource queue.
+## External socket/pipe transport
+
+`SocketPipeHubTransportFactory` is the standard Code-side transport adapter.
+It accepts `unix:///absolute/path/to/loop-hub.sock` on Unix and
+`pipe://name` on Windows. It opens an already-running endpoint; it never
+spawns a daemon, scheduler, mapper, Runtime, model worker, or local queue.
+Unknown endpoint schemes and unsupported platforms fail closed.
+
+The wire contract is newline-delimited JSON at the external boundary. Every
+frame has `schema`, a monotonic connection-local `id`, `method`, and `payload`;
+responses must echo the schema and id and contain either `ok/result` or an
+error. The required sequence is:
+
+1. `handshake` with `simplicio.loop-hub-client/v1` and
+   `simplicio.loop-hub/v1`.
+2. `attach` with the same client/workspace/session identity and
+   `reconnect=false`.
+3. `submit`, `progress`, `cancel`, and `resume` calls through the Hub-owned
+   queue and services.
+
+If the connection drops, Code opens the same endpoint again, repeats the
+versioned handshake, then sends `attach` with `reconnect=true` and the last
+`after_sequence` cursor for every workflow. Progress reads are safe to replay
+with that cursor. Submit, cancel, and resume are deliberately not retried
+after a broken connection: their receipt may be unknown, so the client
+reattaches and returns a fail-closed error instead of duplicating an effect.
+
+The adapter validates that the Hub owns Runtime, Mapper, scheduler, and
+inference, exposes bounded interactive/background capacity, and declares one
+active inference slot. A handshake or attach mismatch blocks the client.
+
+This completes the Code-side transport boundary for #55/#106. The external
+Loop Hub daemon/endpoint provider, Mapper service, queue/fairness enforcement,
+and real multi-surface evidence remain outside this repository. The acceptance
+issues must stay open until two TUIs plus headless and ACP attach to the same
+running Hub and receipts/process counts prove the no-duplication invariant.
+The contract tests use an in-process Unix socket fixture only; they do not
+pretend to be external Loop Hub evidence.
