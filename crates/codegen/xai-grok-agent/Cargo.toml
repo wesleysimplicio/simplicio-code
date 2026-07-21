@@ -28,6 +28,7 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 zeroize = "1"
 xai-tool-types.workspace = true
+simplicio-agent-client = { workspace = true }
 
 [features]
 default = []

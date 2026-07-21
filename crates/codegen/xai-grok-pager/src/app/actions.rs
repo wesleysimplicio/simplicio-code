@@ -1318,6 +1318,21 @@ pub enum ProbedAttachment {
 }
 #[derive(Debug)]
 pub enum Effect {
+    /// Execute one explicit `/simplicio` command through the independent
+    /// AgentHost without blocking the TUI event loop.
+    RunSimplicioAgentTurn {
+        agent_id: AgentId,
+        session_id: String,
+        message: String,
+        idempotency_key: String,
+    },
+    /// Execute a read-only Runtime inspection. Mutating Runtime operations
+    /// must remain Agent-coordinated through `/simplicio`.
+    RunSimplicioRuntimeInspect {
+        agent_id: AgentId,
+        cwd: std::path::PathBuf,
+        command: SimplicioRuntimeInspectCommand,
+    },
     /// Poll the passive Simplicio Agent host projection off the event-loop
     /// thread. The central event loop owns cadence and admits one in flight.
     PollAgentAttention {
@@ -2033,6 +2048,25 @@ pub enum Effect {
         preparation: crate::prompt_images::PromptImagePreviewPreparation,
     },
 }
+
+/// A deliberately small, directly executable Runtime command set for the
+/// TUI. Productive Runtime tools stay behind the independent AgentHost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SimplicioRuntimeInspectCommand {
+    List {
+        path: std::path::PathBuf,
+    },
+    Stat {
+        path: std::path::PathBuf,
+    },
+    Read {
+        path: std::path::PathBuf,
+    },
+    Search {
+        query: String,
+        path: Option<std::path::PathBuf>,
+    },
+}
 /// Outcome of an `x.ai/subagent/cancel` request, telling dispatch whether the
 /// pager must finalize the subagent row itself.
 #[derive(Debug)]
@@ -2054,6 +2088,12 @@ pub enum SubagentKillOutcome {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum TaskResult {
+    /// Result of an explicit TUI `/simplicio` command.
+    SimplicioAgentTurnCompleted {
+        agent_id: AgentId,
+        message: String,
+        succeeded: bool,
+    },
     /// One passive Agent host status/advisory poll completed.
     AgentAttentionPolled(crate::app::agent_attention::AgentAttentionPollResult),
     /// Session was created successfully.

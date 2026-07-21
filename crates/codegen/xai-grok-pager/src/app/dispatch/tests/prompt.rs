@@ -24,6 +24,81 @@ fn send_prompt_clears_active_ephemeral_tip() {
     );
 }
 
+#[test]
+fn simplicio_slash_command_routes_to_the_agent_host_effect() {
+    let mut app = test_app_with_agent();
+    app.mark_project_picker_done();
+
+    let effects = dispatch(
+        Action::SendPrompt("/simplicio inspect runtime".into()),
+        &mut app,
+    );
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::RunSimplicioAgentTurn {
+            agent_id: AgentId(0),
+            session_id,
+            message,
+            idempotency_key,
+        }] if session_id == "test-session"
+            && message == "inspect runtime"
+            && !idempotency_key.is_empty()
+    ));
+    assert!(app.agents[&AgentId(0)].prompt.text().is_empty());
+}
+
+#[test]
+fn simplicio_agent_namespace_normalizes_agent_commands() {
+    let mut app = test_app_with_agent();
+    app.mark_project_picker_done();
+
+    let effects = dispatch(
+        Action::SendPrompt("/simplicio-agent model gpt-5 --provider openai".into()),
+        &mut app,
+    );
+
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::RunSimplicioAgentTurn { message, .. }]
+            if message == "/model gpt-5 --provider openai"
+    ));
+}
+
+#[test]
+fn runtime_list_slash_command_routes_to_the_read_only_runtime_effect() {
+    let mut app = test_app_with_agent();
+    app.mark_project_picker_done();
+    let effects = dispatch(Action::SendPrompt("/runtime list crates".into()), &mut app);
+
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::RunSimplicioRuntimeInspect {
+            agent_id,
+            command: crate::app::actions::SimplicioRuntimeInspectCommand::List { path },
+            ..
+        }] if *agent_id == AgentId(0) && path == std::path::Path::new("crates")
+    ));
+}
+
+#[test]
+fn runtime_search_slash_command_routes_to_the_read_only_runtime_effect() {
+    let mut app = test_app_with_agent();
+    app.mark_project_picker_done();
+    let effects = dispatch(
+        Action::SendPrompt("/runtime search needle crates".into()),
+        &mut app,
+    );
+
+    assert!(matches!(
+        effects.as_slice(),
+        [Effect::RunSimplicioRuntimeInspect {
+            agent_id: AgentId(0),
+            command: crate::app::actions::SimplicioRuntimeInspectCommand::Search { query, path },
+            ..
+        }] if query == "needle" && path.as_deref() == Some(std::path::Path::new("crates"))
+    ));
+}
+
 /// `/history` dispatches `OpenHistorySearch`, which opens the search
 /// panel on the active agent with the session's prompt history.
 #[test]

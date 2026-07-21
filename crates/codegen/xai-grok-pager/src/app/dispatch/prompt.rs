@@ -361,6 +361,94 @@ pub(super) fn dispatch_send_prompt_inner(
 
     let mut effects = Vec::new();
 
+    // `/simplicio <instruction>` and `/simplicio-agent <command>` are
+    // explicit productive paths through the independently shipped AgentHost.
+    // The latter is the command namespace: `/simplicio-agent model ...`
+    // becomes `/model ...` at the Agent boundary. Normal prompts keep their
+    // existing ACP/provider routing.
+    let agent_instruction = if !literal {
+        trimmed
+            .strip_prefix("/simplicio-agent ")
+            .map(|command| {
+                let command = command.trim();
+                if command.starts_with('/') {
+                    command.to_owned()
+                } else {
+                    format!("/{command}")
+                }
+            })
+            .or_else(|| trimmed.strip_prefix("/simplicio ").map(str::to_owned))
+    } else {
+        None
+    };
+    if let Some(instruction) =
+        agent_instruction.filter(|instruction| !instruction.trim().is_empty())
+    {
+        let Some(session_id) = agent.session.session_id.as_ref() else {
+            if consume_input {
+                agent.prompt.set_text("");
+            }
+            agent.scrollback.push_block(RenderBlock::system(
+                "/simplicio requires an active Code session.",
+            ));
+            return vec![];
+        };
+        if consume_input {
+            agent.prompt.set_text("");
+        }
+        return vec![Effect::RunSimplicioAgentTurn {
+            agent_id: id,
+            session_id: session_id.0.to_string(),
+            message: instruction.trim().to_owned(),
+            idempotency_key: uuid::Uuid::new_v4().to_string(),
+        }];
+    }
+
+    // Runtime's direct TUI surface is read-only. The productive Runtime
+    // tools (edit/write/delete/exec) are reachable through `/simplicio`, so
+    // AgentHost remains the coordinator and authorization authority.
+    if !literal && let Some(arguments) = trimmed.strip_prefix("/runtime ") {
+        let mut parts = arguments.split_whitespace();
+        let command = match (parts.next(), parts.next(), parts.next()) {
+            (Some("list"), path, None) => {
+                Some(crate::app::actions::SimplicioRuntimeInspectCommand::List {
+                    path: path.unwrap_or(".").into(),
+                })
+            }
+            (Some("stat"), Some(path), None) => {
+                Some(crate::app::actions::SimplicioRuntimeInspectCommand::Stat {
+                    path: path.into(),
+                })
+            }
+            (Some("read"), Some(path), None) => {
+                Some(crate::app::actions::SimplicioRuntimeInspectCommand::Read {
+                    path: path.into(),
+                })
+            }
+            (Some("search"), Some(query), path) => Some(
+                crate::app::actions::SimplicioRuntimeInspectCommand::Search {
+                    query: query.into(),
+                    path: path.map(Into::into),
+                },
+            ),
+            _ => None,
+        };
+        if let Some(command) = command {
+            if consume_input {
+                agent.prompt.set_text("");
+            }
+            return vec![Effect::RunSimplicioRuntimeInspect {
+                agent_id: id,
+                cwd: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+                command,
+            }];
+        }
+        agent.scrollback.push_block(RenderBlock::system(
+            "Usage: /runtime list [path], /runtime stat <path>, /runtime read <path>, or /runtime search <query> [path]. Use /simplicio for productive Runtime commands.",
+        ));
+        return vec![];
+    }
+
     // ── Tier-restricted command upsell ─────────────────────────────
     // Restricted commands (`/usage`, `/imagine`, …) are hidden from the
     // registry's `get()`, so a typed invocation would otherwise fall

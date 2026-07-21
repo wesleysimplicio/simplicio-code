@@ -171,6 +171,23 @@ fn drain_clipboard_target(target: &ClipboardPasteTarget, app: &mut AppView) -> V
 /// Handle a completed async task result.
 pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec<Effect> {
     match result {
+        TaskResult::SimplicioAgentTurnCompleted {
+            agent_id,
+            message,
+            succeeded,
+        } => {
+            if let Some(agent) = app.agents.get_mut(&agent_id) {
+                let prefix = if succeeded {
+                    "Simplicio Agent"
+                } else {
+                    "Simplicio Agent error"
+                };
+                agent
+                    .scrollback
+                    .push_block(RenderBlock::system(format!("{prefix}: {message}")));
+            }
+            vec![]
+        }
         TaskResult::AgentAttentionPolled(result) => {
             app.agent_attention.complete_poll(result);
             vec![]

@@ -7,7 +7,9 @@
 //! built-in coordinator or local fallback in this crate.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
+#[cfg(windows)]
+use std::net::{IpAddr, SocketAddr};
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
@@ -39,6 +41,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error("invalid Simplicio Agent host response: {0}")]
     InvalidResponse(String),
+    #[error("invalid Simplicio Agent turn request: {0}")]
+    InvalidTurnRequest(String),
     #[error("Simplicio Agent host rejected the operation")]
     OperationRejected,
     #[error("Simplicio Agent host instance identity is invalid")]
@@ -150,6 +154,95 @@ impl AdvisoryPage {
     }
 }
 
+/// Immutable, validated request for one AgentHost turn.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct AgentTurnRequest {
+    pub profile: String,
+    pub session_id: String,
+    pub user_message: String,
+    pub idempotency_key: String,
+    pub turn_id: Option<String>,
+    pub attempt_id: String,
+    pub incarnation: String,
+    pub revision: u64,
+}
+impl AgentTurnRequest {
+    pub fn new(
+        profile: impl Into<String>,
+        session_id: impl Into<String>,
+        user_message: impl Into<String>,
+        idempotency_key: impl Into<String>,
+    ) -> Result<Self, Error> {
+        let idempotency_key = idempotency_key.into();
+        let request = Self {
+            profile: profile.into(),
+            session_id: session_id.into(),
+            user_message: user_message.into(),
+            // The client-side idempotency key is also the stable turn
+            // identity. A retry therefore addresses the same lifecycle entry
+            // instead of manufacturing a second cancellable turn.
+            turn_id: Some(idempotency_key.clone()),
+            idempotency_key,
+            attempt_id: "0".into(),
+            incarnation: "default".into(),
+            revision: 0,
+        };
+        request.validate()?;
+        Ok(request)
+    }
+    fn validate(&self) -> Result<(), Error> {
+        for (field, value) in [
+            ("profile", &self.profile),
+            ("session_id", &self.session_id),
+            ("user_message", &self.user_message),
+            ("idempotency_key", &self.idempotency_key),
+            ("attempt_id", &self.attempt_id),
+            ("incarnation", &self.incarnation),
+        ] {
+            if value.trim().is_empty() {
+                return Err(Error::InvalidTurnRequest(format!("{field} is required")));
+            }
+        }
+        if self
+            .turn_id
+            .as_ref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(Error::InvalidTurnRequest(
+                "turn_id must be non-empty when provided".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+/// Sanitized terminal result returned by a completed AgentHost turn.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AgentTurnResult {
+    #[serde(default)]
+    pub final_response: Option<String>,
+    #[serde(default)]
+    pub messages: Vec<Value>,
+    #[serde(default)]
+    pub api_calls: u64,
+    #[serde(default)]
+    pub completed: bool,
+    #[serde(default)]
+    pub failed: bool,
+    #[serde(default)]
+    pub interrupted: bool,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+/// Truthful outcome of a cancellation request. `Running` never means the
+/// operation stopped: callers must wait for or replay its terminal receipt.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentTurnCancelOutcome {
+    Cancelled,
+    Running,
+    Terminal,
+    NotFound,
+}
 #[derive(Debug)]
 pub struct AgentHostClient {
     socket_path: PathBuf,
@@ -182,6 +275,46 @@ impl AgentHostClient {
         // incarnation. Callers bind any cursor to the returned identity.
         self.capabilities = validate_ready_host_response(&response, None)?;
         Ok(&self.capabilities)
+    }
+
+    /// Submit one idempotent turn through the already negotiated AgentHost.
+    pub fn start_turn(&self, turn: &AgentTurnRequest) -> Result<AgentTurnResult, Error> {
+        turn.validate()?;
+        let response = request(
+            &self.socket_path,
+            &json!({"op":"turn.start","host_instance_id":self.capabilities.host_instance_id.as_protocol_str(),"profile":turn.profile,"session_id":turn.session_id,"message":turn.user_message,"idempotency_key":turn.idempotency_key,"turn_id":turn.turn_id,"attempt_id":turn.attempt_id,"incarnation":turn.incarnation,"revision":turn.revision}),
+        )?;
+        validate_host_response(&response, Some(self.capabilities.host_instance_id()))?;
+        parse_turn_result(&response)
+    }
+
+    /// Requests cancellation for a causally identified turn when the host
+    /// explicitly advertises `turn.cancel`.
+    pub fn cancel_turn(&self, turn_id: &str) -> Result<AgentTurnCancelOutcome, Error> {
+        if turn_id.trim().is_empty() {
+            return Err(Error::InvalidTurnRequest("turn_id is required".into()));
+        }
+        if !self.capabilities.supports("turn.cancel") {
+            return Err(Error::CapabilityMismatch {
+                missing: "turn.cancel".into(),
+            });
+        }
+        let response = request(
+            &self.socket_path,
+            &json!({
+                "op": "turn.cancel",
+                "turn_id": turn_id,
+                "host_instance_id": self.capabilities.host_instance_id.as_protocol_str(),
+            }),
+        )?;
+        validate_host_response(&response, Some(self.capabilities.host_instance_id()))?;
+        match response.get("status").and_then(Value::as_str) {
+            Some("cancelled") => Ok(AgentTurnCancelOutcome::Cancelled),
+            Some("running") => Ok(AgentTurnCancelOutcome::Running),
+            Some("terminal") => Ok(AgentTurnCancelOutcome::Terminal),
+            Some("not_found") => Ok(AgentTurnCancelOutcome::NotFound),
+            _ => Err(Error::InvalidResponse("turn.cancel missing status".into())),
+        }
     }
 
     /// Replay fixed, generic host signals for a passive side-panel projection.
@@ -226,6 +359,46 @@ fn non_empty_env(name: &str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_owned())
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(windows)]
+fn parse_loopback_endpoint(value: &str) -> Result<SocketAddr, Error> {
+    let endpoint = value
+        .trim()
+        .parse::<SocketAddr>()
+        .map_err(|_| Error::InvalidResponse("Agent loopback endpoint is invalid".into()))?;
+    if !matches!(endpoint.ip(), IpAddr::V4(ip) if ip.is_loopback()) {
+        return Err(Error::InvalidResponse(
+            "Agent endpoint must be an IPv4 loopback address".into(),
+        ));
+    }
+    Ok(endpoint)
+}
+
+#[cfg(windows)]
+fn windows_loopback_transport(socket_path: &Path) -> Result<(SocketAddr, String), Error> {
+    let endpoint_path = socket_path.with_extension("tcp");
+    let endpoint_raw =
+        std::fs::read_to_string(&endpoint_path).map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => Error::AgentNotFound(endpoint_path),
+            _ => Error::Io(error),
+        })?;
+    let token_path = socket_path.with_extension("token");
+    let token = std::fs::read_to_string(&token_path).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => Error::AgentNotFound(token_path),
+        _ => Error::Io(error),
+    })?;
+    let token = token.trim().to_owned();
+    if !(32..=256).contains(&token.len())
+        || !token
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err(Error::InvalidResponse(
+            "Agent loopback token is invalid".into(),
+        ));
+    }
+    Ok((parse_loopback_endpoint(&endpoint_raw)?, token))
 }
 
 #[derive(Debug, Deserialize)]
@@ -343,6 +516,31 @@ struct AdvisoryPageEnvelope {
     events: Vec<AgentAdvisory>,
     next_cursor: u64,
     truncated: bool,
+}
+
+fn parse_turn_result(response: &Value) -> Result<AgentTurnResult, Error> {
+    let result: AgentTurnResult = serde_json::from_value(
+        response
+            .get("result")
+            .cloned()
+            .ok_or_else(|| Error::InvalidResponse("turn result is missing".into()))?,
+    )
+    .map_err(|error| Error::InvalidResponse(error.to_string()))?;
+    let terminal_count = [result.completed, result.failed, result.interrupted]
+        .into_iter()
+        .filter(|state| *state)
+        .count();
+    if terminal_count != 1 {
+        return Err(Error::InvalidResponse(
+            "turn result must contain exactly one terminal state".into(),
+        ));
+    }
+    if result.completed && result.error.is_some() {
+        return Err(Error::InvalidResponse(
+            "completed turn result must not carry an error".into(),
+        ));
+    }
+    Ok(result)
 }
 
 fn parse_advisory_page(
@@ -490,8 +688,45 @@ fn request(socket_path: &Path, payload: &Value) -> Result<Value, Error> {
 }
 
 #[cfg(not(unix))]
+#[cfg(not(windows))]
 fn request(_socket_path: &Path, _payload: &Value) -> Result<Value, Error> {
     Err(Error::UnsupportedTransport)
+}
+
+#[cfg(windows)]
+fn request(socket_path: &Path, payload: &Value) -> Result<Value, Error> {
+    use std::{
+        io::{Read, Write},
+        net::TcpStream,
+        time::Duration,
+    };
+
+    let (endpoint, token) = windows_loopback_transport(socket_path)?;
+    let mut payload = payload.clone();
+    let object = payload
+        .as_object_mut()
+        .ok_or_else(|| Error::InvalidResponse("Agent request must be an object".into()))?;
+    object.insert("auth_token".into(), Value::String(token));
+
+    let timeout = Duration::from_millis(DEFAULT_REQUEST_TIMEOUT_MS);
+    let mut stream = TcpStream::connect_timeout(&endpoint, timeout)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let encoded =
+        serde_json::to_vec(&payload).map_err(|error| Error::InvalidResponse(error.to_string()))?;
+    stream.write_all(&encoded)?;
+    stream.shutdown(std::net::Shutdown::Write)?;
+
+    let mut bytes = Vec::new();
+    stream
+        .take((DEFAULT_MAX_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > DEFAULT_MAX_RESPONSE_BYTES {
+        return Err(Error::InvalidResponse(format!(
+            "response exceeds {DEFAULT_MAX_RESPONSE_BYTES} bytes"
+        )));
+    }
+    serde_json::from_slice(&bytes).map_err(|error| Error::InvalidResponse(error.to_string()))
 }
 
 #[cfg(test)]
@@ -520,6 +755,33 @@ mod tests {
                 "host_instance_id": HOST_ID,
             },
         })
+    }
+
+    #[test]
+    fn turn_request_rejects_missing_causal_identity() {
+        assert!(matches!(
+            AgentTurnRequest::new("desktop", "session", "message", ""),
+            Err(Error::InvalidTurnRequest(_))
+        ));
+        let request = AgentTurnRequest::new("desktop", "session", "message", "key").unwrap();
+        assert_eq!(request.turn_id.as_deref(), Some("key"));
+    }
+    #[test]
+    fn turn_result_requires_one_terminal_state() {
+        let mut response = host_response();
+        response["result"] = json!({"final_response":"done","api_calls":1,"completed":true,"failed":false,"interrupted":false});
+        assert_eq!(
+            parse_turn_result(&response)
+                .unwrap()
+                .final_response
+                .as_deref(),
+            Some("done")
+        );
+        response["result"]["failed"] = json!(true);
+        assert!(matches!(
+            parse_turn_result(&response),
+            Err(Error::InvalidResponse(_))
+        ));
     }
 
     #[test]
@@ -785,6 +1047,20 @@ mod tests {
 
         response["advisories"]["truncated"] = json!(true);
         assert!(parse_advisory_page(&response, 0, &host_instance_id()).is_ok());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_loopback_transport_rejects_non_loopback_endpoints() {
+        assert!(parse_loopback_endpoint("127.0.0.1:43123").is_ok());
+        assert!(matches!(
+            parse_loopback_endpoint("192.0.2.1:43123"),
+            Err(Error::InvalidResponse(_))
+        ));
+        assert!(matches!(
+            parse_loopback_endpoint("[::1]:43123"),
+            Err(Error::InvalidResponse(_))
+        ));
     }
 
     #[cfg(unix)]

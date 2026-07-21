@@ -133,6 +133,12 @@ See ~/.grok/README.md for more information.
     /// `GROK_WORKSPACE_COMMAND=1` to enable it locally for testing.
     #[command(hide = true)]
     Workspace(WorkspaceMgmtArgs),
+    /// Run one governed turn through the independent Simplicio AgentHost.
+    ///
+    /// This is the headless counterpart of the TUI `/simplicio` route. It
+    /// performs the same versioned AgentHost handshake and never falls back to
+    /// the built-in agent.
+    Simplicio(SimplicioTurnArgs),
     /// Open the Agent Dashboard view at startup.
     ///
     /// Centralised, agent-native overview of every session (top-level and
@@ -140,6 +146,23 @@ See ~/.grok/README.md for more information.
     /// `~/.grok/config.toml` or when the `GROK_AGENT_DASHBOARD=0` env
     /// var is set.
     Dashboard,
+}
+
+/// Arguments for a single headless AgentHost turn.
+#[derive(Debug, clap::Args, Clone)]
+pub struct SimplicioTurnArgs {
+    /// Existing Code/Agent session identity to bind to this turn.
+    #[arg(long, value_name = "SESSION")]
+    pub session_id: String,
+    /// AgentHost profile selected for this client surface.
+    #[arg(long, default_value = "headless", value_name = "PROFILE")]
+    pub profile: String,
+    /// Emit the AgentHost terminal envelope as JSON.
+    #[arg(long)]
+    pub json: bool,
+    /// User instruction forwarded to the AgentHost.
+    #[arg(required = true, trailing_var_arg = true, value_name = "INSTRUCTION")]
+    pub instruction: Vec<String>,
 }
 /// Arguments for the `wrap` subcommand: the command to run, then its args.
 #[derive(Debug, clap::Args, Clone)]
@@ -1207,17 +1230,13 @@ mod tests {
             .expect("always-approve + positional prompt parses");
         assert!(yolo.positional_prompt_is_headless());
 
-        let permission_mode = PagerArgs::try_parse_from([
-            "grok",
-            "--permission-mode",
-            "bypassPermissions",
-            "task",
-        ])
-        .expect("permission-mode + positional prompt parses");
+        let permission_mode =
+            PagerArgs::try_parse_from(["grok", "--permission-mode", "bypassPermissions", "task"])
+                .expect("permission-mode + positional prompt parses");
         assert!(permission_mode.positional_prompt_is_headless());
 
-        let interactive = PagerArgs::try_parse_from(["grok", "task"])
-            .expect("plain positional prompt parses");
+        let interactive =
+            PagerArgs::try_parse_from(["grok", "task"]).expect("plain positional prompt parses");
         assert!(!interactive.positional_prompt_is_headless());
     }
     #[test]

@@ -6,6 +6,7 @@
 //! object that any host can consume.
 
 pub mod agent;
+pub mod agent_host;
 pub mod builder;
 pub mod compaction;
 pub mod config;
@@ -18,6 +19,7 @@ pub mod system_reminder;
 pub mod timing;
 
 pub use agent::Agent;
+pub use agent_host::SimplicioAgentCoordinator;
 pub use builder::AgentBuilder;
 pub use compaction::CompactionPolicy;
 pub use config::AgentDefinition;
