@@ -7,7 +7,7 @@ pub(crate) mod swap_policy;
 pub mod tool_config;
 use crate::capability::CapabilityMode;
 use crate::config::{MemoryConfig, SessionContextFactory};
-use crate::file_system::{AsyncFsWrapper, LocalFs};
+use crate::file_system::{AsyncFsWrapper, LocalFs, RuntimeFs};
 use crate::hub::{HubConfig, HubHandle};
 use crate::session::file_state::FileStateTracker;
 use parking_lot::RwLock;
@@ -165,7 +165,14 @@ impl WorkspaceSession {
             Some((handle, rx)) => (Some(handle), Some(rx)),
             None => (None, None),
         };
-        let async_fs = AsyncFsWrapper::new(Arc::new(LocalFs::new(cwd.clone())));
+        // Unit tests use LocalFs fixtures because they do not start the
+        // independent Agent host. Every production session uses RuntimeFs;
+        // project content therefore fails closed when Agent/Runtime is absent.
+        let async_fs = if cfg!(test) {
+            AsyncFsWrapper::new(Arc::new(LocalFs::new(cwd.clone())))
+        } else {
+            AsyncFsWrapper::new(Arc::new(RuntimeFs::new(cwd.clone())))
+        };
         let file_state_tracker = Arc::new(FileStateTracker::new());
         let checkpoint_store =
             crate::session::checkpoint_store::CheckpointStore::new(&cwd, &session_id);
