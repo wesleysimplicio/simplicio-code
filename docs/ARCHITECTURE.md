@@ -148,15 +148,21 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
   consumido por `grep_files` (namespace Codex) através do recurso opcional
   `SearchBackend`, com o mesmo sandbox fail-closed (path/glob traversal,
   escape via symlink) e sem fallback local quando o backend está presente.
-- Concluído no cliente, pendente de ligação: contratos MCP tipados de
-  `list`/`stat`/`edit`/`exec` com capability negotiation e rejeição
-  fail-closed de Runtime incompatível — nenhum tool do agente os consome
-  ainda.
+- Concluído: o bash/terminal produtivo usa `SimplicioRuntimeTerminalBackend`
+  e envia argv, cwd, env, orçamento de saída e `tool_call_id` como
+  idempotency key para `simplicio_exec`; não há spawn local nem fallback após
+  falha do Runtime. Respostas sem `simplicio.exec-result/v1`, negadas ou com
+  `effect_unknown` falham fechado e nunca são repetidas automaticamente.
+- Pendente por dependência externa: o Runtime precisa publicar e anunciar
+  `simplicio_exec` com o schema `simplicio.exec-result/v1`. O contrato atual
+  também não oferece uma capability versionada de start/status/cancel para
+  processos em background; `run_background`, kill e wait permanecem
+  explicitamente bloqueados até essa API existir.
 - Próximo: renderizar/pollear a lateral e ligar
   `grep`/`hashline_grep`/`list_dir` (que hoje chamam
   `ripgrep`/`tokio::fs`/`ignore::WalkBuilder` diretamente, fora de
   `AsyncSearch`/`AsyncFileSystem`) ao mesmo `SearchBackend`/contrato de
-  `list`, e o executor de `bash` ao contrato de `exec`.
+  `list`.
 - Depois: identidade/entitlement Simplicio e gateway único de inferência.
 - Por último: instaladores assinados, atualização automática e release privada.
 

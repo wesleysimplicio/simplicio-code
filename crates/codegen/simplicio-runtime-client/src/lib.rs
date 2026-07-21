@@ -14,8 +14,7 @@ pub mod generated;
 
 pub use component_release::{
     BundleManifest, BundleStore, CompatibilityContract, CompatibilityHandshake,
-    ComponentRelease, ReleaseError, ReleaseEvent, ReleaseEventOutcome, ReleaseIdentity,
-    SignedReleaseEvent, CODE_VERSIONS_SCHEMA, RELEASE_EVENT_SCHEMA, REQUIRED_COMPONENTS,
+    ComponentRelease, ReleaseError, ReleaseIdentity, CODE_VERSIONS_SCHEMA, REQUIRED_COMPONENTS,
 };
 
 pub use map_cache::{
@@ -45,6 +44,7 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_MAX_SEARCH_FILES: usize = 2_000;
 pub const DEFAULT_MAX_SEARCH_MATCHES: usize = 10_000;
+pub const EXEC_RESULT_SCHEMA_V1: &str = "simplicio.exec-result/v1";
 /// Runtime-owned namespace for Prototype-First receipts and candidate
 /// artifacts. Callers must use [`RuntimeClient::write_prototype_artifact`]
 /// instead of writing this directory directly.
@@ -206,6 +206,42 @@ pub struct SearchResult {
     pub matches: Vec<SearchMatch>,
     #[serde(default)]
     pub truncated: bool,
+}
+
+/// The only terminal effect states a Code client may treat as authoritative.
+/// `EffectUnknown` is deliberately not retryable: the Runtime may have
+/// started the process even when the response was lost.
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ExecEffectState {
+    NotStarted,
+    Denied,
+    Completed,
+    EffectUnknown,
+}
+
+/// Stable response boundary for `simplicio_exec`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ExecResult {
+    pub schema: String,
+    #[serde(default, alias = "output", alias = "combined_output")]
+    pub stdout: String,
+    #[serde(default)]
+    pub stderr: String,
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub signal: Option<String>,
+    #[serde(default)]
+    pub timed_out: bool,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub total_bytes: Option<usize>,
+    #[serde(default)]
+    pub output_file: Option<String>,
+    #[serde(default)]
+    pub effect_state: Option<ExecEffectState>,
 }
 
 pub struct RuntimeClient {
@@ -546,15 +582,52 @@ impl RuntimeClient {
         repo: &Path,
         cwd: &Path,
         argv: &[String],
+        env: &std::collections::BTreeMap<String, String>,
         timeout_ms: u64,
         max_output_bytes: usize,
+        idempotency_key: &str,
     ) -> Result<Value, Error> {
         if argv.is_empty() {
             return Err(Error::ExecRejected("argv must not be empty".into()));
         }
+        if idempotency_key.trim().is_empty() {
+            return Err(Error::ExecRejected(
+                "idempotency_key must not be empty".into(),
+            ));
+        }
+        if idempotency_key.len() > 256 || idempotency_key.bytes().any(|byte| byte == 0) {
+            return Err(Error::ExecRejected(
+                "idempotency_key is invalid or exceeds 256 bytes".into(),
+            ));
+        }
         if argv.iter().any(|arg| contains_shell_metacharacters(arg)) {
             return Err(Error::ExecRejected(
                 "shell metacharacters are not allowed".into(),
+            ));
+        }
+        if argv
+            .iter()
+            .any(|arg| arg.is_empty() || arg.bytes().any(|byte| byte == 0))
+        {
+            return Err(Error::ExecRejected(
+                "argv entries must be non-empty and NUL-free".into(),
+            ));
+        }
+        if env.keys().any(|key| {
+            key.is_empty()
+                || key.bytes().any(|byte| byte == 0)
+                || !key
+                    .bytes()
+                    .enumerate()
+                    .all(|(index, byte)| {
+                        (index == 0 && (byte == b'_' || byte.is_ascii_alphabetic()))
+                            || (index > 0 && (byte == b'_' || byte.is_ascii_alphanumeric()))
+                    })
+        }) || env.values().any(|value| value.bytes().any(|byte| byte == 0))
+        {
+            return Err(Error::ExecRejected(
+                "environment keys/values must be NUL-free and keys must be POSIX identifiers"
+                    .into(),
             ));
         }
         let repo = canonical_repo(repo)?;
@@ -566,9 +639,11 @@ impl RuntimeClient {
                 "repo": repo,
                 "argv": argv,
                 "cwd": cwd,
+                "env": env,
                 "timeout_ms": timeout_ms.min(DEFAULT_EXEC_TIMEOUT_MS),
                 "max_output_bytes": max_output_bytes.min(DEFAULT_MAX_OUTPUT_BYTES),
                 "shell": false,
+                "idempotency_key": idempotency_key,
             }),
         )
     }
@@ -960,6 +1035,22 @@ fn parse_search_result(text: &str) -> Result<SearchResult, Error> {
     Ok(result)
 }
 
+/// Parse a Runtime `tools/call` result without accepting an unversioned or
+/// incomplete terminal response. This is intentionally public so fake
+/// Runtime adapters can exercise the same boundary as production Code.
+pub fn parse_exec_result(result: &Value) -> Result<ExecResult, Error> {
+    let text = tool_text_or_json(result);
+    let parsed: ExecResult = serde_json::from_str(&text)
+        .map_err(|e| Error::InvalidResponse(format!("invalid exec result: {e}")))?;
+    if parsed.schema != EXEC_RESULT_SCHEMA_V1 {
+        return Err(Error::InvalidResponse(format!(
+            "unsupported exec result schema {}",
+            parsed.schema
+        )));
+    }
+    Ok(parsed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1036,6 +1127,22 @@ mod tests {
         assert!(contains_shell_metacharacters("cargo test; whoami"));
         assert!(contains_shell_metacharacters("echo $HOME"));
         assert!(!contains_shell_metacharacters("cargo test -p crate"));
+    }
+
+    #[test]
+    fn parses_exec_result_and_preserves_effect_state() {
+        let result = parse_exec_result(&json!({
+            "content": [{"type": "text", "text": "{\"schema\":\"simplicio.exec-result/v1\",\"stdout\":\"ok\",\"effect_state\":\"completed\"}"}]
+        }))
+        .unwrap();
+        assert_eq!(result.stdout, "ok");
+        assert_eq!(result.effect_state, Some(ExecEffectState::Completed));
+    }
+
+    #[test]
+    fn rejects_unversioned_exec_result() {
+        let error = parse_exec_result(&json!({"stdout": "ok"})).unwrap_err();
+        assert!(matches!(error, Error::InvalidResponse(_)));
     }
 
     #[test]
