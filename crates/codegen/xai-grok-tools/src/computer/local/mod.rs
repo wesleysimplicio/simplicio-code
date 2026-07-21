@@ -12,7 +12,7 @@ pub mod terminal;
 pub use cgroup::{CgroupMemoryConfig, PROCESS_OOM_EXIT_CODE};
 pub use file_system::LocalFs;
 pub use mock_fs::MockFs;
-pub use simplicio_runtime::SimplicioRuntimeFs;
+pub use simplicio_runtime::{RuntimeExecInvoker, SimplicioRuntimeFs, SimplicioRuntimeTerminalBackend};
 pub use preflight::{
     CheckDiagnostic, CheckStatus, CausalIdentityDiagnostic, OfflineContractFixture,
     ProductivePreflightReport, run_installed_preflight,
