@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use simplicio_agent_client::{AgentHostCoordinator, resolve_socket_path};
+use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socket_path};
 use simplicio_runtime_client::{
     DEFAULT_MAX_FILE_BYTES, RuntimeClient, SharedRuntimeClient, start_workspace_map,
 };
@@ -11,6 +11,7 @@ use simplicio_runtime_client::{
 use crate::computer::types::{
     AsyncFileSystem, AsyncSearch, ComputerError, SearchMatch, SearchOutcome,
 };
+use super::preflight::{ProductivePreflightReport, run_installed_preflight};
 
 /// Project filesystem whose effects are owned by the Simplicio Runtime and
 /// gated on a compatible, independently running Simplicio Agent host.
@@ -43,6 +44,45 @@ impl SimplicioRuntimeFs {
             .ok()
             .filter(|profile| !profile.trim().is_empty())
             .unwrap_or_else(|| "desktop".into())
+    }
+
+    /// Runs the installed AgentHost + Runtime contract checks without
+    /// entering the productive effect path.  This is the same dependency
+    /// boundary used by [`Self::with_runtime`], but it deliberately does not
+    /// create a Runtime tool call or grant effect authority.  Callers must
+    /// still provide the real turn identity; an offline fixture cannot be
+    /// substituted for this report.
+    pub async fn preflight(&self, identity: CausalIdentity) -> ProductivePreflightReport {
+        let workspace = self.root.clone();
+        let agent_socket = self.agent_socket.clone();
+        let profile = Self::agent_profile();
+        tokio::task::spawn_blocking(move || {
+            run_installed_preflight(&workspace, &agent_socket, &profile, &identity)
+        })
+        .await
+        .unwrap_or_else(|error| ProductivePreflightReport {
+            schema: super::preflight::PREFLIGHT_SCHEMA.into(),
+            protocol_version: super::preflight::PREFLIGHT_PROTOCOL_VERSION,
+            mode: super::preflight::INSTALLED_MODE.into(),
+            effects_enabled: false,
+            agent_host: super::preflight::CheckDiagnostic {
+                component: "agent_host".into(),
+                status: super::preflight::CheckStatus::Incompatible,
+                code: "preflight.worker_failed".into(),
+                detail: format!("preflight worker failed: {error}"),
+            },
+            runtime: super::preflight::CheckDiagnostic {
+                component: "runtime".into(),
+                status: super::preflight::CheckStatus::Incompatible,
+                code: "preflight.worker_failed".into(),
+                detail: "preflight worker did not complete".into(),
+            },
+            causal_identity: super::preflight::CausalIdentityDiagnostic {
+                status: super::preflight::CheckStatus::Incompatible,
+                code: "preflight.worker_failed".into(),
+                detail: "causal identity was not granted effect authority".into(),
+            },
+        })
     }
 
     fn relative_path(&self, path: &Path) -> Result<PathBuf, ComputerError> {
