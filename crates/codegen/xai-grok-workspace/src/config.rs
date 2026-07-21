@@ -84,8 +84,10 @@ pub trait SessionContextFactory: Send + Sync {
     ) -> SessionContext;
     /// Build the session-lifetime terminal backend for a new session.
     /// Called once per session create/fork; toolset re-resolves reuse the
-    /// session's stored backend instead of building another.
-    fn build_terminal_backend(&self) -> SessionTerminalBackend;
+    /// session's stored backend instead of building another. The workspace
+    /// root is explicit so productive factories can bind terminal effects to
+    /// the same Runtime repository as filesystem effects.
+    fn build_terminal_backend(&self, cwd: &std::path::Path) -> SessionTerminalBackend;
     /// Build a fresh [`ToolRegistryBuilder`] with the workspace's
     /// full set of registered tools.
     fn registry_builder(&self) -> ToolRegistryBuilder;
