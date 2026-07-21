@@ -34,6 +34,9 @@ pub use fs::{AsyncFileSystem, AsyncFsWrapper, FsError, bytes_to_string};
 mod local_fs;
 pub use local_fs::LocalFs;
 
+mod runtime_fs;
+pub use runtime_fs::RuntimeFs;
+
 mod mock_fs;
 pub use mock_fs::MockFs;
 
