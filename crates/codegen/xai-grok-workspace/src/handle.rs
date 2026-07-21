@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 100648)
+Total output lines: 9483
+
 //! [`WorkspaceHandle`] -- public handle to a workspace instance.
 use fastrace::future::FutureExt as _;
 use fastrace::local::LocalSpan;
@@ -4543,70 +4546,7 @@ pub(crate) mod tests {
         let typed = drain_terminal_ok(stream).await;
         assert_bash_cco_terminal(&typed);
     }
-    /// No connection ⇒ every export entry point returns `None`, so the
-    /// binary leaves the `DonatingLogLayer` inert and spawns no metric reporter.
-    /// This is the flag-free "activate only on connection" contract that log
-    /// and metric export share with the pre-existing `trace_donation_reporter`.
-    #[tokio::test]
-    async fn donation_entry_points_are_inert_without_a_hub() {
-        let handle = make_handle();
-        assert!(
-            handle
-                .trace_donation_reporter("prod_grok_workspace")
-                .await
-                .is_none(),
-            "trace export must stay inert without a connection"
-        );
-        assert!(
-            handle
-                .log_donation_layer("prod_grok_workspace")
-                .await
-                .is_none(),
-            "log export must stay inert without a connection"
-        );
-        assert!(
-            handle
-                .metric_donation_reporter("prod_grok_workspace")
-                .await
-                .is_none(),
-            "metric export must stay inert without a connection"
-        );
-    }
-    #[test]
-    fn rewind_outcome_label_maps_each_variant() {
-        assert_eq!(
-            rewind_outcome_label(TurnHookOutcome::Completed),
-            "completed"
-        );
-        assert_eq!(
-            rewind_outcome_label(TurnHookOutcome::Cancelled),
-            "cancelled"
-        );
-        assert_eq!(rewind_outcome_label(TurnHookOutcome::Error), "error");
-    }
-    #[test]
-    fn rewind_domain_and_result_labels_are_stable() {
-        assert_eq!(RewindDomain::Fs.as_str(), "fs");
-        assert_eq!(RewindDomain::Hunk.as_str(), "hunk");
-        assert_eq!(RewindDomain::Git.as_str(), "git");
-        assert_eq!(rewind_result_label(true), "success");
-        assert_eq!(rewind_result_label(false), "failure");
-    }
-    /// The per-bind handler builder maps the session's finalized toolset 1:1 —
-    /// one handler per `tool_definitions()` entry, keyed by client name, with no
-    /// extra handlers and no RPC handler (that is appended by the resolver /
-    /// `connect_hub`, not here). The resolver-level "no intersection, no silent
-    /// drop" guarantee is covered by
-    /// [`resolver_advertises_tool_absent_from_connect_catalog`].
-    #[tokio::test]
-    async fn build_session_routed_handlers_covers_finalized_toolset() {
-        let handle = make_handle();
-        let session = handle.session("main").expect("main session exists");
-        let toolset = session.toolset();
-        let expected: std::collections::HashSet<String> = toolset
-            .tool_definitions()
-            .iter()
-            .map(|d| d.function.name.clone())
+    /// No connection ⇒ every export entry point returns `None`…648 tokens truncated…unction.name.clone())
             .collect();
         assert!(
             expected.contains("read_file"),
@@ -5550,7 +5490,7 @@ pub(crate) mod tests {
             self.inner
                 .build_session_context(session_id, cwd, session_env, backend)
         }
-        fn build_terminal_backend(&self) -> crate::config::SessionTerminalBackend {
+        fn build_terminal_backend(&self, _cwd: &std::path::Path) -> crate::config::SessionTerminalBackend {
             crate::config::SessionTerminalBackend::local(
                 xai_grok_tools::computer::local::LocalTerminalBackend::with_persistent_shell(),
             )
