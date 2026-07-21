@@ -7,6 +7,7 @@
 )]
 //! Core workspace library: FS, VCS, permissions, tool config, and subsystem wiring.
 pub mod activity;
+pub mod agent_host;
 pub mod capability;
 pub mod channel;
 pub mod config;
@@ -42,6 +43,7 @@ pub mod util;
 pub mod workspace_ops;
 pub mod worktree;
 pub use capability::CapabilityMode;
+pub use agent_host::WorkspaceAgentCoordinator;
 pub use channel::{TransportCallResult, TransportContext, TransportError, TransportNotification};
 pub use config::{
     AgentSessionConfig, DEFAULT_EVENT_BUFFER_CAPACITY, HookSourceConfig, IsolationMode,
