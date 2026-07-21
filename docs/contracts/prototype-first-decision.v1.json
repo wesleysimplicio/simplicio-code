@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simplicio.dev/contracts/prototype-first-decision.v1.json",
+  "title": "Simplicio Prototype-First decision receipt",
+  "type": "object",
+  "required": [
+    "schema",
+    "plan_id",
+    "source_revision",
+    "validated_source_revision",
+    "decision_id",
+    "decision",
+    "artifacts",
+    "assumptions",
+    "limitations",
+    "provenance",
+    "risk",
+    "cost",
+    "ac_coverage"
+  ],
+  "properties": {
+    "schema": { "const": "simplicio.prototype-decision/v1" },
+    "plan_id": { "$ref": "#/$defs/safeText" },
+    "source_revision": { "$ref": "#/$defs/safeText" },
+    "validated_source_revision": { "$ref": "#/$defs/safeText" },
+    "decision_id": { "$ref": "#/$defs/safeId" },
+    "decision": {
+      "oneOf": [
+        { "enum": ["accept"] },
+        { "type": "object", "required": ["type"], "properties": { "type": { "const": "accept" } } },
+        { "type": "object", "required": ["type", "data"], "properties": { "type": { "const": "revise" }, "data": { "type": "object", "required": ["feedback"], "properties": { "feedback": { "$ref": "#/$defs/safeText" } } } } },
+        { "type": "object", "required": ["type", "data"], "properties": { "type": { "const": "reject" }, "data": { "type": "object", "required": ["reason"], "properties": { "reason": { "$ref": "#/$defs/safeText" } } } } }
+      ]
+    },
+    "artifacts": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/artifact" } },
+    "assumptions": { "type": "array", "items": { "$ref": "#/$defs/safeText" } },
+    "limitations": { "type": "array", "items": { "$ref": "#/$defs/safeText" } },
+    "provenance": { "type": "array", "items": { "$ref": "#/$defs/safeUri" } },
+    "risk": { "enum": ["low", "medium", "high", "critical"] },
+    "cost": { "type": "object" },
+    "ac_coverage": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeText" } }
+  },
+  "$defs": {
+    "safeId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,256}$" },
+    "safeText": { "type": "string", "minLength": 1, "pattern": "^[^\\u0000-\\u0008\\u000B\\u000C\\u000E-\\u001F\\u007F]*$" },
+    "safeUri": { "type": "string", "minLength": 1, "not": { "pattern": "^(file:|/|\\\\)|(^|/)\\.\\.(/|$)" } },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "type", "title", "summary", "uri", "source_revision", "digest", "evidence", "ac_coverage"],
+      "properties": {
+        "id": { "$ref": "#/$defs/safeId" },
+        "type": { "enum": ["wireframe", "diagram", "schema", "data-model", "test-diff", "benchmark", "storyboard"] },
+        "title": { "$ref": "#/$defs/safeText" },
+        "summary": { "$ref": "#/$defs/safeText" },
+        "uri": { "$ref": "#/$defs/safeUri" },
+        "source_revision": { "$ref": "#/$defs/safeText" },
+        "digest": { "$ref": "#/$defs/safeText" },
+        "evidence": { "type": "array", "minItems": 1 },
+        "ac_coverage": { "type": "array", "minItems": 1 }
+      }
+    }
+  }
+}
