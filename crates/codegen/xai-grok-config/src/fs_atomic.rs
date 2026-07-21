@@ -9,7 +9,7 @@ use std::path::Path;
 /// the final file never exists with looser permissions.
 pub(crate) fn write_atomically(
     final_path: &Path,
-    contents: &str,
+    contents: impl AsRef<[u8]>,
     mode: Option<u32>,
 ) -> std::io::Result<()> {
     use std::io::Write as _;
@@ -34,7 +34,7 @@ pub(crate) fn write_atomically(
     let _ = mode;
     let result = options
         .open(&tmp)
-        .and_then(|mut f| f.write_all(contents.as_bytes()))
+        .and_then(|mut f| f.write_all(contents.as_ref()))
         .and_then(|()| std::fs::rename(&tmp, final_path));
     if result.is_err() {
         let _ = std::fs::remove_file(&tmp);
