@@ -5,6 +5,8 @@
 //! session directory. A caller must provide the already-installed manifest
 //! and the Runtime must announce matching provenance before it is trusted.
 
+use base64::Engine as _;
+use ring::signature::UnparsedPublicKey;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -19,6 +21,8 @@ pub use crate::generated::ComponentRelease;
 pub const COMPONENT_RELEASE_SCHEMA: &str = "simplicio.component-release/v1";
 pub const COMPATIBILITY_HANDSHAKE_SCHEMA: &str = "simplicio.compatibility-handshake/v1";
 pub const BUNDLE_RECEIPT_SCHEMA: &str = "simplicio.bundle-receipt/v1";
+pub const RELEASE_EVENT_SCHEMA: &str = "simplicio.release-event/v1";
+const RELEASE_EVENT_STATE_SCHEMA: &str = "simplicio.release-event-state/v1";
 pub const CODE_VERSIONS_SCHEMA: &str = "simplicio.code-versions/v1";
 pub const REQUIRED_COMPONENTS: [&str; 4] = ["agent-contracts", "code", "loop-hub", "runtime"];
 
@@ -236,12 +240,145 @@ pub struct BundleReceipt {
     pub active_digest: String,
 }
 
+/// Signed, immutable input to the Code release train. The event carries the
+/// complete pinned manifest and its digest; Code never resolves a floating
+/// release or invents an event locally.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReleaseEvent {
+    pub schema: String,
+    pub event_id: String,
+    pub producer: String,
+    pub sequence: u64,
+    pub manifest: BundleManifest,
+    pub bundle_digest: String,
+}
+
+impl ReleaseEvent {
+    pub fn validate(&self) -> Result<(), ReleaseError> {
+        if self.schema != RELEASE_EVENT_SCHEMA {
+            return Err(ReleaseError::InvalidEvent(format!(
+                "schema must be {RELEASE_EVENT_SCHEMA}"
+            )));
+        }
+        for (field, value) in [("event_id", &self.event_id), ("producer", &self.producer)] {
+            if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_whitespace)
+            {
+                return Err(ReleaseError::InvalidEvent(format!(
+                    "{field} must be a non-empty single token"
+                )));
+            }
+        }
+        if self.sequence == 0 {
+            return Err(ReleaseError::InvalidEvent(
+                "sequence must be greater than zero".into(),
+            ));
+        }
+        self.manifest.validate()?;
+        for component in &self.manifest.components {
+            if let Some(range) = self
+                .manifest
+                .compatibility
+                .protocol_ranges
+                .get(protocol_family(&component.protocol))
+                && !range.accepts(&component.protocol)
+            {
+                return Err(ReleaseError::Incompatible(format!(
+                    "{} protocol {} is outside the supported range {}..{}",
+                    component.name, component.protocol, range.min, range.max
+                )));
+            }
+        }
+        if !is_sha256_digest(&self.bundle_digest) {
+            return Err(ReleaseError::InvalidEvent(
+                "bundle_digest must be a lowercase SHA-256 digest".into(),
+            ));
+        }
+        if self.manifest.digest()? != self.bundle_digest {
+            return Err(ReleaseError::InvalidEvent(
+                "bundle_digest does not match the canonical manifest".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn canonical_json(&self) -> Result<Vec<u8>, ReleaseError> {
+        self.validate()?;
+        let value = serde_json::to_value(self).map_err(ReleaseError::Json)?;
+        canonical_json(&value).map_err(ReleaseError::Json)
+    }
+}
+
+/// Signed envelope received from an external release publisher. `key_id` is
+/// selected only from the caller-provided trust set; no key is accepted from
+/// the event itself.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SignedReleaseEvent {
+    pub key_id: String,
+    pub signature: String,
+    pub payload: ReleaseEvent,
+}
+
+impl SignedReleaseEvent {
+    pub fn verify(&self, trusted_keys: &[(&str, &[u8])]) -> Result<&ReleaseEvent, ReleaseError> {
+        if self.key_id.trim().is_empty() {
+            return Err(ReleaseError::Signature("key_id is required".into()));
+        }
+        let (_, public_key) = trusted_keys
+            .iter()
+            .find(|(key_id, _)| *key_id == self.key_id)
+            .ok_or_else(|| ReleaseError::UnknownKey(self.key_id.clone()))?;
+        let signature = base64::engine::general_purpose::STANDARD
+            .decode(self.signature.trim())
+            .map_err(|_| ReleaseError::Signature("signature is not valid base64".into()))?;
+        let payload = self.payload.canonical_json()?;
+        UnparsedPublicKey::new(&ring::signature::ED25519, public_key)
+            .verify(&payload, &signature)
+            .map_err(|_| ReleaseError::Signature("signature does not verify".into()))?;
+        Ok(&self.payload)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReleaseEventOutcome {
+    Promoted(BundleReceipt),
+    Duplicate(BundleReceipt),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct ReleaseEventRecord {
+    event_id: String,
+    producer: String,
+    sequence: u64,
+    bundle_digest: String,
+    active_digest: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+struct ReleaseEventState {
+    schema: String,
+    events: Vec<ReleaseEventRecord>,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ReleaseError {
     #[error("invalid release manifest: {0}")]
     InvalidManifest(String),
     #[error("incompatible release: {0}")]
     Incompatible(String),
+    #[error("invalid release event: {0}")]
+    InvalidEvent(String),
+    #[error("release event signature error: {0}")]
+    Signature(String),
+    #[error("release event key is not trusted: {0}")]
+    UnknownKey(String),
+    #[error("release event conflicts with an already applied event: {0}")]
+    EventConflict(String),
+    #[error("release event is stale: {0}")]
+    StaleEvent(String),
+    #[error("release event state is invalid: {0}")]
+    EventState(String),
     #[error("bundle canary rejected: {0}")]
     CanaryRejected(String),
     #[error("bundle update is already in progress")]
@@ -297,12 +434,19 @@ impl BundleStore {
     where
         F: FnMut(&Path) -> Result<(), String>,
     {
+        let _lock = UpdateLock::acquire(&self.root)?;
+        self.promote_locked(digest, &mut canary)
+    }
+
+    fn promote_locked<F>(&self, digest: &str, canary: &mut F) -> Result<BundleReceipt, ReleaseError>
+    where
+        F: FnMut(&Path) -> Result<(), String>,
+    {
         if !is_sha256_digest(digest) {
             return Err(ReleaseError::InvalidManifest(
                 "bundle slot must be named by a lowercase SHA-256 digest".into(),
             ));
         }
-        let _lock = UpdateLock::acquire(&self.root)?;
         let slots = self.root.join("slots");
         let candidate = slots.join(digest);
         let manifest = read_manifest(&candidate)?;
@@ -336,6 +480,152 @@ impl BundleStore {
             serde_json::to_vec_pretty(&receipt)?,
         )?;
         Ok(receipt)
+    }
+
+    /// Verify and apply one externally signed release event. The event is
+    /// checked before staging, deduplicated by durable event id, ordered by
+    /// producer sequence, and promoted only through this BundleStore.
+    pub fn ingest_release_event<F>(
+        &self,
+        event: &SignedReleaseEvent,
+        trusted_keys: &[(&str, &[u8])],
+        source: &Path,
+        mut canary: F,
+    ) -> Result<ReleaseEventOutcome, ReleaseError>
+    where
+        F: FnMut(&Path) -> Result<(), String>,
+    {
+        let payload = event.verify(trusted_keys)?;
+        let _lock = UpdateLock::acquire(&self.root)?;
+        let mut state = self.load_event_state()?;
+        if let Some(previous) = state.events.iter().find(|record| record.event_id == payload.event_id) {
+            if previous.bundle_digest == payload.bundle_digest
+                && previous.producer == payload.producer
+                && previous.sequence == payload.sequence
+            {
+                return Ok(ReleaseEventOutcome::Duplicate(self.current_receipt()?));
+            }
+            return Err(ReleaseError::EventConflict(payload.event_id.clone()));
+        }
+        if let Some(previous) = state
+            .events
+            .iter()
+            .filter(|record| record.producer == payload.producer)
+            .max_by_key(|record| record.sequence)
+            && payload.sequence <= previous.sequence
+        {
+            return Err(ReleaseError::StaleEvent(format!(
+                "producer {} sequence {} is not newer than {}",
+                payload.producer, payload.sequence, previous.sequence
+            )));
+        }
+        self.verify_active_receipt()?;
+        let active_digest = self
+            .root
+            .join("slots/active")
+            .is_dir()
+            .then(|| read_manifest(&self.root.join("slots/active")))
+            .transpose()?
+            .map(|manifest| manifest.digest())
+            .transpose()?;
+        if active_digest.as_deref() == Some(payload.bundle_digest.as_str()) {
+            let receipt = self.current_receipt()?;
+            state.events.push(ReleaseEventRecord {
+                event_id: payload.event_id.clone(),
+                producer: payload.producer.clone(),
+                sequence: payload.sequence,
+                bundle_digest: payload.bundle_digest.clone(),
+                active_digest: payload.bundle_digest.clone(),
+            });
+            self.persist_event_state(&state)?;
+            return Ok(ReleaseEventOutcome::Duplicate(receipt));
+        }
+        let staged = self.stage(&payload.manifest, source)?;
+        if staged != payload.bundle_digest {
+            return Err(ReleaseError::InvalidEvent(
+                "staged manifest digest differs from signed event".into(),
+            ));
+        }
+        let receipt = self.promote_locked(&staged, &mut canary)?;
+        state.events.push(ReleaseEventRecord {
+            event_id: payload.event_id.clone(),
+            producer: payload.producer.clone(),
+            sequence: payload.sequence,
+            bundle_digest: payload.bundle_digest.clone(),
+            active_digest: receipt.active_digest.clone(),
+        });
+        self.persist_event_state(&state)?;
+        Ok(ReleaseEventOutcome::Promoted(receipt))
+    }
+
+    fn load_event_state(&self) -> Result<ReleaseEventState, ReleaseError> {
+        let path = self.root.join("release-event-state.json");
+        if !path.exists() {
+            return Ok(ReleaseEventState {
+                schema: RELEASE_EVENT_STATE_SCHEMA.into(),
+                events: Vec::new(),
+            });
+        }
+        let state: ReleaseEventState = serde_json::from_slice(&fs::read(path)?)
+            .map_err(|error| ReleaseError::EventState(error.to_string()))?;
+        if state.schema != RELEASE_EVENT_STATE_SCHEMA {
+            return Err(ReleaseError::EventState(
+                "unsupported release event state schema".into(),
+            ));
+        }
+        for record in &state.events {
+            if record.event_id.trim().is_empty()
+                || record.producer.trim().is_empty()
+                || record.sequence == 0
+                || !is_sha256_digest(&record.bundle_digest)
+                || !is_sha256_digest(&record.active_digest)
+            {
+                return Err(ReleaseError::EventState(
+                    "release event state contains an invalid record".into(),
+                ));
+            }
+        }
+        Ok(state)
+    }
+
+    fn persist_event_state(&self, state: &ReleaseEventState) -> Result<(), ReleaseError> {
+        let temporary = self.root.join(".release-event-state.tmp");
+        fs::create_dir_all(&self.root)?;
+        fs::write(&temporary, serde_json::to_vec_pretty(state)?)?;
+        fs::rename(temporary, self.root.join("release-event-state.json"))?;
+        Ok(())
+    }
+
+    fn current_receipt(&self) -> Result<BundleReceipt, ReleaseError> {
+        let path = self.root.join("bundle-receipt.json");
+        if path.is_file() {
+            let receipt: BundleReceipt = serde_json::from_slice(&fs::read(path)?)?;
+            if receipt.schema != BUNDLE_RECEIPT_SCHEMA || !is_sha256_digest(&receipt.active_digest) {
+                return Err(ReleaseError::EventState("invalid bundle receipt".into()));
+            }
+            return Ok(receipt);
+        }
+        let active = read_manifest(&self.root.join("slots/active"))?;
+        Ok(BundleReceipt {
+            schema: BUNDLE_RECEIPT_SCHEMA.into(),
+            previous_digest: None,
+            active_digest: active.digest()?,
+        })
+    }
+
+    fn verify_active_receipt(&self) -> Result<(), ReleaseError> {
+        let active = self.root.join("slots/active");
+        if !active.is_dir() {
+            return Ok(());
+        }
+        let active_digest = read_manifest(&active)?.digest()?;
+        let receipt = self.current_receipt()?;
+        if receipt.active_digest != active_digest {
+            return Err(ReleaseError::EventState(
+                "bundle receipt does not match the active manifest".into(),
+            ));
+        }
+        Ok(())
     }
 
     pub fn rollback(&self) -> Result<BundleReceipt, ReleaseError> {
@@ -690,6 +980,7 @@ fn copy_directory(source: &Path, destination: &Path) -> Result<(), io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ring::signature::KeyPair;
 
     fn manifest(runtime_protocol: &str) -> BundleManifest {
         BundleManifest {
@@ -889,5 +1180,115 @@ mod tests {
             .as_array()
             .unwrap()
             .contains(&serde_json::json!("runtime.protocol.incompatible")));
+    }
+
+    fn signed_event(
+        manifest: BundleManifest,
+        event_id: &str,
+        sequence: u64,
+        key_pair: &ring::signature::Ed25519KeyPair,
+    ) -> SignedReleaseEvent {
+        let bundle_digest = manifest.digest().unwrap();
+        let payload = ReleaseEvent {
+            schema: RELEASE_EVENT_SCHEMA.into(),
+            event_id: event_id.into(),
+            producer: "runtime-release".into(),
+            sequence,
+            manifest,
+            bundle_digest,
+        };
+        let signature = key_pair.sign(&payload.canonical_json().unwrap());
+        SignedReleaseEvent {
+            key_id: "release-key-1".into(),
+            signature: base64::engine::general_purpose::STANDARD.encode(signature.as_ref()),
+            payload,
+        }
+    }
+
+    fn test_key_pair() -> ring::signature::Ed25519KeyPair {
+        let rng = ring::rand::SystemRandom::new();
+        let pkcs8 = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
+        ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap()
+    }
+
+    #[test]
+    fn signed_event_requires_trusted_key_and_exact_payload() {
+        let key_pair = test_key_pair();
+        let event = signed_event(manifest("RuntimeProtocol/v1"), "evt-1", 1, &key_pair);
+        let trusted = [("release-key-1", key_pair.public_key().as_ref())];
+        event.verify(&trusted).unwrap();
+
+        let mut tampered = event.clone();
+        tampered.payload.event_id = "evt-tampered".into();
+        assert!(matches!(
+            tampered.verify(&trusted),
+            Err(ReleaseError::Signature(_))
+        ));
+        assert!(matches!(
+            event.verify(&[("other-key", key_pair.public_key().as_ref())]),
+            Err(ReleaseError::UnknownKey(_))
+        ));
+    }
+
+    #[test]
+    fn release_event_promotion_is_durable_and_deduplicated() {
+        let key_pair = test_key_pair();
+        let trusted = [("release-key-1", key_pair.public_key().as_ref())];
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fs::create_dir(&source).unwrap();
+        fs::write(source.join("runtime.bin"), "runtime").unwrap();
+        let store = BundleStore::new(temp.path().join("bundles"));
+        let event = signed_event(manifest("RuntimeProtocol/v1"), "evt-1", 1, &key_pair);
+        let canary_calls = std::cell::Cell::new(0);
+        let promoted = store
+            .ingest_release_event(&event, &trusted, &source, |_| {
+                canary_calls.set(canary_calls.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(promoted, ReleaseEventOutcome::Promoted(_)));
+        assert_eq!(canary_calls.get(), 1);
+
+        let duplicate = store
+            .ingest_release_event(&event, &trusted, &source, |_| {
+                canary_calls.set(canary_calls.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(duplicate, ReleaseEventOutcome::Duplicate(_)));
+        assert_eq!(canary_calls.get(), 1, "duplicate events must not canary twice");
+        assert!(temp.path().join("bundles/release-event-state.json").is_file());
+    }
+
+    #[test]
+    fn stale_event_and_active_receipt_drift_fail_closed() {
+        let key_pair = test_key_pair();
+        let trusted = [("release-key-1", key_pair.public_key().as_ref())];
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source");
+        fs::create_dir(&source).unwrap();
+        let store = BundleStore::new(temp.path().join("bundles"));
+        let first = signed_event(manifest("RuntimeProtocol/v1"), "evt-2", 2, &key_pair);
+        store
+            .ingest_release_event(&first, &trusted, &source, |_| Ok(()))
+            .unwrap();
+
+        let stale = signed_event(manifest("RuntimeProtocol/v1"), "evt-1", 1, &key_pair);
+        assert!(matches!(
+            store.ingest_release_event(&stale, &trusted, &source, |_| Ok(())),
+            Err(ReleaseError::StaleEvent(_))
+        ));
+
+        let receipt_path = temp.path().join("bundles/bundle-receipt.json");
+        let mut receipt: serde_json::Value =
+            serde_json::from_slice(&fs::read(&receipt_path).unwrap()).unwrap();
+        receipt["active_digest"] = serde_json::Value::String("a".repeat(64));
+        fs::write(&receipt_path, serde_json::to_vec(&receipt).unwrap()).unwrap();
+        let next = signed_event(manifest("RuntimeProtocol/v1"), "evt-3", 3, &key_pair);
+        assert!(matches!(
+            store.ingest_release_event(&next, &trusted, &source, |_| Ok(())),
+            Err(ReleaseError::EventState(_))
+        ));
     }
 }
