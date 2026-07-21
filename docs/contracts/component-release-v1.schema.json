@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simplicio.dev/contracts/component-release/v1",
+  "title": "Simplicio component release bundle",
+  "type": "object",
+  "required": ["schema", "bundle_version", "components", "compatibility"],
+  "properties": {
+    "schema": { "const": "simplicio.component-release/v1" },
+    "bundle_version": {
+      "type": "string",
+      "minLength": 1,
+      "not": { "enum": ["latest", "main", "dev"] }
+    },
+    "components": {
+      "type": "array",
+      "minItems": 4,
+      "items": {
+        "type": "object",
+        "required": ["name", "version", "commit", "protocol", "artifact_digest"],
+        "properties": {
+          "name": { "enum": ["agent-contracts", "code", "loop-hub", "runtime"] },
+          "version": { "type": "string", "minLength": 1 },
+          "commit": { "type": "string", "pattern": "^[0-9a-f]{7,40}$" },
+          "protocol": { "type": "string", "minLength": 1 },
+          "artifact_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "generated_client_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["code_protocol"],
+      "properties": {
+        "code_protocol": { "type": "string", "minLength": 1 },
+        "protocol_ranges": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["min", "max"],
+            "properties": {
+              "min": { "type": "integer", "minimum": 0 },
+              "max": { "type": "integer", "minimum": 0 }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
