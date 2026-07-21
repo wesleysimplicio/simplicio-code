@@ -17,11 +17,13 @@ use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use base64::Engine;
-use chrono::Utc;
+use serde::Deserialize;
+use serde_json::{Value, json};
 
 use crate::error::{WorkspaceError, WorkspaceResult};
 use crate::handle::WorkspaceHandle;
 use crate::workspace_ops::WorkspaceOp;
+use xai_grok_tools::computer::local::SimplicioRuntimeFs;
 
 // Canonical in xai-grok-workspace-types; re-exported for existing paths.
 use xai_grok_workspace_types::rpc::fs::FsReadEncoding;
@@ -49,6 +51,111 @@ fn resolve_abs(
     Ok(base.join(p))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeListNode {
+    name: String,
+    path: String,
+    #[serde(rename = "type", alias = "nodeType")]
+    node_type: String,
+    #[serde(default)]
+    is_symlink: Option<bool>,
+    #[serde(default)]
+    size: Option<u64>,
+    #[serde(default)]
+    mtime_ms: Option<i64>,
+    #[serde(default)]
+    modified_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuntimeListResponse {
+    #[serde(alias = "entries")]
+    nodes: Vec<RuntimeListNode>,
+    #[serde(default)]
+    truncated: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RuntimeStatResponse {
+    #[serde(default)]
+    exists: Option<bool>,
+    #[serde(rename = "type", alias = "nodeType", default)]
+    node_type: Option<String>,
+}
+
+fn runtime_payload(value: Value) -> WorkspaceResult<Value> {
+    let Some(text) = value
+        .get("content")
+        .and_then(Value::as_array)
+        .and_then(|content| content.iter().find_map(|item| item.get("text")))
+        .and_then(Value::as_str)
+    else {
+        return Ok(value);
+    };
+    serde_json::from_str(text).map_err(|error| {
+        WorkspaceError::HubError(format!(
+            "Simplicio Runtime returned invalid filesystem JSON: {error}"
+        ))
+    })
+}
+
+fn runtime_list_response(value: Value, root: &Path) -> WorkspaceResult<FsListData> {
+    let response: RuntimeListResponse = serde_json::from_value(runtime_payload(value)?)
+        .map_err(|error| {
+            WorkspaceError::HubError(format!("invalid Runtime list response: {error}"))
+        })?;
+    let nodes = response
+        .nodes
+        .into_iter()
+        .map(|node| {
+            let modified_at = node.modified_at.or_else(|| {
+                node.mtime_ms.and_then(|mtime_ms| {
+                    chrono::DateTime::from_timestamp_millis(mtime_ms)
+                        .map(|timestamp| timestamp.to_rfc3339())
+                })
+            });
+            let path = Path::new(&node.path);
+            let path = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                root.join(path)
+            };
+            Ok(FsListNode {
+                name: node.name,
+                path: path.to_string_lossy().into_owned(),
+                node_type: node.node_type,
+                is_symlink: node.is_symlink,
+                size: node.size,
+                modified_at,
+            })
+        })
+        .collect::<WorkspaceResult<Vec<_>>>()?;
+    Ok(FsListData {
+        nodes,
+        truncated: response.truncated,
+    })
+}
+
+fn runtime_exists(value: Value) -> WorkspaceResult<bool> {
+    let response: RuntimeStatResponse = serde_json::from_value(runtime_payload(value)?)
+        .map_err(|error| {
+            WorkspaceError::HubError(format!("invalid Runtime stat response: {error}"))
+        })?;
+    Ok(response
+        .exists
+        .unwrap_or_else(|| response.node_type.is_some()))
+}
+
+fn is_missing_path_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    error.contains("no such file")
+        || error.contains("path not found")
+        || error.contains("file not found")
+        || error.contains("resource_not_found")
+}
+
 #[async_trait]
 impl WorkspaceOp for FsListReq {
     async fn execute(
@@ -56,13 +163,28 @@ impl WorkspaceOp for FsListReq {
         ws: &WorkspaceHandle,
         _session_id: Option<&str>,
     ) -> WorkspaceResult<Self::Response> {
-        let abs_unconfined = resolve_abs(&self.path, &self.cwd, ws)?;
-        let (abs, confine_root) = ws.confine_to_workspace_root(&abs_unconfined).await?;
-        // Off-executor: `list` does synchronous walk + metadata syscalls.
-        let req = self.clone();
-        tokio::task::spawn_blocking(move || list(&abs, &req, confine_root))
+        let path = resolve_abs(&self.path, &self.cwd, ws)?;
+        let root = ws.root_cwd()?.to_path_buf();
+        let runtime = SimplicioRuntimeFs::new(root.clone());
+        let value = runtime
+            .list_workspace(
+                &path,
+                json!({
+                    "depth": self.depth,
+                    "include_hidden": self.include_hidden,
+                    "limit": self.limit,
+                    "offset": self.offset,
+                    "follow_symlinks": self.follow_symlinks,
+                    "respect_git_ignore": self.respect_git_ignore,
+                    "include_globs": self.include_globs,
+                    "exclude_globs": self.exclude_globs,
+                }),
+            )
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?
+            .map_err(|error| {
+                WorkspaceError::HubError(format!("Simplicio Runtime list denied: {error}"))
+            })?;
+        runtime_list_response(value, &root)
     }
 }
 
@@ -73,9 +195,17 @@ impl WorkspaceOp for FsExistsReq {
         ws: &WorkspaceHandle,
         _session_id: Option<&str>,
     ) -> WorkspaceResult<Self::Response> {
-        let abs_unconfined = resolve_abs(&self.path, &self.cwd, ws)?;
-        let (abs, _) = ws.confine_to_workspace_root(&abs_unconfined).await?;
-        let exists = tokio::fs::try_exists(&abs).await.unwrap_or(false);
+        let path = resolve_abs(&self.path, &self.cwd, ws)?;
+        let runtime = SimplicioRuntimeFs::new(ws.root_cwd()?.to_path_buf());
+        let exists = match runtime.stat_workspace(&path).await {
+            Ok(value) => runtime_exists(value)?,
+            Err(error) if is_missing_path_error(&error.to_string()) => false,
+            Err(error) => {
+                return Err(WorkspaceError::HubError(format!(
+                    "Simplicio Runtime stat denied: {error}"
+                )))
+            }
+        };
         Ok(FsExistsData { exists })
     }
 }
@@ -165,55 +295,6 @@ impl WorkspaceOp for FsDeleteFileReq {
     }
 }
 
-// =========================================================================
-// Pure helpers — ported verbatim from the shell so output is identical.
-// =========================================================================
-
-fn list(
-    abs_path: &Path,
-    req: &FsListReq,
-    confine_to_canonical_root: Option<PathBuf>,
-) -> WorkspaceResult<FsListData> {
-    // Confined to the canonical root when set (escaping symlinks not enumerated);
-    // `None` (the default) walks unconfined.
-    let page = super::walk::list_directory_paged(
-        abs_path,
-        super::walk::ListOptions {
-            depth: req.depth,
-            follow_symlinks: req.follow_symlinks,
-            respect_git_ignore: req.respect_git_ignore,
-            include_hidden: req.include_hidden,
-            include_globs: &req.include_globs,
-            exclude_globs: &req.exclude_globs,
-            offset: req.offset,
-            limit: req.limit,
-            confine_to_canonical_root,
-        },
-        super::walk::MAX_LIST_COLLECT,
-    );
-
-    let nodes: Vec<FsListNode> = page
-        .entries
-        .into_iter()
-        .map(|e| FsListNode {
-            node_type: if e.is_dir { "directory" } else { "file" }.to_string(),
-            size: e.size,
-            modified_at: e.modified.map(|st| {
-                let dt: chrono::DateTime<Utc> = st.into();
-                dt.to_rfc3339()
-            }),
-            is_symlink: e.is_symlink.then_some(true),
-            path: e.abs_path.to_string_lossy().into_owned(),
-            name: e.name,
-        })
-        .collect();
-
-    Ok(FsListData {
-        nodes,
-        truncated: page.truncated,
-    })
-}
-
 /// Map a binary-safe ranged chunk to the shell-facing `FsReadFileData`.
 /// `size` is the full file size; `lineCount` is omitted for ranged reads
 /// and the MIME `type` is a coarse text/binary tag (mid-file chunks make
@@ -265,24 +346,7 @@ fn build_file_entry(bytes: &[u8]) -> FsReadFileData {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Build an `FsListReq` for a temp dir test. `path`/`cwd` are unused by
-    /// `list` (it takes the resolved abs path directly); `respect_git_ignore`
-    /// is off so the temp dir's location can't filter out our fixtures.
-    fn list_req(limit: usize) -> FsListReq {
-        FsListReq {
-            path: String::new(),
-            cwd: None,
-            depth: 1,
-            limit,
-            offset: 0,
-            include_hidden: true,
-            follow_symlinks: true,
-            respect_git_ignore: false,
-            include_globs: Vec::new(),
-            exclude_globs: Vec::new(),
-        }
-    }
+    use crate::handle::tests::make_handle;
 
     #[test]
     fn build_file_entry_utf8_sets_content_and_line_count() {
@@ -308,63 +372,55 @@ mod tests {
     }
 
     #[test]
-    fn list_enumerates_nodes_without_truncation() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path();
-        std::fs::write(root.join("a.txt"), b"a").expect("write a");
-        std::fs::write(root.join("b.txt"), b"bb").expect("write b");
-        std::fs::create_dir(root.join("sub")).expect("mkdir sub");
-
-        let data = list(root, &list_req(1000), Some(root.to_path_buf())).expect("list");
-
-        let names: Vec<&str> = data.nodes.iter().map(|n| n.name.as_str()).collect();
-        assert_eq!(data.nodes.len(), 3, "names: {names:?}");
-        assert!(names.contains(&"a.txt"));
-        assert!(names.contains(&"b.txt"));
-        assert!(names.contains(&"sub"));
-        assert!(!data.truncated);
-        // Directories sort ahead of files.
-        assert_eq!(data.nodes[0].name, "sub");
-        assert_eq!(data.nodes[0].node_type, "directory");
+    fn runtime_list_response_decodes_mcp_payload_and_absolutizes_paths() {
+        let root = Path::new("/workspace");
+        let value = serde_json::json!({
+            "content": [{"type": "text", "text": serde_json::json!({
+                "nodes": [{
+                    "name": "main.rs",
+                    "path": "src/main.rs",
+                    "type": "file",
+                    "mtimeMs": 42
+                }],
+                "truncated": false
+            }).to_string()}]
+        });
+        let response = runtime_list_response(value, root).unwrap();
+        assert_eq!(response.nodes[0].path, "/workspace/src/main.rs");
+        assert_eq!(
+            response.nodes[0].modified_at.as_deref(),
+            Some("1970-01-01T00:00:00.042+00:00")
+        );
     }
 
-    #[test]
-    fn list_marks_truncated_when_limit_reached() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path();
-        std::fs::write(root.join("a.txt"), b"a").expect("write a");
-        std::fs::write(root.join("b.txt"), b"bb").expect("write b");
-        std::fs::create_dir(root.join("sub")).expect("mkdir sub");
-
-        let data = list(root, &list_req(1), Some(root.to_path_buf())).expect("list");
-        assert_eq!(data.nodes.len(), 1);
-        assert!(data.truncated);
-    }
-
-    #[test]
-    fn list_paginates_with_offset() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root = dir.path();
-        for n in ["a.txt", "b.txt", "c.txt", "d.txt"] {
-            std::fs::write(root.join(n), b"x").expect("write");
+    #[tokio::test]
+    async fn list_and_exists_fail_closed_without_runtime() {
+        let ws = make_handle();
+        let list_error = FsListReq {
+            path: ".".into(),
+            cwd: None,
+            depth: 1,
+            limit: 10,
+            offset: 0,
+            include_hidden: true,
+            follow_symlinks: true,
+            respect_git_ignore: false,
+            include_globs: vec![],
+            exclude_globs: vec![],
         }
-        let names = |d: FsListData| d.nodes.into_iter().map(|n| n.name).collect::<Vec<_>>();
+        .execute(&ws, None)
+        .await
+        .expect_err("list must not fall back to local traversal");
+        assert!(list_error.to_string().contains("Runtime"), "{list_error}");
 
-        let mut req = list_req(2);
-        let p0 = list(root, &req, Some(root.to_path_buf())).expect("list");
-        assert!(p0.truncated);
-        assert_eq!(names(p0), vec!["a.txt", "b.txt"]);
-
-        req.offset = 2;
-        let p1 = list(root, &req, Some(root.to_path_buf())).expect("list");
-        assert!(!p1.truncated, "last page is not truncated");
-        assert_eq!(names(p1), vec!["c.txt", "d.txt"]);
-
-        // Offset past the end yields an empty, non-truncated page.
-        req.offset = 10;
-        let p2 = list(root, &req, Some(root.to_path_buf())).expect("list");
-        assert!(!p2.truncated);
-        assert!(p2.nodes.is_empty());
+        let stat_error = FsExistsReq {
+            path: "present.txt".into(),
+            cwd: None,
+        }
+        .execute(&ws, None)
+        .await
+        .expect_err("exists must not fall back to local metadata");
+        assert!(stat_error.to_string().contains("Runtime"), "{stat_error}");
     }
 
     #[test]
@@ -534,27 +590,4 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn list_excludes_symlink_escape() {
-        use std::os::unix::fs::symlink;
-        let ws = crate::handle::tests::make_confining_handle();
-        let root = ws.root_cwd().unwrap();
-        let outside = tempfile::tempdir().unwrap();
-        std::fs::write(outside.path().join("secret.txt"), b"x").unwrap();
-        symlink(outside.path(), root.join("escape_link")).unwrap();
-        std::fs::write(root.join("inside.txt"), b"y").unwrap();
-
-        let mut req = list_req(1000);
-        req.path = ".".into();
-        req.cwd = Some(root.clone());
-        req.depth = 2;
-        let data = req.execute(&ws, None).await.expect("list must succeed");
-        let names: Vec<&str> = data.nodes.iter().map(|n| n.name.as_str()).collect();
-        assert!(names.contains(&"inside.txt"), "in-root file: {names:?}");
-        assert!(
-            !data.nodes.iter().any(|n| n.path.contains("secret.txt")),
-            "escaping symlink target must not be enumerated: {names:?}"
-        );
-    }
 }
