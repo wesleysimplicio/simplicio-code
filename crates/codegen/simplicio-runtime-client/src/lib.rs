@@ -14,7 +14,7 @@ pub mod generated;
 
 pub use component_release::{
     BundleManifest, BundleStore, CompatibilityContract, CompatibilityHandshake,
-    ComponentRelease, ReleaseError, ReleaseIdentity, REQUIRED_COMPONENTS,
+    ComponentRelease, ReleaseError, ReleaseIdentity, CODE_VERSIONS_SCHEMA, REQUIRED_COMPONENTS,
 };
 
 pub use map_cache::{
