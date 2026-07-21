@@ -26,6 +26,11 @@ def validate(envelope: dict[str, Any]) -> dict[str, Any]:
     coordinator = envelope.get("coordinator")
     if coordinator not in COORDINATORS:
         errors.append("coordinator must be builtin, simplicio-agent, or external")
+    mode = envelope.get("mode", "productive")
+    if mode not in {"productive", "diagnostic"}:
+        errors.append("mode must be productive or diagnostic")
+    elif mode == "productive" and coordinator != "simplicio-agent":
+        errors.append("productive turns require simplicio-agent as coordinator")
     for field in ("workspace_id", "session_id", "turn_id", "policy_revision"):
         if not isinstance(envelope.get(field), str) or not envelope[field].strip():
             errors.append(f"{field} is required")
