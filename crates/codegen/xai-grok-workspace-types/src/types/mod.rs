@@ -21,6 +21,7 @@ pub mod memory;
 pub mod permission;
 pub mod plan_mode;
 pub mod plugins;
+pub mod prototype_first;
 pub mod search;
 pub mod session;
 pub mod skills;
@@ -40,6 +41,12 @@ pub use memory::MemoryChunk;
 pub use permission::{PermissionDecision, PermissionRequest};
 pub use plan_mode::{PlanModeDecision, PlanModeTransition};
 pub use plugins::{HookInfo, PluginInfo};
+pub use prototype_first::{
+    AccessibilityAudit, ArtifactType, BuildAuthorization, Comparison, CostEstimate, Decision,
+    DecisionAction, DecisionReceipt, Evidence, LoopState, PreviewArtifact, PrototypeLoopState, RiskLevel, Surface, TelemetryDecision,
+    ValidationReport, accessibility_audit, paginate, render_surface, render_tui,
+    PROTOTYPE_DECISION_SCHEMA_V1, PROTOTYPE_PREVIEW_SCHEMA_V1,
+};
 pub use search::{ContentMatch, FuzzyMatch, FuzzySearchArgs, RipgrepArgs, RipgrepStats};
 pub use session::{
     AgentSessionInfo, FsEventKind, LspServerStatus, McpServerStatus, RewindPoint, RewindResult,
