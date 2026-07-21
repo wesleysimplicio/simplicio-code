@@ -23,6 +23,23 @@ either dependency is absent or incompatible. Diagnostics that do not execute a
 productive turn or project effect may still report dependency health while a
 service is absent.
 
+## Code adapter lifecycle
+
+The Code surfaces share `AgentHostCoordinator` through the `xai-grok-agent`
+adapter: TUI/headless, ACP, workspace, and the Runtime-backed filesystem use
+one coordinator boundary rather than creating independent Agent instances.
+Each turn carries `CausalIdentity` (`workspace_id`, `session_id`, `turn_id`,
+`attempt_id`, `idempotency_key`, `run_id`, `stage_id`, `fence`, and
+`policy_revision`). The adapter allows one active turn, preserves its identity
+for retry/cancel, exposes the replay cursor, and publishes
+`simplicio.code-coordinator-snapshot/v1`.
+
+If the host disappears or its incarnation changes before the effect is
+reconciled, the adapter enters `effect_unknown`; it never silently retries or
+executes a local effect. Reconnect returns a snapshot and replay resumes from
+the stored cursor. Runtime filesystem edits and argv execution remain behind
+`SimplicioRuntimeFs`, after the AgentHost handshake has succeeded.
+
 Advisory replay is a passive attention surface, not a second coordinator: it
 contains only a fixed operational vocabulary, cannot carry prompts/workspace
 content, cannot invoke Runtime effects, and must not steal terminal focus. The
