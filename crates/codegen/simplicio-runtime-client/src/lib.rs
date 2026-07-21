@@ -44,7 +44,10 @@ pub const DEFAULT_MAX_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
 pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_MAX_SEARCH_FILES: usize = 2_000;
 pub const DEFAULT_MAX_SEARCH_MATCHES: usize = 10_000;
-/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
+/// Runtime-owned namespace for Prototype-First receipts and candidate
+/// artifacts. Callers must use [`RuntimeClient::write_prototype_artifact`]
+/// instead of writing this directory directly.
+pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first";\n/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
 /// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
 /// during connection negotiation instead of hanging for tens of seconds.
 pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
@@ -510,7 +513,24 @@ impl RuntimeClient {
         )
     }
 
-    pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
+    /// Persist a preview artifact through the negotiated Runtime write tool.
+    ///
+    /// The Code process never creates this path locally. The Runtime remains
+    /// the authority for artifact storage, atomicity, and rollback.
+    pub fn write_prototype_artifact(
+        &mut self,
+        repo: &Path,
+        artifact_id: &str,
+        data: &[u8],
+    ) -> Result<Value, Error> {
+        if !safe_artifact_id(artifact_id) {
+            return Err(Error::PathRejected(
+                "prototype artifact id contains unsafe path characters".into(),
+            ));
+        }
+        let path = Path::new(PROTOTYPE_ARTIFACT_ROOT).join(format!("{artifact_id}.json"));
+        self.write_file(repo, &path, data)
+    }\n\n    pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
         let repo = canonical_repo(repo)?;
         let path = secure_relative_path(&repo, path)?;
         self.call_tool(
@@ -798,7 +818,13 @@ fn contains_shell_metacharacters(arg: &str) -> bool {
         .any(|c| matches!(c, '|' | ';' | '&' | '`' | '$' | '>' | '<' | '\n' | '\r'))
 }
 
-/// Force-kills a process by pid, cross-platform, best-effort. Used only to
+fn safe_artifact_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}\n\n/// Force-kills a process by pid, cross-platform, best-effort. Used only to
 /// unblock a hung handshake read after [`DEFAULT_HANDSHAKE_TIMEOUT_MS`]; a
 /// failure to kill is not itself fatal (the caller has already decided to
 /// report a timeout either way).
