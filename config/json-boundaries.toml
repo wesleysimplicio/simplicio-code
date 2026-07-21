@@ -1,0 +1,66 @@
+schema = "simplicio.json-boundaries/v1"
+generated = false
+policy = "Internal workspace/session/evidence state uses Runtime HBP/HBI/TOML; release/toolchain JSON is explicitly owned."
+
+[[boundary]]
+path = "install.sh"
+category = "toolchain"
+owner = "code-release"
+target_format = "signed release manifest"
+status = "exception"
+reason = "The installer consumes the published signed manifest contract; this is outside runtime state."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/release/generate_manifest.py"
+category = "toolchain"
+owner = "code-release"
+target_format = "signed release manifest"
+status = "exception"
+reason = "Release distribution requires a signed manifest consumed by external installers."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/release/generate_sbom.py"
+category = "toolchain"
+owner = "code-release"
+target_format = "CycloneDX SBOM"
+status = "exception"
+reason = "SBOM is a standards/toolchain export and is never used as internal state."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/preflight.py"
+category = "external-protocol"
+owner = "code-runtime"
+target_format = "Runtime CLI export"
+status = "exception"
+reason = "The preflight adapter consumes Runtime CLI JSON output; it is not persisted in the Code domain."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/benchmark_snake.py"
+category = "internal-evidence"
+owner = "code-runtime"
+target_format = "HBP"
+status = "migration_pending"
+reason = "Benchmark state, events and receipts are internal evidence and must use HBP/Markdown."
+expires = "2026-12-31"
+
+[[boundary]]
+path = "scripts/check_disk_budget.py"
+category = "internal-evidence"
+owner = "code-runtime"
+target_format = "HBP"
+status = "migration_pending"
+reason = "Disk preflight receipts are internal evidence and must use HBP receipts."
+expires = "2026-12-31"
+
+[[boundary]]
+path = "docs/contracts/workspace-access-manifest.json"
+category = "historical-fixture"
+owner = "code-runtime"
+target_format = "versioned external contract"
+status = "exception"
+reason = "Documented contract fixture; not runtime/session persistence."
+expires = "2099-12-31"
