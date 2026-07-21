@@ -10,6 +10,7 @@ def _status(**overrides):
             {"name": "runtime", "owner": "loop-hub"},
             {"name": "mapper", "owner": "loop-hub"},
             {"name": "scheduler", "owner": "loop-hub"},
+            {"name": "inference", "owner": "loop-hub"},
         ],
     }
     value.update(overrides)
@@ -37,3 +38,10 @@ def test_required_mode_blocks_when_hub_is_missing():
 def test_standalone_is_explicit_and_does_not_attach():
     result = validate(_status(mode="standalone", hub={"state": "missing"}, services=[]))
     assert result["status"] == "ready"
+
+
+def test_ready_hub_requires_shared_inference_capacity_owner():
+    services = [service for service in _status()["services"] if service["name"] != "inference"]
+    result = validate(_status(services=services))
+    assert result["status"] == "blocked"
+    assert any("inference needs exactly one" in error for error in result["errors"])
