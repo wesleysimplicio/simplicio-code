@@ -103,6 +103,30 @@ def findings(root: pathlib.Path, include_generated: bool = False) -> list[tuple[
     return out
 
 
+def load_scope(path: pathlib.Path) -> set[str]:
+    """Load an exact, reviewable newline-delimited audit scope.
+
+    A scope is intentionally not a glob or a JSON document: it is a small
+    checked-in list of paths for a bounded migration lane. Rejecting patterns,
+    absolute paths, and duplicate entries prevents a lane from silently
+    widening or hiding findings.
+    """
+    paths: set[str] = set()
+    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        value = raw.split("#", 1)[0].strip()
+        if not value:
+            continue
+        candidate = pathlib.PurePosixPath(value)
+        if candidate.is_absolute() or any(part in {"", ".", ".."} for part in candidate.parts):
+            raise ValueError(f"scope line {number}: path must be repository-relative: {value!r}")
+        if any(ch in value for ch in "*?[]"):
+            raise ValueError(f"scope line {number}: scope path must be exact: {value!r}")
+        if value in paths:
+            raise ValueError(f"scope line {number}: duplicate path: {value}")
+        paths.add(value)
+    return paths
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path(__file__).parents[1])
@@ -110,6 +134,8 @@ def main() -> int:
     parser.add_argument("--mode", choices=("baseline", "strict"), default="baseline")
     parser.add_argument("--max-findings", type=int, default=50)
     parser.add_argument("--include-generated", action="store_true", help="include target/dist/build and package output")
+    parser.add_argument("--scope-file", type=pathlib.Path,
+                        help="audit only exact repository-relative paths from a newline-delimited file")
     parser.add_argument("--format", choices=("text", "markdown"), default="text")
     args = parser.parse_args()
     inventory_path = args.inventory or args.root / "config" / "json-boundaries.toml"
@@ -122,7 +148,14 @@ def main() -> int:
     pending: list[tuple[str, int, str]] = []
     expired: list[str] = []
     today = dt.date.today()
+    try:
+        scope = load_scope(args.scope_file) if args.scope_file else None
+    except (OSError, ValueError) as exc:
+        print(f"scope error: {exc}", file=sys.stderr)
+        return 2
     all_findings = findings(args.root, include_generated=args.include_generated)
+    if scope is not None:
+        all_findings = [finding for finding in all_findings if finding[0] in scope]
     for path, line, token in all_findings:
         entry = inventory.get(path)
         if entry is None:
@@ -132,12 +165,15 @@ def main() -> int:
         elif entry["status"] == "migration_pending":
             pending.append((path, line, token))
     total = len(unknown) + len(pending) + len(expired)
+    unknown_paths = len({path for path, _, _ in unknown})
+    pending_paths = len({path for path, _, _ in pending})
+    expired_paths = len(set(expired))
     if args.format == "markdown":
         print("# JSON boundary audit\n")
-        print(f"- Findings: `{total}`  ")
-        print(f"- Unclassified: `{len(unknown)}`  ")
-        print(f"- Pending migration: `{len(pending)}`  ")
-        print(f"- Expired: `{len(expired)}`\n")
+        print(f"- Findings: `{total}` occurrences across `{unknown_paths + pending_paths + expired_paths}` paths  ")
+        print(f"- Unclassified: `{len(unknown)}` occurrences across `{unknown_paths}` paths  ")
+        print(f"- Pending migration: `{len(pending)}` occurrences across `{pending_paths}` paths  ")
+        print(f"- Expired: `{len(expired)}` occurrences across `{expired_paths}` paths\n")
         print("| Status | Path | Line | Match |\n|---|---|---:|---|")
         for path, line, token in (unknown + pending)[: max(0, args.max_findings)]:
             status = "unclassified" if (path, line, token) in unknown else "migration_pending"
@@ -145,7 +181,12 @@ def main() -> int:
         for path in expired[: max(0, args.max_findings)]:
             print(f"| expired | `{path}` |  |  |")
     else:
-        print(f"json-boundaries: findings={total} unknown={len(unknown)} pending={len(pending)} expired={len(expired)}")
+        scope_label = f" scope_paths={len(scope)}" if scope is not None else ""
+        print(
+            f"json-boundaries: findings={total} unknown={len(unknown)} pending={len(pending)} "
+            f"expired={len(expired)} unknown_paths={unknown_paths} pending_paths={pending_paths}"
+            f" expired_paths={expired_paths}{scope_label}"
+        )
         for path, line, token in unknown[: max(0, args.max_findings)]:
             print(f"UNCLASSIFIED {path}:{line}: {token}")
         for path, line, token in pending[: max(0, args.max_findings)]:
