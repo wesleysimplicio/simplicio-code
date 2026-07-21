@@ -16,6 +16,33 @@ expires = "2099-12-31"
 
 [[boundary]]
 paths = [
+  'crates/codegen/simplicio-runtime-client/src/component_release.rs',
+  'crates/codegen/simplicio-runtime-client/src/loop_hub.rs',
+  'crates/codegen/simplicio-runtime-client/tests/fake_server_search.rs',
+  'crates/codegen/xai-grok-tools/src/computer/types.rs',
+  'crates/codegen/xai-grok-tools/src/implementations/codex/apply_patch/tool.rs',
+  'crates/codegen/xai-grok-workspace-types/src/types/prototype_first.rs',
+  'crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs',
+  'crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs',
+  'docs/contracts/component-release-v1.schema.json',
+  'docs/contracts/prototype-first-decision.v1.json',
+  'scripts/ci_diagnostics.py',
+  'scripts/release/generate_component_client.py',
+  'scripts/tests/test_ci_diagnostics.py',
+  'scripts/tests/test_component_client_codegen.py',
+]
+category = "external_protocol_or_ci_artifact"
+owner = "code-runtime"
+producer = "Runtime/Loop Hub adapters, versioned contract generators, or CI diagnostics"
+consumer = "external protocol peer, generated binding tool, or CI artifact reader"
+lifecycle = "explicit adapter/export boundary; no Code-owned persistent state"
+target_format = "versioned external JSON contract or CI artifact"
+status = "exception"
+reason = "The bounded audit found protocol envelopes, schema fixtures, code-generation inputs, and CI diagnostics. They terminate at an explicit external/toolchain boundary and are not workspace/session state; moving them would invent an incompatible contract."
+expires = "2099-12-31"
+
+[[boundary]]
+paths = [
   '.github/workflows/ci.yml',
   '.github/workflows/release.yml',
   'crates/codegen/simplicio-code-gateway/tests/contract.rs',
@@ -397,7 +424,6 @@ paths = [
   'crates/common/xai-tool-protocol/src/registration.rs',
   'crates/common/xai-tool-protocol/src/session_event.rs',
   'crates/common/xai-tool-protocol/src/turn_hook.rs',
-  'scripts/run_with_disk_preflight.py',
   'scripts/validate_coordinator_protocol.py',
 ]
 category = "third_party_protocol_boundary"
@@ -1098,14 +1124,26 @@ expires = "2026-12-31"
 
 [[boundary]]
 path = "scripts/check_disk_budget.py"
-category = "internal-evidence"
+category = "external-cli-export"
 owner = "code-runtime"
 producer = "disk preflight"
-consumer = "performance evidence reader"
-lifecycle = "append-only receipt"
+consumer = "operator or external preflight caller"
+lifecycle = "ephemeral explicit --json CLI export"
+target_format = "CLI JSON export"
+status = "exception"
+reason = "This module emits JSON only when an operator explicitly requests the external CLI export; it does not persist, read, or use the result as Code-owned state."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/run_with_disk_preflight.py"
+category = "internal-evidence"
+owner = "code-runtime"
+producer = "disk preflight wrapper"
+consumer = "performance and build evidence reader"
+lifecycle = "atomically replaced execution receipt"
 target_format = "HBP"
 status = "migration_pending"
-reason = "Disk preflight receipts are internal evidence and must use HBP receipts."
+reason = "The wrapper persists an internal receipt as JSON today. Migration is blocked until the published Runtime HBP writer/conformance contract is available; no local substitute is permitted."
 expires = "2026-12-31"
 
 [[boundary]]

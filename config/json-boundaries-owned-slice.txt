@@ -1,0 +1,7 @@
+# Bounded owned-state slice for issue #99/#100/#109.
+# Every entry is exact; broader inventory findings remain outside this lane.
+crates/codegen/xai-chat-state/src/persistence.rs
+crates/codegen/xai-grok-shell/src/session/persistence.rs
+crates/codegen/xai-grok-shell/src/session/storage/jsonl/mod.rs
+scripts/benchmark_snake.py
+scripts/run_with_disk_preflight.py
