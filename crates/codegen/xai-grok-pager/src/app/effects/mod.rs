@@ -48,13 +48,17 @@ pub(crate) fn execute(
             message,
             idempotency_key,
         } => {
+            let coordinator = xai_grok_agent::SimplicioAgentCoordinator::shared();
             tasks.spawn(async move {
                 let result = tokio::task::spawn_blocking(move || {
-                    xai_grok_agent::SimplicioAgentCoordinator::default().start_turn(
-                        session_id,
-                        message,
-                        idempotency_key,
-                    )
+                    let mut coordinator = coordinator
+                        .lock()
+                        .map_err(|_| {
+                            simplicio_agent_client::Error::InvalidCoordinatorState(
+                                simplicio_agent_client::CoordinatorState::Terminal,
+                            )
+                        })?;
+                    coordinator.start_turn(session_id, message, idempotency_key)
                 })
                 .await;
                 match result {
