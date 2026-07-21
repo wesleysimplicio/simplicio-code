@@ -15,6 +15,8 @@ SHARED_SERVICES = {"runtime", "mapper", "scheduler", "inference"}
 
 def validate(status: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
+    if status.get("schema", SCHEMA) != SCHEMA:
+        errors.append(f"unsupported schema {status.get('schema')!r}")
     mode = status.get("mode", "auto")
     hub = status.get("hub") or {}
     if mode not in MODES:
@@ -41,6 +43,10 @@ def validate(status: dict[str, Any]) -> dict[str, Any]:
             errors.append(f"{name} has duplicate service declarations")
         if hub.get("state") == "ready" and owners.count("loop-hub") != 1:
             errors.append(f"{name} needs exactly one Loop Hub owner")
+    if hub.get("state") == "ready":
+        for name in SHARED_SERVICES:
+            if name not in seen:
+                errors.append(f"{name} needs exactly one Loop Hub owner")
     return {
         "schema": SCHEMA,
         "status": "blocked" if errors else "ready",

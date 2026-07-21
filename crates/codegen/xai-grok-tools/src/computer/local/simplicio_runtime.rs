@@ -4,7 +4,9 @@ use std::{
 };
 
 use simplicio_agent_client::{AgentHostClient, resolve_socket_path};
-use simplicio_runtime_client::{DEFAULT_MAX_FILE_BYTES, RuntimeClient, start_workspace_map};
+use simplicio_runtime_client::{
+    DEFAULT_MAX_FILE_BYTES, RuntimeClient, SharedRuntimeClient, start_workspace_map,
+};
 
 use crate::computer::types::{
     AsyncFileSystem, AsyncSearch, ComputerError, SearchMatch, SearchOutcome,
@@ -19,7 +21,7 @@ pub struct SimplicioRuntimeFs {
     root: PathBuf,
     agent_socket: PathBuf,
     agent_client: Arc<Mutex<Option<AgentHostClient>>>,
-    client: Arc<Mutex<Option<RuntimeClient>>>,
+    client: Arc<Mutex<Option<SharedRuntimeClient>>>,
 }
 
 impl SimplicioRuntimeFs {
@@ -124,19 +126,24 @@ impl SimplicioRuntimeFs {
                 tracing::warn!(%error, workspace = %root.display(), "Simplicio Mapper bootstrap failed");
             }
 
-            let mut guard = client
-                .lock()
-                .map_err(|_| ComputerError::io("Simplicio Runtime client lock poisoned"))?;
-            if guard.is_none() {
-                *guard = Some(
-                    RuntimeClient::spawn_in(&root).map_err(|e| ComputerError::io(e.to_string()))?,
-                );
-            }
-            let result = op(guard.as_mut().expect("runtime initialized"), &root);
-            if result.is_err() {
-                *guard = None;
-            }
-            result.map_err(|e| ComputerError::io(e.to_string()))
+            let shared = {
+                let mut guard = client
+                    .lock()
+                    .map_err(|_| ComputerError::io("Simplicio Runtime client lock poisoned"))?;
+                if guard.is_none() {
+                    *guard = Some(
+                        SharedRuntimeClient::connect_in(&root)
+                            .map_err(|e| ComputerError::io(e.to_string()))?,
+                    );
+                }
+                guard
+                    .as_ref()
+                    .expect("shared Runtime session initialized")
+                    .clone()
+            };
+            shared
+                .with_client(|runtime, workspace| op(runtime, workspace))
+                .map_err(|e| ComputerError::io(e.to_string()))
         })
         .await
         .map_err(|e| ComputerError::io(format!("Simplicio Runtime task failed: {e}")))?

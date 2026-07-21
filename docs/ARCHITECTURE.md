@@ -49,9 +49,10 @@ O Runtime é a autoridade de leitura, escrita e exclusão, inclusive quando um
 cliente ACP anuncia filesystem próprio. `SimplicioRuntimeFs` não possui
 fallback local para nenhuma das três: falha de instalação, identidade,
 protocolo, capability ausente, sandbox (incluindo escape via symlink) ou
-truncamento interrompe a operação. O cliente mantém uma sessão MCP por
-workspace, negocia capabilities via `initialize` + `tools/list` e reinicia a
-conexão após falha recuperável.
+truncamento interrompe a operação. `SharedRuntimeClient` mantém um slot de
+sessão MCP compartilhado por workspace dentro do processo, negocia capabilities
+via `initialize` + `tools/list` uma vez e reinicia a conexão compartilhada após
+falha recuperável.
 
 `simplicio-runtime-client` já expõe contratos tipados para `search`, `list`,
 `stat`, `edit` (com plano atômico/rollback) e `exec` (argv direto, sem shell,
@@ -77,6 +78,20 @@ continuam sem consumidor no agente — essa é a próxima fatia.
 O Runtime é um processo acoplado ao binário na experiência do usuário, mas
 continua sendo um componente independente e testável. Isso evita duplicar mapa,
 memória, busca, action gate e políticas de contexto dentro da TUI.
+
+Para goals interativos que exigem waves, múltiplas issues ou coordenação
+paralela, `simplicio-runtime-client::loop_hub::LoopHubClient` é o adapter
+prioritário: ele reutiliza a sessão negociada e encaminha a admissão para a
+fila única do Loop Hub com prioridade `interactive`, backpressure, cursor de
+progress, cancel, resume e receipts idempotentes. O adapter valida que Runtime,
+Mapper, scheduler e inference têm um único dono Loop Hub, que a capacidade de
+inferência ativa é um único slot e que não existe scheduler local. Code não
+cria processo, worker ou fila de recursos nesses caminhos.
+
+O daemon Loop Hub e seu transporte ainda são dependências externas: o Code
+fornece o contrato e aceita uma implementação `HubTransport`, mas `required`
+falha fechado sem endpoint/handshake compatível. O modo `standalone` só existe
+quando selecionado explicitamente e não é fallback silencioso.
 
 O recorte atual torna Agent + Runtime obrigatórios nos pontos que já usam
 `SimplicioRuntimeFs` (TUI/headless/workspace/ACP) e entrega o contrato tipado de
