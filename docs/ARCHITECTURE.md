@@ -88,10 +88,12 @@ Mapper, scheduler e inference têm um único dono Loop Hub, que a capacidade de
 inferência ativa é um único slot e que não existe scheduler local. Code não
 cria processo, worker ou fila de recursos nesses caminhos.
 
-O daemon Loop Hub e seu transporte ainda são dependências externas: o Code
-fornece o contrato e aceita uma implementação `HubTransport`, mas `required`
-falha fechado sem endpoint/handshake compatível. O modo `standalone` só existe
-quando selecionado explicitamente e não é fallback silencioso.
+O daemon Loop Hub, a descoberta cross-process do endpoint e seu transporte
+ainda são dependências externas: o Code fornece o contrato, aceita
+`HubEndpointDiscovery`/`HubTransport` e apenas se conecta a um Hub já ativo.
+`required` falha fechado sem endpoint/handshake compatível. O modo
+`standalone` só existe quando selecionado explicitamente e não é fallback
+silencioso.
 
 O recorte atual torna Agent + Runtime obrigatórios nos pontos que já usam
 `SimplicioRuntimeFs` (TUI/headless/workspace/ACP) e entrega o contrato tipado de
