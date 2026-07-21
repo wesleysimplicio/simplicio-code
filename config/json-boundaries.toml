@@ -1048,6 +1048,30 @@ status = "exception"
 reason = "SBOM is a standards/toolchain export and is never used as internal state."
 expires = "2099-12-31"
 
+[[package_output]]
+path = "manifest.json"
+category = "toolchain_mandated"
+owner = "code-release"
+producer = "scripts/release/generate_manifest.py"
+consumer = "external installer and update tooling"
+lifecycle = "release package output"
+target_format = "signed release manifest"
+status = "exception"
+reason = "The release package publishes this exact signed manifest for external installers; it is not Code-owned state."
+expires = "2099-12-31"
+
+[[package_output]]
+path = "sbom.cdx.json"
+category = "toolchain_mandated"
+owner = "code-release"
+producer = "scripts/release/generate_sbom.py"
+consumer = "CycloneDX consumers"
+lifecycle = "release package output"
+target_format = "CycloneDX SBOM"
+status = "exception"
+reason = "The release package publishes this exact standards export; it is not Code-owned state."
+expires = "2099-12-31"
+
 [[boundary]]
 path = "scripts/preflight.py"
 category = "external-protocol"
