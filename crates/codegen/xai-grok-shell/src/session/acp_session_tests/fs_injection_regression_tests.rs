@@ -47,6 +47,7 @@ async fn tool_bridge_routes_writes_through_injected_fs() {
         backend: terminal,
         fs,
         search: None,
+        directory: None,
         cwd: cwd.clone(),
         session_folder: std::env::temp_dir().join("grok-test-fs"),
         session_env: std::sync::Arc::new(std::collections::HashMap::new()),

@@ -7,6 +7,7 @@ pub mod mock_fs;
 pub mod shell_state;
 pub mod simplicio_runtime;
 pub mod preflight;
+pub(crate) mod runtime_directory;
 pub mod terminal;
 
 pub use cgroup::{CgroupMemoryConfig, PROCESS_OOM_EXIT_CODE};
