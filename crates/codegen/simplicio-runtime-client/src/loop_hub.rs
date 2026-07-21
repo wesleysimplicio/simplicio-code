@@ -222,12 +222,8 @@ impl HubClientConfig {
         }
     }
 
-    fn endpoint(&self) -> Option<String> {
-        self.endpoint
-            .clone()
-            .filter(|endpoint| !endpoint.trim().is_empty())
-            .or_else(|| env::var(HUB_ENDPOINT_ENV).ok())
-            .filter(|endpoint| !endpoint.trim().is_empty())
+    fn configured_endpoint(&self) -> Option<String> {
+        normalize_endpoint(self.endpoint.clone())
     }
 
     fn validate(&self) -> Result<(), HubError> {
@@ -244,11 +240,17 @@ impl HubClientConfig {
     }
 }
 
+fn normalize_endpoint(endpoint: Option<String>) -> Option<String> {
+    endpoint
+        .map(|endpoint| endpoint.trim().to_owned())
+        .filter(|endpoint| !endpoint.is_empty())
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum HubError {
-    #[error("Loop Hub endpoint was not discovered; set {HUB_ENDPOINT_ENV} or configure an endpoint")]
+    #[error("Loop Hub endpoint was not discovered; configure an endpoint or provide a discovery adapter")]
     EndpointNotFound,
-    #[error("Loop Hub is required but standalone mode was requested")]
+    #[error("Loop Hub is required but no compatible endpoint was discovered")]
     RequiredHubUnavailable,
     #[error("Loop Hub protocol error: {0}")]
     Protocol(String),
@@ -258,6 +260,40 @@ pub enum HubError {
     InvalidRequest(String),
     #[error("Loop Hub transport is unavailable: {0}")]
     TransportUnavailable(String),
+}
+
+/// Discovers an endpoint for an already-running Loop Hub.
+///
+/// The discovery implementation is supplied by the product adapter because
+/// the executable endpoint contract is external to Code. Implementations must
+/// only locate/reuse an endpoint; they must not spawn a daemon, scheduler,
+/// Runtime, Mapper, worker, or inference process.
+pub trait HubEndpointDiscovery: Send + Sync {
+    fn discover(&self, config: &HubClientConfig) -> Result<Option<String>, HubError>;
+}
+
+/// Default discovery used by [`LoopHubClient::connect`].
+///
+/// This is intentionally limited to the explicit environment contract. A
+/// product integration that discovers a per-user or per-machine socket should
+/// implement [`HubEndpointDiscovery`] and call
+/// [`LoopHubClient::connect_with_discovery`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct EnvironmentHubEndpointDiscovery;
+
+impl HubEndpointDiscovery for EnvironmentHubEndpointDiscovery {
+    fn discover(&self, _: &HubClientConfig) -> Result<Option<String>, HubError> {
+        Ok(normalize_endpoint(env::var(HUB_ENDPOINT_ENV).ok()))
+    }
+}
+
+impl<F> HubEndpointDiscovery for F
+where
+    F: Fn(&HubClientConfig) -> Result<Option<String>, HubError> + Send + Sync,
+{
+    fn discover(&self, config: &HubClientConfig) -> Result<Option<String>, HubError> {
+        self(config)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -420,21 +456,40 @@ pub struct LoopHubClient {
 }
 
 impl LoopHubClient {
+    /// Connect using the environment-backed endpoint discovery contract.
     pub fn connect<F: HubTransportFactory>(
         config: HubClientConfig,
+        factory: &F,
+    ) -> Result<Option<Self>, HubError> {
+        Self::connect_with_discovery(config, &EnvironmentHubEndpointDiscovery, factory)
+    }
+
+    /// Connect using a product-supplied endpoint discovery adapter.
+    ///
+    /// An explicitly configured endpoint wins over discovery. Discovery is
+    /// skipped entirely for [`HubMode::Standalone`]. This method only
+    /// negotiates an already-running Hub through `factory`; it never starts a
+    /// local daemon or scheduler.
+    pub fn connect_with_discovery<D: HubEndpointDiscovery, F: HubTransportFactory>(
+        config: HubClientConfig,
+        discovery: &D,
         factory: &F,
     ) -> Result<Option<Self>, HubError> {
         config.validate()?;
         if config.mode == HubMode::Standalone {
             return Ok(None);
         }
-        let endpoint = config.endpoint().ok_or_else(|| {
-            if config.mode == HubMode::Required {
-                HubError::RequiredHubUnavailable
-            } else {
-                HubError::EndpointNotFound
-            }
-        })?;
+        let endpoint = match config.configured_endpoint() {
+            Some(endpoint) => endpoint,
+            None => normalize_endpoint(discovery.discover(&config)?)
+                .ok_or_else(|| {
+                    if config.mode == HubMode::Required {
+                        HubError::RequiredHubUnavailable
+                    } else {
+                        HubError::EndpointNotFound
+                    }
+                })?,
+        };
         // One physical transport/session per Hub endpoint and workspace. The
         // logical Code session id remains on each clone so multiple surfaces
         // can multiplex over the same Hub connection without sharing turn
@@ -568,6 +623,7 @@ mod tests {
     #[derive(Default)]
     struct FakeHub {
         handshakes: AtomicUsize,
+        handshake_requests: Mutex<Vec<HubHandshakeRequest>>,
         submits: Mutex<Vec<SubmitRequest>>,
         progress_calls: Mutex<Vec<ProgressRequest>>,
     }
@@ -608,8 +664,9 @@ mod tests {
     }
 
     impl HubTransport for FakeHub {
-        fn handshake(&self, _: &HubHandshakeRequest) -> Result<HubHandshake, HubError> {
+        fn handshake(&self, request: &HubHandshakeRequest) -> Result<HubHandshake, HubError> {
             self.handshakes.fetch_add(1, Ordering::SeqCst);
+            self.handshake_requests.lock().unwrap().push(request.clone());
             Ok(handshake())
         }
 
@@ -665,10 +722,14 @@ mod tests {
         let mut config = config("standalone");
         config.mode = HubMode::Standalone;
         let calls = AtomicUsize::new(0);
-        let result = LoopHubClient::connect(config, &|_| {
-            calls.fetch_add(1, Ordering::SeqCst);
-            unreachable!("standalone must not connect")
-        })
+        let result = LoopHubClient::connect_with_discovery(
+            config,
+            &|_| unreachable!("standalone must not discover"),
+            &|_| {
+                calls.fetch_add(1, Ordering::SeqCst);
+                unreachable!("standalone must not connect")
+            },
+        )
         .unwrap();
         assert!(result.is_none());
         assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -715,7 +776,75 @@ mod tests {
     fn required_mode_fails_closed_without_endpoint() {
         let mut config = config("no-endpoint");
         config.endpoint = Some("".into());
-        let result = LoopHubClient::connect(config, &|_| unreachable!());
+        let result = LoopHubClient::connect_with_discovery(
+            config,
+            &|_: &HubClientConfig| Ok(None),
+            &|_| unreachable!("missing endpoint must fail before transport connection"),
+        );
         assert!(matches!(result, Err(HubError::RequiredHubUnavailable)));
+    }
+
+    #[test]
+    fn injected_discovery_and_handshake_use_the_external_contract() {
+        HUB_SESSIONS.lock().unwrap().clear();
+        let hub = Arc::new(FakeHub::default());
+        let factory_hub = Arc::clone(&hub);
+        let seen_endpoint = Arc::new(Mutex::new(None));
+        let factory_endpoint = Arc::clone(&seen_endpoint);
+        let factory = move |endpoint: &str| {
+            *factory_endpoint.lock().unwrap() = Some(endpoint.to_owned());
+            Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone())
+        };
+        let client = LoopHubClient::connect_with_discovery(
+            config_without_endpoint("discovered"),
+            &|config: &HubClientConfig| {
+                assert_eq!(config.client_id, "code");
+                assert_eq!(config.workspace_id, "workspace");
+                Ok(Some(" discovered://hub ".into()))
+            },
+            &factory,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(client.endpoint(), "discovered://hub");
+        assert_eq!(
+            seen_endpoint.lock().unwrap().as_deref(),
+            Some("discovered://hub")
+        );
+        let requests = hub.handshake_requests.lock().unwrap();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].schema, LOOP_HUB_CLIENT_SCHEMA);
+        assert_eq!(requests[0].protocol, LOOP_HUB_PROTOCOL);
+        assert_eq!(requests[0].client_id, "code");
+        assert_eq!(requests[0].workspace_id, "workspace");
+        assert_eq!(requests[0].session_id, "discovered");
+    }
+
+    #[test]
+    fn explicit_endpoint_wins_over_discovery() {
+        HUB_SESSIONS.lock().unwrap().clear();
+        let hub = Arc::new(FakeHub::default());
+        let factory_hub = Arc::clone(&hub);
+        let factory = move |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone());
+        let mut config = config_without_endpoint("explicit");
+        config.endpoint = Some(" explicit://hub ".into());
+        let client = LoopHubClient::connect_with_discovery(
+            config,
+            &|_: &HubClientConfig| -> Result<Option<String>, HubError> {
+                unreachable!("configured endpoint must take precedence")
+            },
+            &factory,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(client.endpoint(), "explicit://hub");
+    }
+
+    fn config_without_endpoint(session_id: &str) -> HubClientConfig {
+        let mut config = config(session_id);
+        config.endpoint = None;
+        config
     }
 }
