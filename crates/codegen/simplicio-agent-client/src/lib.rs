@@ -210,6 +210,16 @@ impl CausalIdentity {
             if value.trim().is_empty() {
                 return Err(Error::InvalidCausalIdentity(format!("{field} is required")));
             }
+            if value.len() > 256 || value.chars().any(|character| character.is_control() || character.is_whitespace()) {
+                return Err(Error::InvalidCausalIdentity(format!(
+                    "{field} contains unsupported characters"
+                )));
+            }
+        }
+        if self.turn_id != self.idempotency_key {
+            return Err(Error::InvalidCausalIdentity(
+                "turn_id must equal idempotency_key".into(),
+            ));
         }
         Ok(())
     }
@@ -1129,6 +1139,17 @@ mod tests {
         assert_eq!(capabilities.profile, "desktop");
         assert!(capabilities.supports("host.advisories"));
         assert_eq!(capabilities.host_instance_id(), &host_instance_id());
+    }
+
+    #[test]
+    fn causal_identity_requires_stable_turn_and_idempotency_identity() {
+        let mut identity = CausalIdentity::new("workspace-1", "session-1", "turn-1").unwrap();
+        identity.turn_id = "different-turn".into();
+        assert!(matches!(
+            identity.validate(),
+            Err(Error::InvalidCausalIdentity(message))
+                if message == "turn_id must equal idempotency_key"
+        ));
     }
 
     #[test]
