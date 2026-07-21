@@ -23,3 +23,23 @@ def test_scans_generated_output_only_when_requested(tmp_path: pathlib.Path) -> N
     (generated / "session.json").write_text("{}", encoding="utf-8")
     assert not MODULE.findings(tmp_path)
     assert MODULE.findings(tmp_path, include_generated=True) == [("target/package/session.json", 1, "artifact:.json")]
+
+
+def test_scope_limits_findings_to_exact_paths(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "owned.py").write_text('import json\n', encoding="utf-8")
+    (tmp_path / "other.py").write_text('import json\n', encoding="utf-8")
+    scope = tmp_path / "scope.txt"
+    scope.write_text("owned.py\n", encoding="utf-8")
+    assert MODULE.load_scope(scope) == {"owned.py"}
+    assert [item[0] for item in MODULE.findings(tmp_path) if item[0] in MODULE.load_scope(scope)] == ["owned.py"]
+
+
+def test_scope_rejects_globs_and_parent_paths(tmp_path: pathlib.Path) -> None:
+    scope = tmp_path / "scope.txt"
+    scope.write_text("src/*.py\n", encoding="utf-8")
+    try:
+        MODULE.load_scope(scope)
+    except ValueError as error:
+        assert "exact" in str(error)
+    else:
+        raise AssertionError("glob scope must be rejected")
