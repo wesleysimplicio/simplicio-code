@@ -231,6 +231,10 @@ pub struct SessionContext {
     /// call sites and `SimplicioRuntimeFs` only at the two Runtime-backed
     /// ones.
     pub search: Option<Arc<dyn crate::computer::types::AsyncSearch>>,
+    /// Optional Runtime-owned directory listing backend. Productive Code
+    /// sessions use `simplicio_fs_list` exclusively and fail closed on
+    /// unavailable or malformed Runtime responses.
+    pub directory: Option<Arc<dyn crate::types::resources::AsyncDirectoryListing>>,
     /// Working directory for the session.
     pub cwd: PathBuf,
     /// Session-scoped folder for logs, output files, etc.
@@ -977,6 +981,9 @@ impl ToolRegistryBuilder {
         resources.insert(crate::types::resources::FileSystem(ctx.fs));
         if let Some(search) = ctx.search {
             resources.insert(crate::types::resources::SearchBackend(search));
+        }
+        if let Some(directory) = ctx.directory {
+            resources.insert(crate::types::resources::DirectoryBackend(directory));
         }
         let cwd = ctx.cwd;
         resources.insert(crate::types::resources::Cwd(cwd.clone()));
@@ -2008,6 +2015,7 @@ mod tests {
             backend: Arc::new(crate::computer::local::LocalTerminalBackend::new()),
             fs: Arc::new(crate::computer::local::LocalFs),
             search: None,
+            directory: None,
             cwd: tmp.path().to_path_buf(),
             session_folder: tmp.path().join("session"),
             session_env: Arc::new(HashMap::new()),
