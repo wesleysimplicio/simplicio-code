@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use simplicio_agent_client::{AgentHostClient, resolve_socket_path};
+use simplicio_agent_client::{AgentHostCoordinator, resolve_socket_path};
 use simplicio_runtime_client::{DEFAULT_MAX_FILE_BYTES, RuntimeClient, start_workspace_map};
 
 use crate::computer::types::{
@@ -18,7 +18,7 @@ use crate::computer::types::{
 pub struct SimplicioRuntimeFs {
     root: PathBuf,
     agent_socket: PathBuf,
-    agent_client: Arc<Mutex<Option<AgentHostClient>>>,
+    agent_client: Arc<Mutex<Option<AgentHostCoordinator>>>,
     client: Arc<Mutex<Option<RuntimeClient>>>,
 }
 
@@ -34,6 +34,13 @@ impl SimplicioRuntimeFs {
             agent_client: Arc::new(Mutex::new(None)),
             client: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn agent_profile() -> String {
+        std::env::var("SIMPLICIO_AGENT_PROFILE")
+            .ok()
+            .filter(|profile| !profile.trim().is_empty())
+            .unwrap_or_else(|| "desktop".into())
     }
 
     fn relative_path(&self, path: &Path) -> Result<PathBuf, ComputerError> {
@@ -105,9 +112,13 @@ impl SimplicioRuntimeFs {
                     .lock()
                     .map_err(|_| ComputerError::io("Simplicio Agent client lock poisoned"))?;
                 let validation = if let Some(agent) = agent_guard.as_mut() {
-                    agent.refresh_status().map(|_| ())
+                    agent.ensure_ready()
                 } else {
-                    AgentHostClient::connect(agent_socket.clone()).map(|agent| {
+                    AgentHostCoordinator::connect_at(
+                        Self::agent_profile(),
+                        agent_socket.clone(),
+                    )
+                    .map(|agent| {
                         *agent_guard = Some(agent);
                     })
                 };
@@ -178,6 +189,33 @@ impl SimplicioRuntimeFs {
     pub async fn stat_workspace(&self, path: &Path) -> Result<serde_json::Value, ComputerError> {
         self.with_client(path, |client, root, relative| client.stat(root, relative))
             .await
+    }
+
+    /// Applies an atomic Runtime edit plan. Its schema belongs to the
+    /// independently versioned Runtime contract; this adapter owns the Agent
+    /// gate and fail-closed lifecycle.
+    pub async fn edit_workspace(
+        &self,
+        plan: serde_json::Value,
+    ) -> Result<serde_json::Value, ComputerError> {
+        self.with_runtime(move |client, root| client.edit(root, plan))
+            .await
+    }
+
+    /// Executes argv through Runtime without accepting a shell string.
+    pub async fn exec_workspace(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        timeout_ms: u64,
+        max_output_bytes: usize,
+    ) -> Result<serde_json::Value, ComputerError> {
+        let relative_cwd = self.relative_path(cwd)?;
+        let argv = argv.to_vec();
+        self.with_runtime(move |client, root| {
+            client.exec(root, &relative_cwd, &argv, timeout_ms, max_output_bytes)
+        })
+        .await
     }
 
     /// Reads UTF-8 text through the Runtime boundary for the explicit TUI
@@ -337,6 +375,25 @@ mod tests {
                 .to_string()
                 .contains("Simplicio Agent socket was not found")
         );
+    }
+
+    #[tokio::test]
+    async fn edit_and_exec_fail_closed_without_local_fallback() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fs = SimplicioRuntimeFs::new(workspace.path());
+        let edit = fs
+            .edit_workspace(serde_json::json!({"file": "missing.txt"}))
+            .await;
+        let exec = fs
+            .exec_workspace(
+                Path::new("."),
+                &["echo".to_owned(), "blocked".to_owned()],
+                1_000,
+                1_024,
+            )
+            .await;
+        assert!(edit.is_err(), "edit must require the Runtime boundary");
+        assert!(exec.is_err(), "exec must require the Runtime boundary");
     }
 
     /// Regression: writes must fail closed exactly like the PR #1/#2 read
