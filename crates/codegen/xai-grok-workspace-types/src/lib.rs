@@ -113,4 +113,8 @@ pub use crate::types::{
     PlanModeTransition, PluginInfo, ProjectConfig, ResolvedFile, RewindPoint, RewindResult,
     RipgrepArgs, RipgrepStats, SkillInfo, ToolCallResult, ToolDef, ToolOutputChunk, ToolProgress,
     ToolServerConfig, UserAnswer, UserQuestion, UserQuestionOption, VcsKind,
+    AccessibilityAudit, ArtifactType, BuildAuthorization, Comparison, CostEstimate, Decision,
+    DecisionAction, DecisionReceipt, Evidence, LoopState, PreviewArtifact, PrototypeLoopState, RiskLevel, Surface, TelemetryDecision,
+    ValidationReport, accessibility_audit, paginate, render_surface, render_tui,
+    PROTOTYPE_DECISION_SCHEMA_V1, PROTOTYPE_PREVIEW_SCHEMA_V1,
 };
