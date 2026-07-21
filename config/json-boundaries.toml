@@ -57,6 +57,15 @@ reason = "Disk preflight receipts are internal evidence and must use HBP receipt
 expires = "2026-12-31"
 
 [[boundary]]
+path = "scripts/ci_diagnostics.py"
+category = "toolchain"
+owner = "code-ci"
+target_format = "CI diagnostic JSON artifact"
+status = "exception"
+reason = "CI diagnostics are an external workflow artifact; they are never read as Code runtime or session state."
+expires = "2099-12-31"
+
+[[boundary]]
 path = "docs/contracts/workspace-access-manifest.json"
 category = "historical-fixture"
 owner = "code-runtime"
