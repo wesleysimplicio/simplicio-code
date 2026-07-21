@@ -22,7 +22,8 @@
 //!   worktree path, so switching branches or worktrees naturally changes the
 //!   cache key ([`compute_repo_hash`])
 
-use serde::{Deserialize, Serialize};
+use simplicio_code_formats::{HbiReader, HbiSection, encode_hbi, write_atomically};
+use serde::Deserialize;
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -39,8 +40,7 @@ pub const MAP_RESULT_SCHEMA_V1: &str = "simplicio.map-result/v1";
 /// Observable lifecycle of a single workspace map, mirroring the states
 /// required by issue #6 ("aguardando, mapeando, pronto, degradado e
 /// falhou").
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapState {
     /// No map has been requested yet for this repository identity.
     Waiting,
@@ -59,10 +59,10 @@ pub enum MapState {
 /// The versioned, persisted result of mapping a repository.
 ///
 /// `schema` is always [`MAP_RESULT_SCHEMA_V1`] for values constructed via
-/// [`MapResult::new`]; the field is still serialized so that cache files
-/// written by a future schema version are rejected by
+/// [`MapResult::new`]; the field is retained in the typed domain object so
+/// cache files written by a future schema version are rejected by
 /// [`MapCache::load`] instead of being misinterpreted.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapResult {
     pub schema: String,
     /// Content-derived identity of the repository (see
@@ -124,7 +124,91 @@ fn cache_key(repo_hash: &str, runtime_version: &str) -> String {
 }
 
 fn cache_file_name(repo_hash: &str, runtime_version: &str) -> String {
-    format!("{}.json", cache_key(repo_hash, runtime_version))
+    format!("{}.hbi", cache_key(repo_hash, runtime_version))
+}
+
+const MAP_SECTION_KIND: u32 = 1;
+const MAP_PAYLOAD_MAGIC: [u8; 4] = *b"SMAP";
+const MAP_PAYLOAD_VERSION: u16 = 1;
+const MAX_MAP_FIELD_BYTES: usize = 16 * 1024 * 1024;
+
+#[derive(Debug, Deserialize)]
+struct LegacyMapResult {
+    schema: String,
+    repo_hash: String,
+    runtime_version: String,
+    state: String,
+    summary: String,
+    file_count: usize,
+    generated_at_unix_ms: u64,
+}
+
+fn decode_legacy_map(bytes: &[u8], repo_hash: &str, runtime_version: &str) -> io::Result<MapResult> {
+    let legacy: LegacyMapResult = serde_json::from_slice(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, format!("legacy map JSON is invalid: {error}")))?;
+    if legacy.schema != MAP_RESULT_SCHEMA_V1 || legacy.repo_hash != repo_hash || legacy.runtime_version != runtime_version {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "legacy map identity or schema mismatch"));
+    }
+    let state = match legacy.state.as_str() {
+        "waiting" => MapState::Waiting,
+        "mapping" => MapState::Mapping,
+        "ready" => MapState::Ready,
+        "degraded" => MapState::Degraded,
+        "failed" => MapState::Failed,
+        _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "legacy map state is unknown")),
+    };
+    Ok(MapResult { schema: MAP_RESULT_SCHEMA_V1.to_string(), repo_hash: legacy.repo_hash, runtime_version: legacy.runtime_version, state, summary: legacy.summary, file_count: legacy.file_count, generated_at_unix_ms: legacy.generated_at_unix_ms })
+}
+
+fn encode_map_result(result: &MapResult) -> io::Result<Vec<u8>> {
+    if result.repo_hash.len() > MAX_MAP_FIELD_BYTES
+        || result.runtime_version.len() > MAX_MAP_FIELD_BYTES
+        || result.summary.len() > MAX_MAP_FIELD_BYTES
+    {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "map result field exceeds limit"));
+    }
+    let mut payload = Vec::with_capacity(40 + result.repo_hash.len() + result.runtime_version.len() + result.summary.len());
+    payload.extend_from_slice(&MAP_PAYLOAD_MAGIC);
+    payload.extend_from_slice(&MAP_PAYLOAD_VERSION.to_le_bytes());
+    payload.extend_from_slice(&[0, 0]);
+    payload.extend_from_slice(&(result.repo_hash.len() as u32).to_le_bytes());
+    payload.extend_from_slice(&(result.runtime_version.len() as u32).to_le_bytes());
+    payload.push(match result.state { MapState::Waiting => 0, MapState::Mapping => 1, MapState::Ready => 2, MapState::Degraded => 3, MapState::Failed => 4 });
+    payload.extend_from_slice(&[0, 0, 0]);
+    payload.extend_from_slice(&(result.file_count as u64).to_le_bytes());
+    payload.extend_from_slice(&result.generated_at_unix_ms.to_le_bytes());
+    payload.extend_from_slice(&(result.summary.len() as u32).to_le_bytes());
+    payload.extend_from_slice(result.repo_hash.as_bytes());
+    payload.extend_from_slice(result.runtime_version.as_bytes());
+    payload.extend_from_slice(result.summary.as_bytes());
+    Ok(payload)
+}
+
+fn decode_map_result(bytes: &[u8]) -> io::Result<MapResult> {
+    if bytes.len() < 40 || &bytes[..4] != MAP_PAYLOAD_MAGIC.as_slice() {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid map payload"));
+    }
+    let version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
+    if version != MAP_PAYLOAD_VERSION { return Err(io::Error::new(io::ErrorKind::InvalidData, "unsupported map payload version")); }
+    let repo_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+    let runtime_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let state = match bytes[16] { 0 => MapState::Waiting, 1 => MapState::Mapping, 2 => MapState::Ready, 3 => MapState::Degraded, 4 => MapState::Failed, _ => return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid map state")) };
+    let file_count = u64::from_le_bytes(bytes[20..28].try_into().unwrap());
+    let generated_at_unix_ms = u64::from_le_bytes(bytes[28..36].try_into().unwrap());
+    let summary_len = u32::from_le_bytes(bytes[36..40].try_into().unwrap()) as usize;
+    if repo_len > MAX_MAP_FIELD_BYTES || runtime_len > MAX_MAP_FIELD_BYTES || summary_len > MAX_MAP_FIELD_BYTES {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "map payload field exceeds limit"));
+    }
+    let end = 40usize.checked_add(repo_len).and_then(|n| n.checked_add(runtime_len)).and_then(|n| n.checked_add(summary_len)).ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "map payload length overflow"))?;
+    if end != bytes.len() { return Err(io::Error::new(io::ErrorKind::InvalidData, "map payload is truncated or has trailing bytes")); }
+    let repo_start = 40;
+    let runtime_start = repo_start + repo_len;
+    let summary_start = runtime_start + runtime_len;
+    let repo_hash = String::from_utf8(bytes[repo_start..runtime_start].to_vec()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "map repo hash is not UTF-8"))?;
+    let runtime_version = String::from_utf8(bytes[runtime_start..summary_start].to_vec()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "map runtime version is not UTF-8"))?;
+    let summary = String::from_utf8(bytes[summary_start..].to_vec()).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "map summary is not UTF-8"))?;
+    let file_count = usize::try_from(file_count).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "map file count exceeds platform limit"))?;
+    Ok(MapResult { schema: MAP_RESULT_SCHEMA_V1.to_string(), repo_hash, runtime_version, state, summary, file_count, generated_at_unix_ms })
 }
 
 /// File- and memory-backed cache of [`MapResult`] values.
@@ -170,9 +254,16 @@ impl MapCache {
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(error) => return Err(error),
         };
-        let result: MapResult = match serde_json::from_slice(&bytes) {
-            Ok(result) => result,
+        let reader = match HbiReader::open(&bytes) {
+            Ok(reader) => reader,
             Err(_) => return Ok(None),
+        };
+        if reader.schema() != MAP_RESULT_SCHEMA_V1 || reader.section_count() != 1 {
+            return Ok(None);
+        }
+        let result: MapResult = match reader.section(0).and_then(|(kind, payload)| (kind == MAP_SECTION_KIND).then(|| decode_map_result(payload).ok()).flatten()) {
+            Some(result) => result,
+            None => return Ok(None),
         };
         if result.schema != MAP_RESULT_SCHEMA_V1 {
             return Ok(None);
@@ -210,11 +301,42 @@ impl MapCache {
         let path = self
             .dir
             .join(cache_file_name(&result.repo_hash, &result.runtime_version));
-        let bytes = serde_json::to_vec_pretty(&result)
+        let payload = encode_map_result(&result)?;
+        let bytes = encode_hbi(MAP_RESULT_SCHEMA_V1, &[HbiSection { kind: MAP_SECTION_KIND, bytes: payload }])
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        fs::write(path, bytes)?;
+        write_atomically(&path, &bytes)?;
         self.entries.insert(key, result);
         Ok(())
+    }
+
+    /// Explicit one-way migration for the pre-HBI JSON cache. The normal
+    /// [`load`](Self::load) path never falls back to JSON; callers must opt in
+    /// to this bounded, backup-preserving conversion during upgrade.
+    pub fn migrate_legacy(
+        &mut self,
+        legacy_path: &Path,
+        repo_hash: &str,
+        runtime_version: &str,
+        dry_run: bool,
+    ) -> io::Result<simplicio_code_formats::MigrationOutcome> {
+        let target = self.dir.join(cache_file_name(repo_hash, runtime_version));
+        let backup = legacy_path.with_extension("json.legacy.bak");
+        let outcome = simplicio_code_formats::migrate_bytes_atomically(
+            legacy_path,
+            &target,
+            &backup,
+            dry_run,
+            |bytes| {
+                let result = decode_legacy_map(bytes, repo_hash, runtime_version)?;
+                let payload = encode_map_result(&result)?;
+                encode_hbi(MAP_RESULT_SCHEMA_V1, &[HbiSection { kind: MAP_SECTION_KIND, bytes: payload }])
+                    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
+            },
+        )?;
+        if !dry_run {
+            let _ = self.load(repo_hash, runtime_version)?;
+        }
+        Ok(outcome)
     }
 
     /// Invalidates every cached entry (memory and disk) for `repo_hash`,
@@ -245,7 +367,7 @@ impl MapCache {
                 let Some(name) = file_name.to_str() else {
                     continue;
                 };
-                let Some(key) = name.strip_suffix(".json") else {
+                let Some(key) = name.strip_suffix(".hbi") else {
                     continue;
                 };
                 if key.starts_with(&prefix) && fs::remove_file(entry.path()).is_ok() {
@@ -441,10 +563,12 @@ mod tests {
     }
 
     #[test]
-    fn map_result_round_trips_through_json() {
+    fn map_result_round_trips_through_hbi() {
         let result = sample("hash-a", "3.5.3", MapState::Degraded);
-        let json = serde_json::to_string(&result).unwrap();
-        let back: MapResult = serde_json::from_str(&json).unwrap();
+        let payload = encode_map_result(&result).unwrap();
+        let bytes = encode_hbi(MAP_RESULT_SCHEMA_V1, &[HbiSection { kind: MAP_SECTION_KIND, bytes: payload }]).unwrap();
+        let reader = HbiReader::open(&bytes).unwrap();
+        let back = decode_map_result(reader.section(0).unwrap().1).unwrap();
         assert_eq!(result, back);
     }
 
@@ -495,23 +619,41 @@ mod tests {
     fn load_rejects_entries_written_under_a_different_schema_version() {
         let dir = temp_cache_dir("schema-mismatch");
         fs::create_dir_all(&dir).unwrap();
-        let stale = serde_json::json!({
-            "schema": "simplicio.map-result/v0",
-            "repo_hash": "repo-3",
-            "runtime_version": "3.5.3",
-            "state": "ready",
-            "summary": "old shape",
-            "file_count": 1,
-            "generated_at_unix_ms": 0,
-        });
         fs::write(
             dir.join(cache_file_name("repo-3", "3.5.3")),
-            serde_json::to_vec(&stale).unwrap(),
+            b"not an HBI artifact",
         )
         .unwrap();
         let mut cache = MapCache::new(&dir);
         let loaded = cache.load("repo-3", "3.5.3").unwrap();
         assert_eq!(loaded, None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_migration_is_dry_run_then_atomic_and_backed_up() {
+        let dir = temp_cache_dir("legacy-migration");
+        fs::create_dir_all(&dir).unwrap();
+        let legacy = dir.join("repo-legacy-3.5.3.json");
+        fs::write(&legacy, br#"{"schema":"simplicio.map-result/v1","repo_hash":"repo-legacy","runtime_version":"3.5.3","state":"ready","summary":"old","file_count":2,"generated_at_unix_ms":1}"#).unwrap();
+        let mut cache = MapCache::new(&dir);
+        assert!(cache.migrate_legacy(&legacy, "repo-legacy", "3.5.3", true).unwrap().dry_run);
+        assert!(!dir.join("repo-legacy-3.5.3.hbi").exists());
+        let outcome = cache.migrate_legacy(&legacy, "repo-legacy", "3.5.3", false).unwrap();
+        assert!(outcome.migrated && outcome.backup.unwrap().exists());
+        assert_eq!(cache.load("repo-legacy", "3.5.3").unwrap().unwrap().summary, "old");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_migration_rejects_corrupt_and_truncated_inputs_without_writing() {
+        let dir = temp_cache_dir("legacy-corrupt");
+        fs::create_dir_all(&dir).unwrap();
+        let legacy = dir.join("legacy.json");
+        fs::write(&legacy, b"{\"schema\":\"simplicio.map-result/v1\"").unwrap();
+        let mut cache = MapCache::new(&dir);
+        assert_eq!(cache.migrate_legacy(&legacy, "repo", "3.5.3", false).unwrap_err().kind(), io::ErrorKind::InvalidData);
+        assert!(!dir.join("repo-3.5.3.hbi").exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
