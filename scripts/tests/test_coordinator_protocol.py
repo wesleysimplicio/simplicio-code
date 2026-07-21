@@ -45,3 +45,15 @@ def test_duplicate_sequences_block():
     result = validate(value)
     assert result["status"] == "blocked"
     assert any("strictly increasing" in error for error in result["errors"])
+
+
+def test_builtin_is_diagnostic_only():
+    value = _envelope(coordinator="builtin", mode="diagnostic")
+    assert validate(value)["status"] == "ready"
+
+
+def test_builtin_productive_turn_blocks():
+    value = _envelope(coordinator="builtin")
+    result = validate(value)
+    assert result["status"] == "blocked"
+    assert any("productive turns require" in error for error in result["errors"])
