@@ -2,6 +2,12 @@
 
 Grok connects to custom model endpoints for alternative providers, self-hosted models, and overriding built-in settings. This guide explains how to select models, configure endpoints, and integrate third-party providers.
 
+The Simplicio Code build defaults to `deepseek/deepseek-v4-flash` through
+OpenRouter (`https://openrouter.ai/api/v1`), matching Simplicio Agent. The
+runtime model refresh uses OpenRouter's `/models` catalog, so models from the
+providers exposed by the Agent's OpenRouter setup remain selectable without
+hardcoding a second provider registry in Code.
+
 ---
 
 ## Default Models
