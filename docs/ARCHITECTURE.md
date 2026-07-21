@@ -72,8 +72,16 @@ injetado apenas nos dois pontos de construção que já usam
 `SimplicioRuntimeFs` — nenhum tool passa a exigi-lo: ausente, o tool mantém
 seu comportamento local (ripgrep) inalterado; presente, o tool usa o backend
 exclusivamente e falha fechado nos erros dele. `CodexGrepFilesTool`
-(`grep_files`) é o primeiro consumidor real. `list`/`stat`/`edit`/`exec`
-continuam sem consumidor no agente — essa é a próxima fatia.
+(`grep_files`) continua usando esse backend exclusivamente. O `apply_patch`
+do Codex usa a mesma `FileSystem` resource: ele calcula o plano somente com
+leituras do backend e, quando o backend oferece edição atômica, envia um único
+plano ao contrato Runtime `simplicio_edit`. `SimplicioRuntimeFs` implementa
+essa capacidade chamando seu `edit_workspace`, portanto approval/checkpoint/
+rollback/receipt continuam sob a autoridade do Runtime. Um erro do Runtime é
+terminal para o patch; não há fallback para `write_file`/`delete_file` locais.
+Backends locais usados apenas por fixtures e superfícies legadas continuam
+com o aplicador por arquivo já existente. `list`/`stat`/`exec` permanecem sem
+consumidor produtivo nesta fatia.
 
 O Runtime é um processo acoplado ao binário na experiência do usuário, mas
 continua sendo um componente independente e testável. Isso evita duplicar mapa,
@@ -98,7 +106,7 @@ silencioso.
 O recorte atual torna Agent + Runtime obrigatórios nos pontos que já usam
 `SimplicioRuntimeFs` (TUI/headless/workspace/ACP) e entrega o contrato tipado de
 advisories. Ainda não significa que todos os comandos herdados do Code passam
-pelos dois componentes: `list`/`stat`/`edit`/`exec`, alguns caminhos diretos de
+pelos dois componentes: `list`/`stat`/`exec`, alguns caminhos diretos de
 `ripgrep`/`tokio::fs` e a renderização da lateral continuam nas próximas
 fatias. Essa fronteira é registrada explicitamente para não confundir contrato
 P0 real com integração total ainda não entregue.

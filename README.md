@@ -36,7 +36,8 @@ Versão atual: **0.3.0-beta.2**.
 - ao abrir uma pasta, o Runtime inicia o mapa geral em segundo plano;
 - o modelo aparece como **Simplicio-1** e usa `tencent/hy3:free` via OpenRouter;
 - o tema padrão **Simplicio Brasil** usa verde e amarelo;
-- escrita/exclusão ainda usam o backend local existente nesta primeira versão.
+- escrita/exclusão usam o Runtime; `apply_patch` envia o plano completo pelo
+  contrato atômico `simplicio_edit`, sem fallback local em sessões produtivas.
 
 Para desenvolvimento local, forneça a credencial apenas pelo ambiente:
 

@@ -55,6 +55,18 @@ pub trait AsyncFileSystem: Send + Sync {
     async fn write_file(&self, path: &Path, data: &[u8]) -> Result<(), ComputerError>;
 
     async fn delete_file(&self, path: &Path) -> Result<(), ComputerError>;
+
+    /// Apply a complete edit plan atomically when the backend owns such a
+    /// contract. `None` means this backend only exposes per-file operations;
+    /// callers may retain their local test/legacy behavior in that case.
+    /// Implementations backed by an external authority must return `Some` on
+    /// success and propagate errors without falling back to file operations.
+    async fn apply_edit(
+        &self,
+        _plan: serde_json::Value,
+    ) -> Result<Option<serde_json::Value>, ComputerError> {
+        Ok(None)
+    }
 }
 
 // ============================================================================

@@ -93,6 +93,7 @@ fn main() {
                         { "name": "simplicio_fs_write" },
                         { "name": "simplicio_fs_delete" },
                         { "name": "simplicio_search" },
+                        { "name": "simplicio_edit" },
                     ]
                 }),
             ),
@@ -129,6 +130,21 @@ fn handle_tool_call(name: &str, arguments: &Value) -> Value {
             tool_ok(body.to_string())
         }
         "simplicio_fs_write" | "simplicio_fs_delete" => tool_ok("{}".to_owned()),
+        "simplicio_edit" => {
+            let plan = arguments
+                .get("plan")
+                .and_then(Value::as_str)
+                .and_then(|plan| serde_json::from_str::<Value>(plan).ok())
+                .unwrap_or(Value::Null);
+            tool_ok(
+                json!({
+                    "schema": "simplicio.edit-result/v1",
+                    "accepted": true,
+                    "plan": plan,
+                })
+                .to_string(),
+            )
+        }
         "simplicio_file_read" => {
             let path = arguments.get("path").and_then(Value::as_str).unwrap_or("");
             let body = json!({
