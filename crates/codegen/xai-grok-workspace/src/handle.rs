@@ -5550,7 +5550,7 @@ pub(crate) mod tests {
             self.inner
                 .build_session_context(session_id, cwd, session_env, backend)
         }
-        fn build_terminal_backend(&self) -> crate::config::SessionTerminalBackend {
+        fn build_terminal_backend(&self, _cwd: &std::path::Path) -> crate::config::SessionTerminalBackend {
             crate::config::SessionTerminalBackend::local(
                 xai_grok_tools::computer::local::LocalTerminalBackend::with_persistent_shell(),
             )
