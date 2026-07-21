@@ -595,6 +595,9 @@ pub(crate) async fn spawn_session_actor(
     let fs_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem> =
         simplicio_runtime_fs.clone();
     let search_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncSearch> =
+        simplicio_runtime_fs.clone();
+    let directory_backend:
+        std::sync::Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing> =
         simplicio_runtime_fs;
     let bridge_state_path =
         crate::session::persistence::session_dir(&session_info).join("tool_state.json");
@@ -828,6 +831,7 @@ pub(crate) async fn spawn_session_actor(
         terminal_backend: terminal_backend.clone(),
         fs_backend: fs_backend.clone(),
         search_backend: Some(search_backend.clone()),
+        directory_backend: Some(directory_backend.clone()),
         tools_notification_handle: tools_notification_handle.clone(),
         bridge_state_path: bridge_state_path.clone(),
         session_env: tool_context.session_env.clone(),
