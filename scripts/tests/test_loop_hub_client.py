@@ -6,6 +6,9 @@ def _status(**overrides):
         "schema": SCHEMA,
         "mode": "auto",
         "hub": {"state": "ready", "endpoint": "local://loop-hub"},
+        "agent": {"state": "ready", "protocol": "simplicio.agent/v1"},
+        "runtime": {"state": "ready", "protocol": "simplicio.runtime/v1"},
+        "workflow": {"scope": "single"},
         "services": [
             {"name": "runtime", "owner": "loop-hub"},
             {"name": "mapper", "owner": "loop-hub"},
@@ -38,6 +41,25 @@ def test_required_mode_blocks_when_hub_is_missing():
 def test_standalone_is_explicit_and_does_not_attach():
     result = validate(_status(mode="standalone", hub={"state": "missing"}, services=[]))
     assert result["status"] == "ready"
+
+
+def test_standalone_still_requires_agent_and_runtime():
+    result = validate(_status(mode="standalone", hub={"state": "missing"}, services=[], agent={}))
+    assert result["status"] == "blocked"
+    assert any("Simplicio Agent" in error for error in result["errors"])
+
+
+def test_coordinated_goal_never_falls_back_to_local_scheduler():
+    result = validate(
+        _status(
+            mode="standalone",
+            hub={"state": "missing"},
+            services=[],
+            workflow={"scope": "coordinated"},
+        )
+    )
+    assert result["status"] == "blocked"
+    assert any("local scheduling is forbidden" in error for error in result["errors"])
 
 
 def test_ready_hub_requires_shared_inference_capacity_owner():

@@ -19,12 +19,23 @@ def validate(status: dict[str, Any]) -> dict[str, Any]:
         errors.append(f"unsupported schema {status.get('schema')!r}")
     mode = status.get("mode", "auto")
     hub = status.get("hub") or {}
+    agent = status.get("agent") or {}
+    runtime = status.get("runtime") or {}
+    workflow = status.get("workflow") or {"scope": "single"}
     if mode not in MODES:
         errors.append("mode must be auto, hub, required, or standalone")
     if mode in {"hub", "required"} and hub.get("state") != "ready":
         errors.append("hub/required mode needs a ready Loop Hub")
     if mode == "standalone" and hub.get("state") == "ready":
         errors.append("standalone mode cannot attach to a ready Hub")
+    if agent.get("state") != "ready" or not agent.get("protocol"):
+        errors.append("production Code requires a ready, versioned Simplicio Agent")
+    if runtime.get("state") != "ready" or not runtime.get("protocol"):
+        errors.append("production Code requires a ready, versioned Simplicio Runtime")
+    if workflow.get("scope") not in {"single", "coordinated"}:
+        errors.append("workflow scope must be single or coordinated")
+    if workflow.get("scope") == "coordinated" and hub.get("state") != "ready":
+        errors.append("coordinated goals require Loop Hub; local scheduling is forbidden")
     services = status.get("services") or []
     seen: dict[str, list[str]] = {}
     for service in services:

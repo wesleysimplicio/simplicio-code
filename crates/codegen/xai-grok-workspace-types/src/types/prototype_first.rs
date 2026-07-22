@@ -15,6 +15,15 @@ pub const PROTOTYPE_PREVIEW_SCHEMA_V1: &str = "simplicio.prototype-preview/v1";
 pub const MAX_ARTIFACTS: usize = 128;
 pub const MAX_PAGE_LINES: usize = 120;
 
+/// The authority of the surface that is presenting a prototype. Plan mode is
+/// intentionally incapable of recording a human decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PrototypeAuthority {
+    Plan,
+    Decision,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ArtifactType {
@@ -98,7 +107,8 @@ pub enum Decision {
     Reject { reason: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum DecisionAction {
     Accept,
     Revise { feedback: String },
@@ -177,6 +187,50 @@ pub enum Surface {
     Ui,
     Headless,
     Acp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+pub enum PanelAction {
+    Select { artifact_id: String },
+    Compare { artifact_id: String },
+    Filter { artifact_type: Option<ArtifactType> },
+    OpenEvidence { evidence_id: String },
+    NextPage,
+    PreviousPage,
+    Decide { decision: DecisionAction },
+    ConfirmDecision,
+    CancelDecision,
+}
+
+/// Product-facing candidate gallery state shared by TUI, workspace, headless,
+/// and ACP. It contains references and metadata only; artifact bytes remain in
+/// Runtime and are never copied into the panel or telemetry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrototypePanel {
+    pub receipt: DecisionReceipt,
+    pub current_source_revision: String,
+    pub authority: PrototypeAuthority,
+    #[serde(default)]
+    pub selected_artifact_id: Option<String>,
+    #[serde(default)]
+    pub compare_artifact_id: Option<String>,
+    #[serde(default)]
+    pub artifact_filter: Option<ArtifactType>,
+    #[serde(default)]
+    pub evidence_id: Option<String>,
+    #[serde(default)]
+    pub page: usize,
+    #[serde(skip)]
+    pending_decision: Option<DecisionAction>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PanelUpdate {
+    pub state: LoopState,
+    pub decision_recorded: bool,
+    pub confirmation_required: bool,
+    pub message: String,
 }
 
 impl Surface {
@@ -462,6 +516,11 @@ impl PrototypeLoopState {
         } else {
             report.state
         };
+        // Publishing a candidate receipt is read-only. Even when it carries an
+        // ACCEPT decision, only the separate authorize_build transition may
+        // report BuildAuthorized.
+        report.state = self.state;
+        report.build_authorized = false;
         self.receipt_digest = Some(report.receipt_digest.clone());
         report
     }
@@ -485,6 +544,225 @@ impl PrototypeLoopState {
             Err(report) => self.state = report.state,
         }
         authorization
+    }
+}
+
+impl PrototypePanel {
+    pub fn new(
+        receipt: DecisionReceipt,
+        current_source_revision: impl Into<String>,
+        authority: PrototypeAuthority,
+    ) -> Self {
+        Self {
+            receipt,
+            current_source_revision: current_source_revision.into(),
+            authority,
+            selected_artifact_id: None,
+            compare_artifact_id: None,
+            artifact_filter: None,
+            evidence_id: None,
+            page: 0,
+            pending_decision: None,
+        }
+    }
+
+    pub fn visible_artifacts(&self) -> Vec<&PreviewArtifact> {
+        self.receipt
+            .artifacts
+            .iter()
+            .filter(|artifact| {
+                self.artifact_filter
+                    .map(|kind| kind == artifact.artifact_type)
+                    .unwrap_or(true)
+            })
+            .skip(self.page.saturating_mul(MAX_PAGE_LINES))
+            .take(MAX_PAGE_LINES)
+            .collect()
+    }
+
+    pub fn apply(&mut self, action: PanelAction) -> Result<PanelUpdate, String> {
+        let state = self
+            .receipt
+            .validate(&self.current_source_revision, false)
+            .state;
+        match action {
+            PanelAction::Select { artifact_id } => {
+                self.require_artifact(&artifact_id)?;
+                self.selected_artifact_id = Some(artifact_id);
+                self.compare_artifact_id = None;
+                self.evidence_id = None;
+                Ok(update(state, false, false, "candidate selected"))
+            }
+            PanelAction::Compare { artifact_id } => {
+                self.require_artifact(&artifact_id)?;
+                let selected = self
+                    .selected_artifact_id
+                    .as_deref()
+                    .ok_or("select a candidate before comparing")?;
+                self.receipt.compare(selected, &artifact_id)?;
+                self.compare_artifact_id = Some(artifact_id);
+                Ok(update(state, false, false, "comparison opened"))
+            }
+            PanelAction::Filter { artifact_type } => {
+                self.artifact_filter = artifact_type;
+                self.page = 0;
+                Ok(update(state, false, false, "candidate filter updated"))
+            }
+            PanelAction::OpenEvidence { evidence_id } => {
+                let artifact = self.selected_artifact()?;
+                if !artifact.evidence.iter().any(|item| item.id == evidence_id) {
+                    return Err("evidence is not attached to the selected candidate".into());
+                }
+                self.evidence_id = Some(evidence_id);
+                Ok(update(state, false, false, "evidence reference opened"))
+            }
+            PanelAction::NextPage => {
+                let count = self
+                    .receipt
+                    .artifacts
+                    .iter()
+                    .filter(|item| {
+                        self.artifact_filter
+                            .map(|kind| kind == item.artifact_type)
+                            .unwrap_or(true)
+                    })
+                    .count();
+                if (self.page + 1).saturating_mul(MAX_PAGE_LINES) < count {
+                    self.page += 1;
+                }
+                Ok(update(state, false, false, "page updated"))
+            }
+            PanelAction::PreviousPage => {
+                self.page = self.page.saturating_sub(1);
+                Ok(update(state, false, false, "page updated"))
+            }
+            PanelAction::Decide { decision } => {
+                if self.authority == PrototypeAuthority::Plan {
+                    return Err("Plan mode is read-only and cannot record a decision".into());
+                }
+                if self
+                    .receipt
+                    .validate(&self.current_source_revision, false)
+                    .status
+                    != "ready"
+                {
+                    return Err("a stale or invalid preview must be revalidated".into());
+                }
+                let confirmation_required = self.receipt.risk != RiskLevel::Low
+                    || matches!(decision, DecisionAction::Accept);
+                if confirmation_required {
+                    self.pending_decision = Some(decision);
+                    Ok(update(state, false, true, "human confirmation required"))
+                } else {
+                    self.receipt = self.receipt.with_decision(decision);
+                    let next = self
+                        .receipt
+                        .validate(&self.current_source_revision, false)
+                        .state;
+                    Ok(update(next, true, false, "decision recorded"))
+                }
+            }
+            PanelAction::ConfirmDecision => {
+                if self.authority == PrototypeAuthority::Plan {
+                    return Err("Plan mode is read-only and cannot record a decision".into());
+                }
+                let decision = self
+                    .pending_decision
+                    .take()
+                    .ok_or("there is no pending decision to confirm")?;
+                self.receipt = self.receipt.with_decision(decision);
+                let next = self
+                    .receipt
+                    .validate(&self.current_source_revision, false)
+                    .state;
+                Ok(update(next, true, false, "decision confirmed"))
+            }
+            PanelAction::CancelDecision => {
+                self.pending_decision = None;
+                Ok(update(state, false, false, "decision cancelled"))
+            }
+        }
+    }
+
+    /// Stable semantic model used by all four adapters. Renderers may differ
+    /// visually, but their state, candidates, evidence and available actions
+    /// are generated once here.
+    pub fn semantic_view(&self, surface: Surface) -> serde_json::Value {
+        let report = self.receipt.validate(&self.current_source_revision, false);
+        let comparison = match (
+            self.selected_artifact_id.as_deref(),
+            self.compare_artifact_id.as_deref(),
+        ) {
+            (Some(left), Some(right)) => self.receipt.compare(left, right).ok(),
+            _ => None,
+        };
+        let evidence = self.evidence_id.as_deref().and_then(|id| {
+            self.selected_artifact()
+                .ok()?
+                .evidence
+                .iter()
+                .find(|item| item.id == id)
+        });
+        serde_json::json!({
+            "schema": PROTOTYPE_PREVIEW_SCHEMA_V1,
+            "surface": surface.as_str(),
+            "state": report.state,
+            "status": report.status,
+            "authority": self.authority,
+            "plan_id": self.receipt.plan_id,
+            "decision": self.receipt.decision,
+            "artifacts": self.visible_artifacts(),
+            "selected_artifact_id": self.selected_artifact_id,
+            "comparison": comparison,
+            "evidence": evidence,
+            "assumptions": self.receipt.assumptions,
+            "limitations": self.receipt.limitations,
+            "provenance": self.receipt.provenance,
+            "risk": self.receipt.risk,
+            "cost": self.receipt.cost,
+            "ac_coverage": self.receipt.ac_coverage,
+            "actions": ["select", "compare", "filter", "open_evidence", "accept", "revise", "reject", "page"],
+            "confirmation_required": self.pending_decision.is_some(),
+            "build_authorized": report.build_authorized,
+            "errors": report.errors,
+        })
+    }
+
+    pub fn render(&self, surface: Surface) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(&self.semantic_view(surface))
+    }
+
+    fn require_artifact(&self, id: &str) -> Result<(), String> {
+        if !safe_id(id) || !self.receipt.artifacts.iter().any(|item| item.id == id) {
+            return Err("candidate does not exist or has an unsafe id".into());
+        }
+        Ok(())
+    }
+
+    fn selected_artifact(&self) -> Result<&PreviewArtifact, String> {
+        let id = self
+            .selected_artifact_id
+            .as_deref()
+            .ok_or("select a candidate before opening evidence")?;
+        self.receipt
+            .artifacts
+            .iter()
+            .find(|item| item.id == id)
+            .ok_or_else(|| "selected candidate no longer exists".into())
+    }
+}
+
+fn update(
+    state: LoopState,
+    decision_recorded: bool,
+    confirmation_required: bool,
+    message: &str,
+) -> PanelUpdate {
+    PanelUpdate {
+        state,
+        decision_recorded,
+        confirmation_required,
+        message: message.into(),
     }
 }
 
@@ -866,5 +1144,141 @@ mod tests {
         loop_state.source_changed("source-2");
         assert_eq!(loop_state.state, LoopState::Stale);
         assert!(loop_state.authorize_build(&accepted).is_err());
+    }
+
+    #[test]
+    fn panel_supports_gallery_compare_evidence_and_human_gate() {
+        let mut panel = PrototypePanel::new(
+            receipt(Decision::Reject {
+                reason: "initial candidate rejected".into(),
+            }),
+            "source-1",
+            PrototypeAuthority::Decision,
+        );
+        panel
+            .apply(PanelAction::Select {
+                artifact_id: "a1".into(),
+            })
+            .unwrap();
+        panel
+            .apply(PanelAction::Compare {
+                artifact_id: "a2".into(),
+            })
+            .unwrap();
+        panel
+            .apply(PanelAction::OpenEvidence {
+                evidence_id: "e1".into(),
+            })
+            .unwrap();
+
+        let update = panel
+            .apply(PanelAction::Decide {
+                decision: DecisionAction::Accept,
+            })
+            .unwrap();
+        assert!(update.confirmation_required);
+        assert!(!update.decision_recorded);
+        assert!(panel.receipt.authorize_build("source-1").is_err());
+
+        let confirmed = panel.apply(PanelAction::ConfirmDecision).unwrap();
+        assert!(confirmed.decision_recorded);
+        assert!(panel.receipt.authorize_build("source-1").is_ok());
+    }
+
+    #[test]
+    fn plan_and_stale_panels_fail_closed() {
+        let mut plan = PrototypePanel::new(
+            receipt(Decision::Reject {
+                reason: "wrong flow".into(),
+            }),
+            "source-1",
+            PrototypeAuthority::Plan,
+        );
+        assert!(
+            plan.apply(PanelAction::Decide {
+                decision: DecisionAction::Revise {
+                    feedback: "try a smaller flow".into(),
+                },
+            })
+            .unwrap_err()
+            .contains("read-only")
+        );
+
+        let mut stale = PrototypePanel::new(
+            receipt(Decision::Reject {
+                reason: "wrong flow".into(),
+            }),
+            "source-2",
+            PrototypeAuthority::Decision,
+        );
+        assert!(
+            stale
+                .apply(PanelAction::Decide {
+                    decision: DecisionAction::Reject {
+                        reason: "still wrong".into(),
+                    },
+                })
+                .unwrap_err()
+                .contains("revalidated")
+        );
+    }
+
+    #[test]
+    fn all_surfaces_share_one_semantic_panel_model() {
+        let mut panel = PrototypePanel::new(
+            receipt(Decision::Revise {
+                feedback: "change layout".into(),
+            }),
+            "source-1",
+            PrototypeAuthority::Decision,
+        );
+        panel
+            .apply(PanelAction::Select {
+                artifact_id: "a1".into(),
+            })
+            .unwrap();
+        let mut canonical = None;
+        for surface in [Surface::Tui, Surface::Ui, Surface::Headless, Surface::Acp] {
+            let mut value = panel.semantic_view(surface);
+            value.as_object_mut().unwrap().remove("surface");
+            match &canonical {
+                None => canonical = Some(value),
+                Some(expected) => assert_eq!(expected, &value),
+            }
+        }
+    }
+
+    #[test]
+    fn panel_filter_and_paging_are_bounded() {
+        let mut value = receipt(Decision::Reject {
+            reason: "not selected".into(),
+        });
+        value.artifacts = (0..(MAX_PAGE_LINES + 5))
+            .map(|index| {
+                let mut item = artifact(&format!("candidate-{index}"));
+                item.artifact_type = if index % 2 == 0 {
+                    ArtifactType::Benchmark
+                } else {
+                    ArtifactType::Storyboard
+                };
+                item
+            })
+            .collect();
+        let mut panel = PrototypePanel::new(value, "source-1", PrototypeAuthority::Decision);
+        assert_eq!(panel.visible_artifacts().len(), MAX_PAGE_LINES);
+        panel.apply(PanelAction::NextPage).unwrap();
+        assert_eq!(panel.visible_artifacts().len(), 5);
+        panel
+            .apply(PanelAction::Filter {
+                artifact_type: Some(ArtifactType::Benchmark),
+            })
+            .unwrap();
+        assert_eq!(panel.page, 0);
+        assert!(
+            panel
+                .visible_artifacts()
+                .iter()
+                .all(|item| item.artifact_type == ArtifactType::Benchmark)
+        );
     }
 }

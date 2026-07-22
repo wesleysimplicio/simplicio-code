@@ -49,13 +49,22 @@ def load_inventory(path: pathlib.Path) -> dict[str, dict]:
             "expires": group.get("expires") or ("2099-12-31" if status == "exception" else "2026-12-31"),
         }
         for name in names:
-            if not name or any(ch in name for ch in "*?[]"):
+            candidate = pathlib.PurePosixPath(name)
+            if (
+                not name
+                or candidate.is_absolute()
+                or any(part in {"", ".", ".."} for part in candidate.parts)
+                or candidate.as_posix() != name
+                or any(ch in name for ch in "*?[]")
+            ):
                 raise ValueError(f"inventory path must be exact: {name!r}")
             if name in result:
                 raise ValueError(f"duplicate inventory path: {name}")
             for field in ("owner", "reason", "expires", "category", "target_format", "status", "producer", "consumer", "lifecycle"):
                 if not entry.get(field):
                     raise ValueError(f"{name}: missing {field}")
+            if entry["status"] not in {"exception", "migration_pending", "migrated"}:
+                raise ValueError(f"{name}: invalid status: {entry['status']!r}")
             try:
                 dt.date.fromisoformat(entry["expires"])
             except ValueError as exc:
@@ -127,6 +136,13 @@ def load_scope(path: pathlib.Path) -> set[str]:
     return paths
 
 
+def validate_scope(root: pathlib.Path, scope: set[str]) -> None:
+    """Fail closed when a pinned lane silently stops referring to a file."""
+    missing = sorted(name for name in scope if not (root / name).is_file())
+    if missing:
+        raise ValueError(f"scope paths do not exist or are not files: {', '.join(missing)}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=pathlib.Path, default=pathlib.Path(__file__).parents[1])
@@ -150,6 +166,8 @@ def main() -> int:
     today = dt.date.today()
     try:
         scope = load_scope(args.scope_file) if args.scope_file else None
+        if scope is not None:
+            validate_scope(args.root, scope)
     except (OSError, ValueError) as exc:
         print(f"scope error: {exc}", file=sys.stderr)
         return 2

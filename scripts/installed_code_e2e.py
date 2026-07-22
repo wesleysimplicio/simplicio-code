@@ -15,6 +15,72 @@ import tempfile
 import time
 
 SURFACES = ("tui", "headless", "acp", "workspace")
+REQUIRED_RUNTIME_TOOLS = frozenset(("simplicio_edit", "simplicio_exec"))
+
+
+def validate_agent_status(status: dict[str, object] | None) -> None:
+    """Fail closed before a productive surface can submit a turn."""
+    if status is None:
+        raise RuntimeError("agent_host_missing")
+    if (
+        status.get("protocol_schema") != "simplicio.agent-host/v1"
+        or status.get("agent_protocol") != "agent/v1"
+        or not isinstance(status.get("host_instance_id"), str)
+    ):
+        raise RuntimeError("agent_host_incompatible")
+
+
+def validate_runtime_contract(
+    initialized: dict[str, object] | None, tools: dict[str, object] | None
+) -> None:
+    """Require the Runtime handshake and effect tools before Agent turns."""
+    if initialized is None or tools is None:
+        raise RuntimeError("runtime_missing")
+    if initialized.get("protocolVersion") != "2024-11-05":
+        raise RuntimeError("runtime_incompatible")
+    advertised = {
+        tool.get("name")
+        for tool in tools.get("tools", [])
+        if isinstance(tool, dict)
+    }
+    if not REQUIRED_RUNTIME_TOOLS.issubset(advertised):
+        raise RuntimeError("runtime_incompatible")
+
+
+def negative_dependency_gates() -> list[dict[str, object]]:
+    """Record the same deterministic fail-closed cases for every surface."""
+    cases = (
+        ("agent_missing", lambda: validate_agent_status(None)),
+        (
+            "agent_incompatible",
+            lambda: validate_agent_status({"protocol_schema": "future/v9"}),
+        ),
+        ("runtime_missing", lambda: validate_runtime_contract(None, None)),
+        (
+            "runtime_incompatible",
+            lambda: validate_runtime_contract(
+                {"protocolVersion": "future"}, {"tools": []}
+            ),
+        ),
+    )
+    evidence = []
+    for surface in SURFACES:
+        for scenario, probe in cases:
+            try:
+                probe()
+            except RuntimeError as error:
+                evidence.append(
+                    {
+                        "surface": surface,
+                        "scenario": scenario,
+                        "blocked": True,
+                        "reason": str(error),
+                        "effect_attempted": False,
+                    }
+                )
+            else:  # pragma: no cover - makes a fail-open regression fatal
+                raise RuntimeError(f"{surface} did not block {scenario}")
+    return evidence
 
 
 def request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -57,25 +123,27 @@ def run(root: Path) -> dict[str, object]:
                     break
                 time.sleep(0.01)
             status = request(agent_socket, {"op": "host.status"})
-            if status.get("protocol_schema") != "simplicio.agent-host/v1" or status.get("agent_protocol") != "agent/v1":
-                raise RuntimeError("AgentHost discovery contract mismatch")
-            surfaces = []
-            for index, surface in enumerate(SURFACES):
-                turn_id = f"e2e-{surface}-turn"
-                identity = {"workspace_id": "fixture-workspace", "session_id": f"fixture-{surface}", "turn_id": turn_id, "attempt_id": "0", "idempotency_key": turn_id, "run_id": turn_id, "stage_id": "conversation", "fence": "0", "revision": 7}
-                result = request(agent_socket, {"op": "turn.start", "profile": surface, "message": "contract probe", **identity})
-                if not result.get("result", {}).get("completed"):
-                    raise RuntimeError(f"{surface} turn did not complete")
-                surfaces.append({"surface": surface, "turn_id": turn_id, "completed": True})
-            cancel = request(agent_socket, {"op": "turn.cancel", "turn_id": "e2e-tui-turn", "host_instance_id": status["host_instance_id"]})
-            reconcile = request(agent_socket, {"op": "turn.reconcile", "turn_id": "e2e-tui-turn", "host_instance_id": status["host_instance_id"]})
-            first = request(agent_socket, {"op": "host.advisories", "cursor": 0, "host_instance_id": status["host_instance_id"]})
-            replay = request(agent_socket, {"op": "host.advisories", "cursor": 0, "host_instance_id": status["host_instance_id"]})
+            validate_agent_status(status)
 
+            # Both independently installed dependencies must be compatible
+            # before the first productive turn on any Code surface.
             runtime = subprocess.Popen([str(installed), "serve", "--mcp", "--stdio", "--json"], cwd=temp, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
             try:
                 initialized = runtime_call(runtime, 1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "simplicio-code-e2e", "version": "1"}})
                 tools = runtime_call(runtime, 2, "tools/list", {})
+                validate_runtime_contract(initialized, tools)
+                surfaces = []
+                for surface in SURFACES:
+                    turn_id = f"e2e-{surface}-turn"
+                    identity = {"workspace_id": "fixture-workspace", "session_id": f"fixture-{surface}", "turn_id": turn_id, "attempt_id": "0", "idempotency_key": turn_id, "run_id": turn_id, "stage_id": "conversation", "fence": "0", "revision": 7}
+                    result = request(agent_socket, {"op": "turn.start", "profile": surface, "message": "contract probe", **identity})
+                    if not result.get("result", {}).get("completed"):
+                        raise RuntimeError(f"{surface} turn did not complete")
+                    surfaces.append({"surface": surface, "turn_id": turn_id, "completed": True})
+                cancel = request(agent_socket, {"op": "turn.cancel", "turn_id": "e2e-tui-turn", "host_instance_id": status["host_instance_id"]})
+                reconcile = request(agent_socket, {"op": "turn.reconcile", "turn_id": "e2e-tui-turn", "host_instance_id": status["host_instance_id"]})
+                first = request(agent_socket, {"op": "host.advisories", "cursor": 0, "host_instance_id": status["host_instance_id"]})
+                replay = request(agent_socket, {"op": "host.advisories", "cursor": 0, "host_instance_id": status["host_instance_id"]})
                 edit = runtime_call(runtime, 3, "tools/call", {"name": "simplicio_edit", "arguments": {"repo": str(temp), "plan": json.dumps({"files": [{"file": "result.txt", "operation": "update", "content": "runtime-owned\n"}]}), "atomic": True, "rollback": True}})
                 execution = runtime_call(runtime, 4, "tools/call", {"name": "simplicio_exec", "arguments": {"repo": str(temp), "cwd": ".", "argv": [sys.executable, "-c", "print('argv-safe')"], "env": {}, "timeout_ms": 5000, "idempotency_key": "e2e-exec"}})
             finally:
@@ -103,7 +171,9 @@ def run(root: Path) -> dict[str, object]:
             if restarted["host_instance_id"] != status["host_instance_id"]:
                 raise RuntimeError("fixture restart identity is not deterministic")
             elapsed = time.perf_counter_ns() - started
-            return {"schema": "simplicio.code-installed-e2e-receipt/v1", "fixture_sha256": digest, "agent_host": {"protocol": status["protocol_schema"], "host_instance_id": status["host_instance_id"], "cancel": cancel["status"], "reconcile": reconcile["status"], "advisory_replay_equal": True, "restart_reconnected": True}, "runtime": {"server": initialized["serverInfo"], "tools": sorted(tool["name"] for tool in tools["tools"]), "edit": edit_payload["schema"], "exec": exec_payload["schema"]}, "surfaces": surfaces, "benchmark": {"scenario_count": len(surfaces) + 7, "elapsed_ns": elapsed, "operations_per_second": round((len(surfaces) + 7) * 1_000_000_000 / elapsed, 2)}, "metrics_unavailable": {"production_latency_ns": {"value": None, "reason": "fixture is hermetic; production metric is not observed"}}}
+            negative_gates = negative_dependency_gates()
+            scenario_count = len(surfaces) + len(negative_gates) + 7
+            return {"schema": "simplicio.code-installed-e2e-receipt/v1", "fixture_sha256": digest, "agent_host": {"protocol": status["protocol_schema"], "host_instance_id": status["host_instance_id"], "cancel": cancel["status"], "reconcile": reconcile["status"], "advisory_replay_equal": True, "restart_reconnected": True}, "runtime": {"server": initialized["serverInfo"], "tools": sorted(tool["name"] for tool in tools["tools"]), "edit": edit_payload["schema"], "exec": exec_payload["schema"]}, "surfaces": surfaces, "negative_dependency_gates": negative_gates, "benchmark": {"scenario_count": scenario_count, "elapsed_ns": elapsed, "operations_per_second": round(scenario_count * 1_000_000_000 / elapsed, 2)}, "metrics_unavailable": {"production_latency_ns": {"value": None, "reason": "fixture is hermetic; production metric is not observed"}}}
         finally:
             agent.terminate(); agent.wait(timeout=2)
 
