@@ -1211,6 +1211,30 @@ reason = "Benchmark state, events and receipts are internal evidence and must us
 expires = "2026-12-31"
 
 [[boundary]]
+path = "scripts/multisession_e2e.py"
+category = "external-cli-export"
+owner = "code-runtime"
+producer = "external invoking coordinator"
+consumer = "E2E evidence coordinator"
+lifecycle = "ephemeral explicit CLI import/export"
+target_format = "external coordinator JSON trace and CLI JSON receipt"
+status = "exception"
+reason = "The harness validates an external coordinator trace and emits JSON only through an explicit CLI boundary; it does not persist Code-owned state."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/tests/test_multisession_e2e.py"
+category = "test-fixture"
+owner = "code-runtime"
+producer = "multi-session harness tests"
+consumer = "Python unittest runner"
+lifecycle = "ephemeral test data"
+target_format = "external coordinator JSON fixture"
+status = "exception"
+reason = "The test serializes external CLI fixtures solely to exercise the explicit import/export boundary."
+expires = "2099-12-31"
+
+[[boundary]]
 path = "scripts/check_disk_budget.py"
 category = "external-cli-export"
 owner = "code-runtime"
