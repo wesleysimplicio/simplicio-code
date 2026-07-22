@@ -18,9 +18,14 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+criterion = { workspace = true }
 # code#67: property test of the handshake fail-closed guarantee
 # (`tests/fake_server_handshake_proptest.rs`).
 proptest = { workspace = true }
+
+[[bench]]
+name = "loop_hub_idempotency"
+harness = false
 
 # Fake stdio MCP server used only by the integration tests in `tests/`, spawned
 # in place of a real Simplicio Runtime binary via `SIMPLICIO_BIN`. Not part of
