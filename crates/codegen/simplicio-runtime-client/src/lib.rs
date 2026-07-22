@@ -61,6 +61,10 @@ pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first"
 /// acceptance handshake. Generic filesystem write support is not evidence of
 /// Runtime-owned artifact semantics.
 pub const PROTOTYPE_ARTIFACT_WRITE_TOOL: &str = "simplicio_prototype_artifact_write";
+/// Canonical capability for retrieving Runtime-owned prototype artifacts.
+/// Delivery and replay must negotiate this instead of falling back to direct
+/// filesystem reads, which would bypass Runtime sanitization and audit.
+pub const PROTOTYPE_ARTIFACT_READ_TOOL: &str = "simplicio_prototype_artifact_read";
 /// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
 /// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
 /// during connection negotiation instead of hanging for tens of seconds.
@@ -590,6 +594,29 @@ impl RuntimeClient {
                 "encoding": "base64",
                 "atomic": true,
                 "rollback": true,
+            }),
+        )
+    }
+
+    /// Retrieve a preview artifact through Runtime's audited artifact boundary.
+    pub fn read_prototype_artifact(
+        &mut self,
+        repo: &Path,
+        artifact_id: &str,
+    ) -> Result<Value, Error> {
+        if !safe_artifact_id(artifact_id) {
+            return Err(Error::PathRejected(
+                "prototype artifact id contains unsafe path characters".into(),
+            ));
+        }
+        let repo = canonical_repo(repo)?;
+        self.call_tool(
+            "prototype_artifact_read",
+            PROTOTYPE_ARTIFACT_READ_TOOL,
+            json!({
+                "repo": repo,
+                "artifact_id": artifact_id,
+                "path": format!("{PROTOTYPE_ARTIFACT_ROOT}/{artifact_id}.json"),
             }),
         )
     }

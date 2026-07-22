@@ -36,9 +36,10 @@ The gate is fail-closed:
   malformed escapes, backslashes, and NUL bytes before an artifact is opened;
 - Build requires a current `accept` and yields a
   `simplicio.build-authorization/v1` receipt;
-- `RuntimeClient::write_prototype_artifact` is the only Code-side persistence
-  adapter for `.simplicio/artifacts/prototype-first`; it delegates to the
-  negotiated Runtime write capability;
+- `RuntimeClient::{write_prototype_artifact, read_prototype_artifact}` are the
+  only Code-side persistence and retrieval adapters for
+  `.simplicio/artifacts/prototype-first`; they delegate to negotiated Runtime
+  artifact capabilities;
 - telemetry contains only digests, IDs, decision, state, and risk; it never
   contains prompt, code, artifact content, or secrets.
 
@@ -50,7 +51,8 @@ The contract fixture is
 External acceptance evidence is combined with
 `scripts/validate_prototype_acceptance.py`. The deterministic receipt requires
 Loop #568 to accept every state, a versioned negotiated Runtime binary with a
-SHA-256 identity and `simplicio_prototype_artifact_write`, identical plan/source
+SHA-256 identity plus `simplicio_prototype_artifact_write` and
+`simplicio_prototype_artifact_read`, identical plan/source
 revisions, all four complete product surfaces, failure/rollback evidence, and
 matching replay hashes. Missing upstream evidence remains explicitly
 `blocked`; the validator never substitutes a mock or local filesystem result.
