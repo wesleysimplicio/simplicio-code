@@ -45,7 +45,7 @@ pub enum HbiError {
     SchemaFingerprintMismatch,
     #[error("HBI section {index} checksum mismatch")]
     SectionChecksumMismatch { index: usize },
-    #[error("HBI section {index} is not valid UTF-8")]
+    #[error("HBI schema is not valid UTF-8")]
     InvalidSchema,
     #[error("HBI total length exceeds the safety limit")]
     TooLarge,

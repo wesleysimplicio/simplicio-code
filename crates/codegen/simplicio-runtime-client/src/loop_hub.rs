@@ -134,10 +134,16 @@ impl HubHandshake {
                 ));
             }
             if service.process_id.as_deref().is_none_or(str::is_empty) {
-                errors.push(format!("{} has no process identity", service_name(service.name)));
+                errors.push(format!(
+                    "{} has no process identity",
+                    service_name(service.name)
+                ));
             }
             if owners.insert(service.name, service).is_some() {
-                errors.push(format!("duplicate {} service declaration", service_name(service.name)));
+                errors.push(format!(
+                    "duplicate {} service declaration",
+                    service_name(service.name)
+                ));
             }
         }
         for service in [
@@ -147,7 +153,10 @@ impl HubHandshake {
             SharedService::Inference,
         ] {
             if !owners.contains_key(&service) {
-                errors.push(format!("missing {} service declaration", service_name(service)));
+                errors.push(format!(
+                    "missing {} service declaration",
+                    service_name(service)
+                ));
             }
         }
         if !self.resources.runtime.is_valid()
@@ -233,7 +242,9 @@ impl HubClientConfig {
             ("session_id", &self.session_id),
         ] {
             if value.trim().is_empty() {
-                return Err(HubError::InvalidRequest(format!("{name} must not be empty")));
+                return Err(HubError::InvalidRequest(format!(
+                    "{name} must not be empty"
+                )));
             }
         }
         Ok(())
@@ -248,7 +259,9 @@ fn normalize_endpoint(endpoint: Option<String>) -> Option<String> {
 
 #[derive(Debug, thiserror::Error)]
 pub enum HubError {
-    #[error("Loop Hub endpoint was not discovered; configure an endpoint or provide a discovery adapter")]
+    #[error(
+        "Loop Hub endpoint was not discovered; configure an endpoint or provide a discovery adapter"
+    )]
     EndpointNotFound,
     #[error("Loop Hub is required but no compatible endpoint was discovered")]
     RequiredHubUnavailable,
@@ -381,14 +394,39 @@ pub struct ProgressSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ProgressEvent {
-    Queued { sequence: u64, position: u32 },
-    Started { sequence: u64, worker_id: String },
-    Output { sequence: u64, text: String },
-    Throttled { sequence: u64, retry_after_ms: u64 },
-    Cancelled { sequence: u64, receipt_id: String },
-    Resumed { sequence: u64, receipt_id: String },
-    Completed { sequence: u64, receipt_id: String },
-    Failed { sequence: u64, message: String, receipt_id: String },
+    Queued {
+        sequence: u64,
+        position: u32,
+    },
+    Started {
+        sequence: u64,
+        worker_id: String,
+    },
+    Output {
+        sequence: u64,
+        text: String,
+    },
+    Throttled {
+        sequence: u64,
+        retry_after_ms: u64,
+    },
+    Cancelled {
+        sequence: u64,
+        receipt_id: String,
+    },
+    Resumed {
+        sequence: u64,
+        receipt_id: String,
+    },
+    Completed {
+        sequence: u64,
+        receipt_id: String,
+    },
+    Failed {
+        sequence: u64,
+        message: String,
+        receipt_id: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -481,14 +519,13 @@ impl LoopHubClient {
         }
         let endpoint = match config.configured_endpoint() {
             Some(endpoint) => endpoint,
-            None => normalize_endpoint(discovery.discover(&config)?)
-                .ok_or_else(|| {
-                    if config.mode == HubMode::Required {
-                        HubError::RequiredHubUnavailable
-                    } else {
-                        HubError::EndpointNotFound
-                    }
-                })?,
+            None => normalize_endpoint(discovery.discover(&config)?).ok_or_else(|| {
+                if config.mode == HubMode::Required {
+                    HubError::RequiredHubUnavailable
+                } else {
+                    HubError::EndpointNotFound
+                }
+            })?,
         };
         // One physical transport/session per Hub endpoint and workspace. The
         // logical Code session id remains on each clone so multiple surfaces
@@ -533,10 +570,12 @@ impl LoopHubClient {
 
     pub fn submit_interactive(&self, goal: InteractiveGoal) -> Result<HubJob, HubError> {
         goal.validate()?;
-        let idempotency_key = format!(
-            "{}:{}:{}",
-            self.config.session_id, goal.turn_id, goal.goal_id
-        );
+        // Length-prefix every component. Delimiter joining is ambiguous (for
+        // example `a:b,c` and `a,b:c`) and can alias two user turns to the
+        // same effect receipt. The Hub treats this opaque value as the stable
+        // replay key, so it must be injective without restricting valid IDs.
+        let idempotency_key =
+            idempotency_key(&[&self.config.session_id, &goal.turn_id, &goal.goal_id]);
         let receipt = self.session.transport.submit(&SubmitRequest {
             schema: LOOP_HUB_CLIENT_SCHEMA.into(),
             session_id: self.config.session_id.clone(),
@@ -548,7 +587,13 @@ impl LoopHubClient {
             budget_tokens: goal.budget_tokens,
             payload: goal.payload,
         })?;
-        if receipt.schema != LOOP_HUB_CLIENT_SCHEMA || receipt.workflow_id.trim().is_empty() {
+        if receipt.schema != LOOP_HUB_CLIENT_SCHEMA
+            || receipt.workflow_id.trim().is_empty()
+            || receipt.receipt_id.trim().is_empty()
+            || matches!(receipt.state, AdmissionState::Queued) && receipt.queue_position.is_none()
+            || matches!(receipt.state, AdmissionState::Throttled)
+                && receipt.retry_after_ms.is_none()
+        {
             return Err(HubError::Protocol(
                 "Hub returned an invalid admission receipt".into(),
             ));
@@ -579,13 +624,20 @@ impl HubJob {
     }
 
     pub fn poll(&mut self) -> Result<ProgressSnapshot, HubError> {
+        let requested_sequence = self.next_sequence;
         let snapshot = self.session.transport.progress(&ProgressRequest {
             workflow_id: self.workflow_id.clone(),
-            after_sequence: self.next_sequence,
+            after_sequence: requested_sequence,
         })?;
-        if snapshot.workflow_id != self.workflow_id {
+        if snapshot.workflow_id != self.workflow_id
+            || snapshot.next_sequence < requested_sequence
+            || snapshot.events.iter().any(|event| {
+                event_sequence(event) < requested_sequence
+                    || event_sequence(event) >= snapshot.next_sequence
+            })
+        {
             return Err(HubError::Protocol(
-                "Hub returned progress for another workflow".into(),
+                "Hub returned invalid, stale, or cross-workflow progress".into(),
             ));
         }
         self.next_sequence = snapshot.next_sequence;
@@ -595,24 +647,72 @@ impl HubJob {
     pub fn cancel(&self, reason: impl Into<String>) -> Result<LifecycleReceipt, HubError> {
         let reason = reason.into();
         if reason.trim().is_empty() {
-            return Err(HubError::InvalidRequest("cancel reason must not be empty".into()));
+            return Err(HubError::InvalidRequest(
+                "cancel reason must not be empty".into(),
+            ));
         }
-        self.session.transport.cancel(&CancelRequest {
+        let receipt = self.session.transport.cancel(&CancelRequest {
             workflow_id: self.workflow_id.clone(),
-            idempotency_key: format!("{}:cancel", self.workflow_id),
+            idempotency_key: idempotency_key(&[&self.workflow_id, "cancel"]),
             reason,
-        })
+        })?;
+        validate_lifecycle_receipt(&receipt, &self.workflow_id)?;
+        Ok(receipt)
     }
 
     pub fn resume(&mut self, checkpoint: Option<String>) -> Result<LifecycleReceipt, HubError> {
         let receipt = self.session.transport.resume(&ResumeRequest {
             workflow_id: self.workflow_id.clone(),
-            idempotency_key: format!("{}:resume", self.workflow_id),
+            idempotency_key: idempotency_key(&[&self.workflow_id, "resume"]),
             checkpoint,
         })?;
+        validate_lifecycle_receipt(&receipt, &self.workflow_id)?;
         self.next_sequence = 0;
         Ok(receipt)
     }
+}
+
+fn idempotency_key(parts: &[&str]) -> String {
+    use std::fmt::Write;
+
+    let capacity = parts.iter().map(|part| part.len() + 22).sum();
+    let mut key = String::with_capacity(capacity);
+    for (index, part) in parts.iter().enumerate() {
+        if index != 0 {
+            key.push('|');
+        }
+        write!(key, "{}:{part}", part.len()).expect("writing to String cannot fail");
+    }
+    key
+}
+
+fn event_sequence(event: &ProgressEvent) -> u64 {
+    match event {
+        ProgressEvent::Queued { sequence, .. }
+        | ProgressEvent::Started { sequence, .. }
+        | ProgressEvent::Output { sequence, .. }
+        | ProgressEvent::Throttled { sequence, .. }
+        | ProgressEvent::Cancelled { sequence, .. }
+        | ProgressEvent::Resumed { sequence, .. }
+        | ProgressEvent::Completed { sequence, .. }
+        | ProgressEvent::Failed { sequence, .. } => *sequence,
+    }
+}
+
+fn validate_lifecycle_receipt(
+    receipt: &LifecycleReceipt,
+    workflow_id: &str,
+) -> Result<(), HubError> {
+    if receipt.schema != LOOP_HUB_CLIENT_SCHEMA
+        || receipt.workflow_id != workflow_id
+        || receipt.receipt_id.trim().is_empty()
+        || receipt.state.trim().is_empty()
+    {
+        return Err(HubError::Protocol(
+            "Hub returned an invalid lifecycle receipt".into(),
+        ));
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -648,9 +748,21 @@ mod tests {
             })
             .collect(),
             resources: SharedResources {
-                runtime: ResourceHandle { id: "r".into(), capacity: 1, used: 0 },
-                mapper: ResourceHandle { id: "m".into(), capacity: 1, used: 0 },
-                inference: ResourceHandle { id: "i".into(), capacity: 2, used: 0 },
+                runtime: ResourceHandle {
+                    id: "r".into(),
+                    capacity: 1,
+                    used: 0,
+                },
+                mapper: ResourceHandle {
+                    id: "m".into(),
+                    capacity: 1,
+                    used: 0,
+                },
+                inference: ResourceHandle {
+                    id: "i".into(),
+                    capacity: 2,
+                    used: 0,
+                },
                 max_active_inference: 1,
                 interactive_reserved: 1,
             },
@@ -666,7 +778,10 @@ mod tests {
     impl HubTransport for FakeHub {
         fn handshake(&self, request: &HubHandshakeRequest) -> Result<HubHandshake, HubError> {
             self.handshakes.fetch_add(1, Ordering::SeqCst);
-            self.handshake_requests.lock().unwrap().push(request.clone());
+            self.handshake_requests
+                .lock()
+                .unwrap()
+                .push(request.clone());
             Ok(handshake())
         }
 
@@ -687,7 +802,10 @@ mod tests {
             Ok(ProgressSnapshot {
                 workflow_id: request.workflow_id.clone(),
                 next_sequence: request.after_sequence + 1,
-                events: vec![ProgressEvent::Queued { sequence: request.after_sequence, position: 2 }],
+                events: vec![ProgressEvent::Queued {
+                    sequence: request.after_sequence,
+                    position: 2,
+                }],
                 terminal: false,
             })
         }
@@ -724,8 +842,8 @@ mod tests {
         let calls = AtomicUsize::new(0);
         let result = LoopHubClient::connect_with_discovery(
             config,
-            &|_| unreachable!("standalone must not discover"),
-            &|_| {
+            &|_: &HubClientConfig| unreachable!("standalone must not discover"),
+            &|_: &str| {
                 calls.fetch_add(1, Ordering::SeqCst);
                 unreachable!("standalone must not connect")
             },
@@ -740,14 +858,23 @@ mod tests {
         HUB_SESSIONS.lock().unwrap().clear();
         let hub = Arc::new(FakeHub::default());
         let factory_hub = Arc::clone(&hub);
-        let factory = move |_| Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone());
-        let client = LoopHubClient::connect(config("session-1"), &factory).unwrap().unwrap();
-        let clone = LoopHubClient::connect(config("session-1"), &factory).unwrap().unwrap();
-        let other_session =
-            LoopHubClient::connect(config("session-2"), &factory).unwrap().unwrap();
+        let factory = move |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone());
+        let client = LoopHubClient::connect(config("session-1"), &factory)
+            .unwrap()
+            .unwrap();
+        let clone = LoopHubClient::connect(config("session-1"), &factory)
+            .unwrap()
+            .unwrap();
+        let other_session = LoopHubClient::connect(config("session-2"), &factory)
+            .unwrap()
+            .unwrap();
         assert_eq!(hub.handshakes.load(Ordering::SeqCst), 1);
         let mut job = clone
-            .submit_interactive(InteractiveGoal::new("goal", "turn", serde_json::json!({"x": 1})))
+            .submit_interactive(InteractiveGoal::new(
+                "goal",
+                "turn",
+                serde_json::json!({"x": 1}),
+            ))
             .unwrap();
         assert_eq!(job.admission().queue_position, Some(2));
         let _ = job.poll().unwrap();
@@ -779,7 +906,7 @@ mod tests {
         let result = LoopHubClient::connect_with_discovery(
             config,
             &|_: &HubClientConfig| Ok(None),
-            &|_| unreachable!("missing endpoint must fail before transport connection"),
+            &|_: &str| unreachable!("missing endpoint must fail before transport connection"),
         );
         assert!(matches!(result, Err(HubError::RequiredHubUnavailable)));
     }
@@ -840,6 +967,79 @@ mod tests {
         .unwrap();
 
         assert_eq!(client.endpoint(), "explicit://hub");
+    }
+
+    #[test]
+    fn idempotency_keys_are_unambiguous_and_stable() {
+        assert_eq!(
+            idempotency_key(&["session", "turn", "goal"]),
+            "7:session|4:turn|4:goal"
+        );
+        assert_ne!(
+            idempotency_key(&["a:b", "c"]),
+            idempotency_key(&["a", "b:c"])
+        );
+    }
+
+    #[test]
+    fn lifecycle_receipts_fail_closed_on_wrong_workflow_or_missing_evidence() {
+        let receipt = LifecycleReceipt {
+            schema: LOOP_HUB_CLIENT_SCHEMA.into(),
+            workflow_id: "other-workflow".into(),
+            receipt_id: String::new(),
+            state: "cancelled".into(),
+        };
+        assert!(validate_lifecycle_receipt(&receipt, "wf-1").is_err());
+
+        let valid = LifecycleReceipt {
+            workflow_id: "wf-1".into(),
+            receipt_id: "receipt-1".into(),
+            ..receipt
+        };
+        assert!(validate_lifecycle_receipt(&valid, "wf-1").is_ok());
+    }
+
+    #[test]
+    fn every_progress_variant_exposes_its_causal_sequence() {
+        let events = [
+            ProgressEvent::Queued {
+                sequence: 1,
+                position: 1,
+            },
+            ProgressEvent::Started {
+                sequence: 2,
+                worker_id: "worker".into(),
+            },
+            ProgressEvent::Output {
+                sequence: 3,
+                text: "output".into(),
+            },
+            ProgressEvent::Throttled {
+                sequence: 4,
+                retry_after_ms: 1,
+            },
+            ProgressEvent::Cancelled {
+                sequence: 5,
+                receipt_id: "r".into(),
+            },
+            ProgressEvent::Resumed {
+                sequence: 6,
+                receipt_id: "r".into(),
+            },
+            ProgressEvent::Completed {
+                sequence: 7,
+                receipt_id: "r".into(),
+            },
+            ProgressEvent::Failed {
+                sequence: 8,
+                message: "failed".into(),
+                receipt_id: "r".into(),
+            },
+        ];
+        assert_eq!(
+            events.iter().map(event_sequence).collect::<Vec<_>>(),
+            (1..=8).collect::<Vec<_>>()
+        );
     }
 
     fn config_without_endpoint(session_id: &str) -> HubClientConfig {
