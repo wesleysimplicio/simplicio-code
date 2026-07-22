@@ -11,6 +11,19 @@ adapters. JSON surfaces use `simplicio.prototype-preview/v1`; TUI uses a
 bounded text fallback with explicit keyboard actions and pagination. Rendering
 does not grant mutation authority.
 
+`PrototypePanel` is the product-facing gallery controller shared by all four
+surfaces. It supports candidate selection, type filters, side-by-side semantic
+comparison, bounded paging, and evidence drill-down without loading artifact
+bytes outside Runtime. `semantic_view` is the single presentation model: each
+adapter adds only its `surface` tag, so state, decision, candidates, evidence,
+limitations, risk, cost, AC coverage, and available actions cannot drift.
+
+Decision actions are explicit human gates. Plan-authority panels are read-only;
+they can browse and compare but cannot record a mutation. Accept always needs
+confirmation, and medium/high/critical-risk revise or reject actions do too.
+Cancelling confirmation leaves the receipt unchanged. A source-stale or
+otherwise invalid receipt rejects every decision action until revalidation.
+
 The gate is fail-closed:
 
 - only `accept`, `revise`, and `reject` are valid decisions;
