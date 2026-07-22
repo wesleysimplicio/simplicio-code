@@ -9,23 +9,11 @@ use simplicio_runtime_client::{
     DEFAULT_MAX_FILE_BYTES, RuntimeClient, SharedRuntimeClient, start_workspace_map,
 };
 
-use crate::computer::types {
+use super::preflight::{ProductivePreflightReport, run_installed_preflight};
+use crate::computer::types::{
     AsyncFileSystem, AsyncSearch, BackgroundHandle, ComputerError, KillOutcome, SearchMatch,
     SearchOutcome, TaskSnapshot, TerminalBackend, TerminalRunRequest, TerminalRunResult,
 };
-use super::preflight::{ProductivePreflightReport, run_installed_preflight};
-
-/// Project filesystem whose effects are owned by the Simplicio Runtime and
-/// gated on a compatible, independently running Simplicio Agent host.
-///
-/// Every operation requires both products and fails closed: there is
-/// intentionally no direct-local or built-in-agent fallback for any of them.
-pub struct SimplicioRuntimeFs {
-    root: PathBuf,
-    agent_socket: PathBuf,
-    agent_client: Arc<Mutex<Option<AgentHostCoordinator>>>,
-    client: Arc<Mutex<Option<SharedRuntimeClient>>>,
-}
 
 /// Runtime-owned execution boundary used by [`SimplicioRuntimeTerminalBackend`].
 /// The trait makes the production adapter independently testable with a fake
@@ -78,13 +66,18 @@ fn parse_terminal_argv(command: &str) -> Result<Vec<String>, ComputerError> {
         ComputerError::io("Simplicio Runtime rejected bash: unmatched quote or escape")
     })?;
     if argv.is_empty() {
-        return Err(ComputerError::io("Simplicio Runtime rejected empty command"));
+        return Err(ComputerError::io(
+            "Simplicio Runtime rejected empty command",
+        ));
     }
     Ok(argv)
 }
 
 fn runtime_error(message: impl Into<String>) -> ComputerError {
-    ComputerError::io(format!("Simplicio Runtime exec failed closed: {}", message.into()))
+    ComputerError::io(format!(
+        "Simplicio Runtime exec failed closed: {}",
+        message.into()
+    ))
 }
 
 fn terminal_result(
