@@ -9,6 +9,8 @@ from typing import Any
 
 SCHEMA = "simplicio.coordinator-protocol/v1"
 COORDINATORS = {"builtin", "simplicio-agent", "external"}
+COGNITIVE_AUTHORITY = "external-invoker"
+EFFECT_AUTHORITY = "simplicio-runtime"
 TRANSITIONS = {
     "session.open": {"idle"},
     "turn.start": {"ready", "cancelled", "completed"},
@@ -29,8 +31,14 @@ def validate(envelope: dict[str, Any]) -> dict[str, Any]:
     mode = envelope.get("mode", "productive")
     if mode not in {"productive", "diagnostic"}:
         errors.append("mode must be productive or diagnostic")
-    elif mode == "productive" and coordinator != "simplicio-agent":
-        errors.append("productive turns require simplicio-agent as coordinator")
+    elif mode == "productive" and coordinator != "external":
+        errors.append("productive turns require the external invoking LLM as coordinator")
+    if envelope.get("cognitive_authority") != COGNITIVE_AUTHORITY:
+        errors.append("cognitive_authority must be external-invoker")
+    if envelope.get("effect_authority") != EFFECT_AUTHORITY:
+        errors.append("effect_authority must be simplicio-runtime")
+    if envelope.get("provider_activation", "none") != "none":
+        errors.append("provider_activation must be none")
     for field in ("workspace_id", "session_id", "turn_id", "policy_revision"):
         if not isinstance(envelope.get(field), str) or not envelope[field].strip():
             errors.append(f"{field} is required")

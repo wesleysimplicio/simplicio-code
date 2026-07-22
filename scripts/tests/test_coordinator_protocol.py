@@ -1,10 +1,18 @@
-from scripts.validate_coordinator_protocol import SCHEMA, validate
+from scripts.validate_coordinator_protocol import (
+    COGNITIVE_AUTHORITY,
+    EFFECT_AUTHORITY,
+    SCHEMA,
+    validate,
+)
 
 
 def _envelope(**overrides):
     value = {
         "schema": SCHEMA,
-        "coordinator": "simplicio-agent",
+        "coordinator": "external",
+        "cognitive_authority": COGNITIVE_AUTHORITY,
+        "effect_authority": EFFECT_AUTHORITY,
+        "provider_activation": "none",
         "workspace_id": "ws-1",
         "session_id": "session-1",
         "turn_id": "turn-1",
@@ -20,7 +28,7 @@ def _envelope(**overrides):
     return value
 
 
-def test_valid_agent_host_sequence_is_ready():
+def test_valid_external_invoker_sequence_is_ready():
     result = validate(_envelope())
     assert result["status"] == "ready"
     assert result["state"] == "running"
@@ -52,8 +60,29 @@ def test_builtin_is_diagnostic_only():
     assert validate(value)["status"] == "ready"
 
 
-def test_builtin_productive_turn_blocks():
+def test_internal_coordinators_block_productive_turns():
     value = _envelope(coordinator="builtin")
     result = validate(value)
     assert result["status"] == "blocked"
-    assert any("productive turns require" in error for error in result["errors"])
+    assert any("external invoking LLM" in error for error in result["errors"])
+
+    value = _envelope(coordinator="simplicio-agent")
+    result = validate(value)
+    assert result["status"] == "blocked"
+    assert any("external invoking LLM" in error for error in result["errors"])
+
+
+def test_productive_turn_rejects_internal_provider_or_local_llm_activation():
+    for activation in ("internal-provider", "local-llm", "fallback"):
+        result = validate(_envelope(provider_activation=activation))
+        assert result["status"] == "blocked"
+        assert "provider_activation must be none" in result["errors"]
+
+
+def test_authority_boundaries_are_required_and_fail_closed():
+    result = validate(
+        _envelope(cognitive_authority="simplicio-agent", effect_authority="code")
+    )
+    assert result["status"] == "blocked"
+    assert "cognitive_authority must be external-invoker" in result["errors"]
+    assert "effect_authority must be simplicio-runtime" in result["errors"]
