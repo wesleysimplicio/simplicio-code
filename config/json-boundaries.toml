@@ -60,6 +60,7 @@ paths = [
   'scripts/tests/test_issue_meta_audit.py',
   'docs/audits/issue-139-source.json',
   'docs/audits/issue-139-inventory.json',
+  'docs/audits/issue-139-rewrites.json',
 ]
 category = "immutable_historical_audit"
 owner = "code-quality"
