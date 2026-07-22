@@ -1,0 +1,2662 @@
+{
+  "schema": "simplicio.issue-meta-audit/v1",
+  "repository": "wesleysimplicio/simplicio-code",
+  "source": "docs/audits/issue-139-source.json",
+  "generated_at": "2026-07-21T20:46:00Z",
+  "summary": {
+    "accessible_issues": 59,
+    "states": {
+      "closed": 45,
+      "open": 14
+    },
+    "reviewed_compliant": 0,
+    "needs_spec_rewrite": 59,
+    "inventory_complete": true
+  },
+  "issues": [
+    {
+      "number": 3,
+      "title": "feat: autenticação e entitlement únicos do Simplicio",
+      "state": "closed",
+      "created_at": "2026-07-16T23:58:28Z",
+      "closed_at": "2026-07-17T23:17:19Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        17,
+        24,
+        27
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "df8ce8b49e47ab785365ee53418e62c75ef2a61e6fd3664508da3928e3944fed",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 4,
+      "title": "feat: gateway privado único de inferência",
+      "state": "closed",
+      "created_at": "2026-07-16T23:58:30Z",
+      "closed_at": "2026-07-17T23:17:20Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        17,
+        24,
+        27,
+        46
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "12c31a25727324227a4401853d3574e5da6f90df846815e163252571509237ca",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 5,
+      "title": "feat: mover busca, edição e execução para o Runtime",
+      "state": "closed",
+      "created_at": "2026-07-16T23:58:31Z",
+      "closed_at": "2026-07-17T23:17:22Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        20,
+        26,
+        36,
+        41,
+        44
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "244822608ee4e8051fbae9ab596a705eed1dbe493ed83cfdf3061d3b6d1ee5f7",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 6,
+      "title": "feat: tornar o Mapper automático uma fonte de contexto incremental",
+      "state": "closed",
+      "created_at": "2026-07-17T00:33:59Z",
+      "closed_at": "2026-07-17T23:17:23Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        21
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "d2561909b7bb733ad20d1f28eade7b5299532688ee014e46ee1433a3ca6a978f",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 7,
+      "title": "feat: concluir identidade visual Simplicio Brasil e auditoria de marca",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:01Z",
+      "closed_at": "2026-07-17T23:17:25Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        21
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "c1e06f57b813085d1c7a68685a06de67694388abe1b054736b41fbc8298d610e",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 8,
+      "title": "feat: pipeline de release beta, instaladores e atualização assinada",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:02Z",
+      "closed_at": "2026-07-17T23:17:28Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        19
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "dd6155179747a0119ab74a1f4c315e9370400414f76121f15c5a504948a3f42e",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 9,
+      "title": "security: eliminar segredos do cliente e estabelecer rotação e scanning",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:04Z",
+      "closed_at": "2026-07-17T23:17:54Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        17,
+        23,
+        39
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "critical",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "800c81d1253c1dde9353692f96413b2d223edab9f7776b2fa42b72dabb8c637a",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 10,
+      "title": "feat: sincronizar login e entitlement durante updates de versões legadas",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:05Z",
+      "closed_at": "2026-07-17T23:17:29Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        27
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "a3950d7c066a55f0e582680a2c8328a3b79876b2390b7f20dfa54c18a4d87f02",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 11,
+      "title": "ci: matriz completa de qualidade, segurança e compatibilidade",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:07Z",
+      "closed_at": "2026-07-17T23:17:31Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        23
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "a8bec5588f7b57fe1b5242e77b10a8a4a54f3f9024835e17b8264bc08f0ef431",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 12,
+      "title": "perf: medir e garantir economia de tokens e latência do Runtime",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:08Z",
+      "closed_at": "2026-07-17T23:18:00Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        20,
+        36,
+        44
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "854827ed4ef4e0eca755340f1386fc87939e28f49c5ee206d77185017af521ee",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "dependencies",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 13,
+      "title": "privacy: telemetria mínima e controles de dados do Simplicio Code",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:10Z",
+      "closed_at": "2026-07-17T23:17:33Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        27,
+        47
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "1cdb474a830639680e7b4bd13253819ce80824e0d168d92827655a28868f019b",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 14,
+      "title": "docs: onboarding beta, arquitetura e runbooks operacionais",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:11Z",
+      "closed_at": "2026-07-17T23:17:35Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        27
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "2bd4a6b89566e3acf4d8f883fa19800ef3619c9a450b6dc7fc9686ed7cde13d6",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 15,
+      "title": "feat: integrar site_simpleti como backend de conta e assinatura do Simplicio Code",
+      "state": "closed",
+      "created_at": "2026-07-17T00:34:13Z",
+      "closed_at": "2026-07-17T23:17:36Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        17,
+        18
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": true,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "9ce18d67ebd2bf1f260381e44903e5b6711ba9856ed77152f12705191328ea55",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 16,
+      "title": "epic: Simplicio Code beta até 1.0",
+      "state": "closed",
+      "created_at": "2026-07-17T00:35:12Z",
+      "closed_at": "2026-07-17T23:17:38Z",
+      "labels": [
+        "enhancement"
+      ],
+      "references": [
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        28,
+        30,
+        32,
+        42,
+        43
+      ],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": true,
+        "dependencies": true,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": false,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "1f161612e5bedc684b89846eab75da92ff24774241d8b7cd12b6c0a6e6116e74",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "steps",
+        "acceptance",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 22,
+      "title": "[bug] cargo test warns that xai-grok-pager-bin main.rs is present in multiple build targets",
+      "state": "closed",
+      "created_at": "2026-07-17T04:54:42Z",
+      "closed_at": "2026-07-17T05:14:10Z",
+      "labels": [
+        "bug"
+      ],
+      "references": [
+        11,
+        13
+      ],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "078b4860484526590eafb0d94adf1d2d145924dfbb5c34fae2f1158a4b585eb7",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 25,
+      "title": "[privacy] redact absolute source paths from crash reports before storage or upload",
+      "state": "closed",
+      "created_at": "2026-07-17T04:59:01Z",
+      "closed_at": "2026-07-17T14:01:06Z",
+      "labels": [
+        "bug"
+      ],
+      "references": [
+        13
+      ],
+      "linked_pull_requests": [
+        37
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "e83f938edba8a53fd2632069b7fd0b46218ef96795c1f9d013d58a149d5301a1",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 28,
+      "title": "[bug] perf_gate cannot run because engine.simplicio_compress is absent from the repository",
+      "state": "closed",
+      "created_at": "2026-07-17T05:17:48Z",
+      "closed_at": "2026-07-17T19:13:18Z",
+      "labels": [
+        "bug"
+      ],
+      "references": [
+        12
+      ],
+      "linked_pull_requests": [
+        37
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "agent-orchestration",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "cd77a2eb6c1340d5375c2d3d0a102776da2e4ff12117846ceca3f7fb4a6b8978",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 29,
+      "title": "[bug] installed E2E selftest references missing fully-measured events fixture",
+      "state": "closed",
+      "created_at": "2026-07-17T05:22:07Z",
+      "closed_at": "2026-07-17T19:13:31Z",
+      "labels": [
+        "bug"
+      ],
+      "references": [
+        11,
+        12
+      ],
+      "linked_pull_requests": [
+        37
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "2606b3de9c087493acfff3fea3953b16e78f9f189f83273dbd01fb30f43c2ee5",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 30,
+      "title": "[P1][Continuous Evolution] Coordenador descobrir, priorizar e abrir issues de evolução e melhoria",
+      "state": "closed",
+      "created_at": "2026-07-17T05:30:57Z",
+      "closed_at": "2026-07-17T23:17:40Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        33
+      ],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "e244ac54522fd4761bf2e2263d706e75cbf3c2f8fc677b54c7621aabff413ee2",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "dependencies",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 31,
+      "title": "[P1][Adaptive Architecture] Coordenador propor novos stages, agents e ajustes amplos do fluxo",
+      "state": "closed",
+      "created_at": "2026-07-17T05:30:58Z",
+      "closed_at": "2026-07-17T23:17:42Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        33
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "bd9c383c8105595cadab2fc57258d8e5c1a47af3198f7398aa77265dd78701b5",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "evidence"
+      ]
+    },
+    {
+      "number": 32,
+      "title": "[infra] workspace verification blocked by exhausted disk space",
+      "state": "closed",
+      "created_at": "2026-07-17T05:31:34Z",
+      "closed_at": "2026-07-17T20:57:33Z",
+      "labels": [
+        "bug"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        37
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "5d8e90825514ec861dd21e0901bf3c9e813107e66a47f398bd6706b7c7ad06d0",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 35,
+      "title": "xai-proto-build hardcoded Unix paths break native Windows builds",
+      "state": "closed",
+      "created_at": "2026-07-17T13:18:02Z",
+      "closed_at": "2026-07-17T14:00:40Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        40,
+        48
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": false,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "030beef29a2aa06a267f4c2efeb7ee565f7fa8077aefb40dc09c77cc270ecbf5",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "steps",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 38,
+      "title": "[bug] RuntimeClient gives no actionable diagnostic when Runtime MCP handshake fails",
+      "state": "closed",
+      "created_at": "2026-07-17T13:39:14Z",
+      "closed_at": "2026-07-17T19:35:34Z",
+      "labels": [],
+      "references": [
+        5,
+        12
+      ],
+      "linked_pull_requests": [
+        44,
+        45
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "20e5ef39bc0f14b62e000124d852116abadee8519d0484368fd4536360105c1d",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 42,
+      "title": "[EPIC][P0][#16] Integrar simplicio-loop por contrato e materializar agentes dedicados no Simplicio Code",
+      "state": "closed",
+      "created_at": "2026-07-17T18:32:05Z",
+      "closed_at": "2026-07-17T23:17:43Z",
+      "labels": [],
+      "references": [
+        5,
+        11,
+        12,
+        16,
+        30,
+        31,
+        60
+      ],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "aa1d4922fa50b63fa3a4fcbd830ac79002289a2611d49fe04c7f01c6cff1b632",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 43,
+      "title": "[P0][#16][Product E2E] Certificar jornada completa do usuário até delivery confirmado",
+      "state": "closed",
+      "created_at": "2026-07-17T18:33:27Z",
+      "closed_at": "2026-07-17T23:17:45Z",
+      "labels": [],
+      "references": [
+        3,
+        4,
+        5,
+        8,
+        9,
+        11,
+        12,
+        15,
+        16,
+        28,
+        29,
+        42,
+        60
+      ],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "9d291361c2e8e7a91519a036fed2788dd3116021c93b1225fbc439dc9f10110a",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "dependencies",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 49,
+      "title": "[P0][Regression/Audit] Eliminar bypasses restantes do Runtime após o fechamento da #5",
+      "state": "open",
+      "created_at": "2026-07-18T00:21:23Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        5,
+        42,
+        43
+      ],
+      "linked_pull_requests": [
+        79,
+        91,
+        93,
+        107,
+        126,
+        127,
+        129,
+        136,
+        138
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "362b53b3d6a1260ecaa230418c7c1cb3fce62b1e2825ef9847fd7a8c56cbfbd3",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "contracts",
+        "dependencies"
+      ]
+    },
+    {
+      "number": 50,
+      "title": "[P0][Integration] Tornar Runtime + Agent obrigatórios no Code e entregar painel proativo do Agent",
+      "state": "open",
+      "created_at": "2026-07-18T00:21:25Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        42,
+        43
+      ],
+      "linked_pull_requests": [
+        80,
+        91,
+        93,
+        95,
+        102,
+        120,
+        128
+      ],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": true,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "fbc4566d1d35d03ddd7b7b3e56f473d453059450ccd51557b4b01c35d86b6fde",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "dependencies"
+      ]
+    },
+    {
+      "number": 51,
+      "title": "[P1][CI] Atualizar prompt.md criptografado stale detectado pelo teste do xai-grok-agent",
+      "state": "closed",
+      "created_at": "2026-07-18T01:56:54Z",
+      "closed_at": "2026-07-19T03:30:55Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        74
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "2c549864949b954d2481e17128160cb02f9727d4bcaaee1f3386fa3270314be7",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 52,
+      "title": "[P1][Infra] Liberar espaço em disco antes de novas execuções do Simplicio Loop",
+      "state": "closed",
+      "created_at": "2026-07-18T01:59:38Z",
+      "closed_at": "2026-07-19T03:32:27Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        75
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "929434b647592eb321a02c87c2c6d1ae3e3107338e13c779f71fb3b2089f004f",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 53,
+      "title": "[P1][Tooling] simplicio-loop plan não deve sair 0 com erros e identity/rules vazios",
+      "state": "closed",
+      "created_at": "2026-07-18T02:00:14Z",
+      "closed_at": "2026-07-19T03:32:15Z",
+      "labels": [],
+      "references": [
+        49,
+        50,
+        52
+      ],
+      "linked_pull_requests": [
+        76
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "bae9c4b34d4c8132faa00f19ca099c657efc64ac2e6f6d27b2763e26660dfd3f",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 54,
+      "title": "[P1][Tooling] simplicio-dev-cli task bloqueia alvos de arquivos novos",
+      "state": "closed",
+      "created_at": "2026-07-18T02:27:12Z",
+      "closed_at": "2026-07-19T03:31:42Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "9b3d3158ed0f823bff0e0146968086246c465f7f88b5e36e84e8ddaebd5a530f",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 55,
+      "title": "[P0][Integration] Tornar Simplicio Code cliente interativo prioritário do Loop Hub sem Runtime/map/scheduler duplicado",
+      "state": "open",
+      "created_at": "2026-07-18T02:48:00Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        42,
+        49,
+        50
+      ],
+      "linked_pull_requests": [
+        81,
+        113,
+        124,
+        137
+      ],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "b1d695ca41afca9a7b055af062b57225221a348d25afaa2bc54545dad355273e",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ]
+    },
+    {
+      "number": 56,
+      "title": "[P1][Test] discovery de settings depende do ambiente real do desenvolvedor",
+      "state": "closed",
+      "created_at": "2026-07-18T02:53:38Z",
+      "closed_at": "2026-07-19T03:14:41Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        71
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "8fa782392bd34b6408bd85f93b7268f74d3e39e71f0e9bc14c3395de004813d8",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 57,
+      "title": "[P0][Release Train] Regenerar clients e bundle com as últimas versões compatíveis do ecossistema",
+      "state": "open",
+      "created_at": "2026-07-18T03:05:50Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        49,
+        50,
+        55
+      ],
+      "linked_pull_requests": [
+        83,
+        111,
+        125,
+        131
+      ],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "e6afbeb0a36c641683cfee46a7c64b248c99a282ef43207617fba309b658f24c",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ]
+    },
+    {
+      "number": 58,
+      "title": "[P1][Preflight] instalações stale de dev-cli e artefatos Runtime ausentes",
+      "state": "closed",
+      "created_at": "2026-07-18T03:06:48Z",
+      "closed_at": "2026-07-19T03:30:41Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        73
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "1cc872b0f08b6af3a0d9b065efe82202a8a3d38e5b85af58c8afa757aec4dd81",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 59,
+      "title": "[P1][Tooling] Preflight deve impedir GitHub CLI de inferir o repositório errado",
+      "state": "closed",
+      "created_at": "2026-07-18T03:33:44Z",
+      "closed_at": "2026-07-19T03:30:00Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        72
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "P1"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "34523b4490731515ec5b69cbbc914194f1d7129124b956370435f7b2d8be27a1",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence"
+      ]
+    },
+    {
+      "number": 60,
+      "title": "[P0][Prototype-First][Loop #568] Adicionar preview, comparação e decisão antes do modo Build",
+      "state": "open",
+      "created_at": "2026-07-18T13:16:46Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        42,
+        43
+      ],
+      "linked_pull_requests": [
+        84,
+        117
+      ],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "4d866fa4a560ee536783c63c75eb2f3fd63fa31a5bfe2f2250e6e60510af8b9d",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ]
+    },
+    {
+      "number": 61,
+      "title": "feat(token-monitor): UI de previsão, uso real e reflexão por task sem invocar todas as ações",
+      "state": "closed",
+      "created_at": "2026-07-18T14:17:50Z",
+      "closed_at": "2026-07-18T14:42:58Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        62
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": false,
+      "body_sha256": "afa04666f69f97f5347bfc51c38e59094e4f5ac4e77f614b73bd2a6e52d09949",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision",
+        "measurement_evidence"
+      ]
+    },
+    {
+      "number": 63,
+      "title": "build: multiple crates (xai-grok-tools, xai-grok-shell) bundle ripgrep from GitHub releases at build time, fail behind restrictive egress/proxy",
+      "state": "closed",
+      "created_at": "2026-07-18T21:02:06Z",
+      "closed_at": "2026-07-18T21:52:15Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        65,
+        69
+      ],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": false,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "d1b1925dbc6fe825b326278e4d101b5e76c14807c5ed06d153f9d74d021c140b",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 64,
+      "title": "build: release build fails to compile — AgentRebuildSpec missing search_backend at spawn.rs:826 (search backend built but never wired in)",
+      "state": "closed",
+      "created_at": "2026-07-18T21:12:10Z",
+      "closed_at": "2026-07-18T21:52:16Z",
+      "labels": [],
+      "references": [
+        63
+      ],
+      "linked_pull_requests": [
+        65,
+        69
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "agent-orchestration",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": false,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "9116a87714f48e0ce558e795d2dfdd89a6896f7fb95535789244e6852f3af6f1",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 66,
+      "title": "bug: --always-approve hangs indefinitely in headless mode (no spinner, no output, no timeout handling)",
+      "state": "closed",
+      "created_at": "2026-07-18T23:03:50Z",
+      "closed_at": "2026-07-19T03:14:00Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        69,
+        70
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": false,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "08b674295b98bbd129b99f3e95f9c0610aeb55d416b77bc9da8f4ed52f22d9b1",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 67,
+      "title": "proposta: teste por propriedade/fuzzing + revisão por invariante nos pontos genuinamente Simplicio (não no fork upstream inteiro)",
+      "state": "closed",
+      "created_at": "2026-07-19T00:22:53Z",
+      "closed_at": "2026-07-19T03:32:48Z",
+      "labels": [],
+      "references": [
+        64
+      ],
+      "linked_pull_requests": [
+        77
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": false,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": false,
+      "body_sha256": "52a99e9d2324a76f060aad0995611b9d2190eca94959c7288645cc4c152e25c9",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "measurement_evidence"
+      ]
+    },
+    {
+      "number": 68,
+      "title": "plano: expandir proptest/fuzzing escopado + lint de struct-initializer + matriz de invocação headless em CI",
+      "state": "closed",
+      "created_at": "2026-07-19T00:50:25Z",
+      "closed_at": "2026-07-19T03:31:30Z",
+      "labels": [],
+      "references": [
+        67
+      ],
+      "linked_pull_requests": [
+        69,
+        78
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": false,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "3c3d656d4417191138e0c25249d38680192dfba9f0b6fb3ba0822d3c177f36e3",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 82,
+      "title": "[Audit #582] Add coverage threshold to the mandatory CI gate",
+      "state": "closed",
+      "created_at": "2026-07-19T03:35:15Z",
+      "closed_at": "2026-07-21T13:21:20Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "agent-orchestration",
+        "risk": "critical",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": false,
+      "body_sha256": "e96df5381dd078283420e95b4fc37331c63c61b38400c86506a74f96e411b44f",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps",
+        "measurement_evidence"
+      ]
+    },
+    {
+      "number": 85,
+      "title": "Adicionar benchmark end-to-end do desafio Snake executado pelo Simplicio Runtime",
+      "state": "closed",
+      "created_at": "2026-07-19T08:46:09Z",
+      "closed_at": "2026-07-19T12:18:04Z",
+      "labels": [
+        "benchmark",
+        "enhancement"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        86
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "b92eb65c08a20d247070cbe9b5bce50a849d748eaa0b8d2969411a7d8c548ec5",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 87,
+      "title": "Investigar falha prematura do CI no PR #86 sem logs/steps recuperáveis",
+      "state": "closed",
+      "created_at": "2026-07-19T08:52:01Z",
+      "closed_at": "2026-07-21T19:47:36Z",
+      "labels": [
+        "bug",
+        "ci"
+      ],
+      "references": [],
+      "linked_pull_requests": [
+        114,
+        122
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "release-ci",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "751d519e0a76d82be076bee5a7fa8be7de2924a5a57aa63837c03ae0b1ae710f",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ]
+    },
+    {
+      "number": 88,
+      "title": "fix(test): completar fixture SessionContext e restaurar compilação de xai-grok-tools",
+      "state": "closed",
+      "created_at": "2026-07-19T23:59:17Z",
+      "closed_at": "2026-07-20T00:09:15Z",
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        89
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "874782fe8e01146da86d01ce8d857696195452ff782ae13a2e4021fb1c2b6f5d",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 90,
+      "title": "[P0][Integration] Exigir AgentHost antes do Runtime e tipar estado de atenção",
+      "state": "closed",
+      "created_at": "2026-07-20T00:11:08Z",
+      "closed_at": "2026-07-20T00:39:40Z",
+      "labels": [],
+      "references": [
+        49,
+        50
+      ],
+      "linked_pull_requests": [
+        91
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": false,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": false,
+      "body_sha256": "32042a5926d84aae4609ab3b69527bffee6a6cdf4fbc61c73a21b0cf7ae2703c",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps",
+        "measurement_evidence"
+      ]
+    },
+    {
+      "number": 92,
+      "title": "feat(tui): exibir atenção do Agent em painel lateral passivo",
+      "state": "closed",
+      "created_at": "2026-07-20T00:43:21Z",
+      "closed_at": "2026-07-20T01:39:43Z",
+      "labels": [],
+      "references": [
+        49,
+        50
+      ],
+      "linked_pull_requests": [
+        93
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": false,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": false,
+      "body_sha256": "1c6985cda4fb43957ef7c02d64f989433f221194939ce038708234dfe8690228",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps",
+        "measurement_evidence"
+      ]
+    },
+    {
+      "number": 94,
+      "title": "[P0][Agent Panel] Ressincronizar cursor por host_instance_id após restart",
+      "state": "closed",
+      "created_at": "2026-07-20T01:49:10Z",
+      "closed_at": "2026-07-20T02:33:13Z",
+      "labels": [],
+      "references": [
+        50,
+        92
+      ],
+      "linked_pull_requests": [
+        95
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": true,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": false,
+        "acceptance": true,
+        "evidence": false,
+        "risk_rollback_decision": false
+      },
+      "numbered_steps": false,
+      "measurement_evidence": true,
+      "body_sha256": "2ed665bdf82ccc9ad8e083ff59953cc7a5f9d69a3093c6e9785e168c5ca6c4df",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ]
+    },
+    {
+      "number": 99,
+      "title": "[Binary formats] Migrate internal JSON state to HBP, HBI and TOML",
+      "state": "open",
+      "created_at": "2026-07-21T04:45:02Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        103,
+        118,
+        123,
+        132
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "79b2a30e84d717b7a85902e01fffa54d0628153686ce91fee29c205c5d2c8ccd",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ]
+    },
+    {
+      "number": 100,
+      "title": "[Quality] Enforce no-internal-JSON and prove binary-format migration E2E",
+      "state": "open",
+      "created_at": "2026-07-21T04:45:51Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [
+        118,
+        123,
+        132
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "b395122091e9cf31fc59c9be0ae580d53f7024c6ff95007b77a880344444d74a",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts"
+      ]
+    },
+    {
+      "number": 106,
+      "title": "[P0][Dependency] Expose Loop Hub interactive transport and shared Map/Runtime handles",
+      "state": "open",
+      "created_at": "2026-07-21T13:26:05Z",
+      "closed_at": null,
+      "labels": [
+        "enhancement"
+      ],
+      "references": [
+        55
+      ],
+      "linked_pull_requests": [
+        113,
+        124,
+        137
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": true,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "95f39bdc58a3647346a8c8082f913f85411e0b920222eb17e0d0185c9b538983",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "steps"
+      ]
+    },
+    {
+      "number": 108,
+      "title": "[P0][Runtime] Wire workspace list/stat/edit/exec and shell through Runtime MCP",
+      "state": "open",
+      "created_at": "2026-07-21T13:29:37Z",
+      "closed_at": null,
+      "labels": [
+        "enhancement"
+      ],
+      "references": [
+        49
+      ],
+      "linked_pull_requests": [
+        129,
+        136,
+        138
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "P0"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "145cdd7c9d4c4c3fb6974bd1c62826a9edc8ad7a73087bd5bbca0cdc05ef9e35",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps"
+      ]
+    },
+    {
+      "number": 109,
+      "title": "[Dependency][HBI/HBP] Publish Runtime binary-format contracts for Code migration",
+      "state": "open",
+      "created_at": "2026-07-21T13:29:38Z",
+      "closed_at": null,
+      "labels": [
+        "blocked"
+      ],
+      "references": [
+        99,
+        100
+      ],
+      "linked_pull_requests": [
+        118,
+        132
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "48e6ecafe36036436ac14f4fc052472952defda1d31f6ee2becf92d9dd22e555",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps"
+      ]
+    },
+    {
+      "number": 110,
+      "title": "[Release dependency] Wire verified ecosystem release events to component bundle promotion",
+      "state": "open",
+      "created_at": "2026-07-21T13:29:49Z",
+      "closed_at": null,
+      "labels": [
+        "release"
+      ],
+      "references": [
+        57
+      ],
+      "linked_pull_requests": [
+        131
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": true,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "3a6d03b969f0e69e1f9bfc114e526c671423d0850920e5802ac8493bb95a9be8",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "steps"
+      ]
+    },
+    {
+      "number": 116,
+      "title": "[Dependency][Prototype-First] Loop #568 and Runtime artifact capability evidence",
+      "state": "open",
+      "created_at": "2026-07-21T13:41:00Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        60
+      ],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "product-1.0",
+        "component": "runtime-boundary",
+        "risk": "critical",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": true,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "06cd64cfb5901fb77d9001028464d5fbfb088c2a852a3b0118870c5615195e15",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "dependencies",
+        "steps"
+      ]
+    },
+    {
+      "number": 121,
+      "title": "[Dependency][#50] Provide installed AgentHost + Runtime fixtures for productive Code E2E",
+      "state": "open",
+      "created_at": "2026-07-21T13:45:48Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [
+        50
+      ],
+      "linked_pull_requests": [
+        128
+      ],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": true,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": false,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "845a4114fb7d603eea97891cec300724c2ee976ebba9597c23931cc7b30db079",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps"
+      ]
+    },
+    {
+      "number": 139,
+      "title": "[META-AUDIT] Revisar todas as issues — objetivos, fluxo de testes e critérios de aceite",
+      "state": "open",
+      "created_at": "2026-07-21T20:43:11Z",
+      "closed_at": null,
+      "labels": [],
+      "references": [],
+      "linked_pull_requests": [],
+      "classification": {
+        "epic": "continuous-hardening",
+        "component": "runtime-boundary",
+        "risk": "standard",
+        "priority": "unassigned"
+      },
+      "sections": {
+        "context": false,
+        "objective": true,
+        "out_of_scope": false,
+        "contracts": false,
+        "dependencies": false,
+        "steps": true,
+        "test_flow": true,
+        "acceptance": true,
+        "evidence": true,
+        "risk_rollback_decision": true
+      },
+      "numbered_steps": true,
+      "measurement_evidence": true,
+      "body_sha256": "1cddd6fd56cf1d06125f6ad53ef45429a196ab566bb2a0d97d5095ca5036d238",
+      "decision": "needs-spec-rewrite",
+      "gaps": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ]
+    }
+  ]
+}

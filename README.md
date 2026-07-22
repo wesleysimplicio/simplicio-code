@@ -122,6 +122,7 @@ Simplicio-specific docs (start here for this fork):
 
 - [docs/QUICKSTART.md](docs/QUICKSTART.md) — install and first run, PT + EN
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — client, Runtime, and gateway boundaries
+- [docs/audits/issue-139-report.md](docs/audits/issue-139-report.md) — reproducible issue specification audit and closure decisions
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — login, Runtime, mapa, rede, updater
 - [docs/privacy/telemetry.md](docs/privacy/telemetry.md) — what telemetry exists, opt-out, `privacy diagnose`
 - [docs/privacy/network-destinations.md](docs/privacy/network-destinations.md) — every network destination the client can contact, the telemetry-scoped allowlist, and the network-capture test
