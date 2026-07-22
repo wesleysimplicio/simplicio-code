@@ -35,10 +35,15 @@ def load_exact_inventory(path: pathlib.Path) -> set[str]:
     for group in raw.get("package_output", []):
         names = group.get("paths") or ([group["path"]] if group.get("path") else [])
         for name in names:
-            if any(ch in name for ch in "*?[]"):
-                raise ValueError(f"package inventory path must be exact: {name}")
-            if not name:
-                raise ValueError("package inventory path must be exact: empty path")
+            candidate = pathlib.PurePosixPath(name)
+            if (
+                not name
+                or candidate.is_absolute()
+                or any(part in {"", ".", ".."} for part in candidate.parts)
+                or candidate.as_posix() != name
+                or any(ch in name for ch in "*?[]")
+            ):
+                raise ValueError(f"package inventory path must be exact: {name!r}")
             for field in PACKAGE_EXCEPTION_FIELDS:
                 if not group.get(field):
                     raise ValueError(f"{name}: missing {field}")
