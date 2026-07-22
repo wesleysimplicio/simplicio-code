@@ -54,9 +54,32 @@ contracts. Re-running the same event with `--check` proves byte reproducibility.
 
 The signed-event workflow additionally materializes the operator trust root and
 four immutable HTTPS artifacts, verifies their digests and compatibility before
-writing state, requires the Runtime pin to attest the digest of bindings
+writing the manifest, replay state, and a `release-bump-receipt/v1` containing
+the signing key, producer sequence, canonical bundle digest, and independently
+recomputed artifact digests. It requires the Runtime pin to attest the digest of bindings
 reproduced from the repository schema, and uses an event-id branch/PR with
 durable replay protection.
 Missing or revoked keys, malformed events, stale sequences, incompatible
 protocols, and incorrect artifacts fail closed; the workflow only prepares a
 Code bump and never becomes a Runtime/map/queue authority.
+
+The platform-neutral promotion harness consumes those already downloaded,
+verified inputs without network discovery. It copies all four pins to a private
+inactive slot, recomputes their digests after copying, exposes only that slot to
+the caller's canary through `SIMPLICIO_BUNDLE_SLOT`, and changes `active` only
+after a successful canary:
+
+```text
+PYTHONPATH=. python3 scripts/release/promote_component_bundle.py promote \
+  --manifest config/component-bundle.json --artifacts /path/to/artifacts \
+  --slots /path/to/component-slots --canary-command /path/to/installed-e2e
+PYTHONPATH=. python3 scripts/release/promote_component_bundle.py rollback \
+  --slots /path/to/component-slots
+```
+
+The harness itself starts no component authority. A failed digest, concurrent
+promotion, or failed canary removes the inactive slot and preserves `active`;
+rollback swaps the complete `active` and `previous` directories. Real publisher
+endpoints and clean installed Windows/Linux/macOS executables are intentionally
+not inferred from repository fixtures and remain external evidence blockers for
+issues #57 and #110.

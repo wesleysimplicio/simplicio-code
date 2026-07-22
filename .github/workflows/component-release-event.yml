@@ -62,5 +62,7 @@ jobs:
           body: |
             Verified ecosystem release bump generated from an immutable signed event.
 
-            Closes #110
+            Refs #57 and #110. This PR does not close either issue; installed
+            cross-platform evidence and external publisher availability remain
+            independently verified release-train gates.
           labels: release

@@ -56,7 +56,7 @@ def _verify_signature(payload: dict[str, Any], signature: str, key: Path) -> Non
 
 
 def prepare(event: dict[str, Any], trust_dir: Path, artifacts_dir: Path, schema: Path,
-            current_state: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
+            current_state: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     if set(event) != {"key_id", "signature", "payload"} or not isinstance(event.get("payload"), dict):
         raise BumpRejected("event envelope has unknown or missing fields; publish release-event/v1")
     key_id, payload = event.get("key_id"), event["payload"]
@@ -111,7 +111,8 @@ def prepare(event: dict[str, Any], trust_dir: Path, artifacts_dir: Path, schema:
     for prior in state["events"]:
         if prior.get("event_id") == payload["event_id"]:
             if prior.get("bundle_digest") == payload["bundle_digest"]:
-                return payload["manifest"], state
+                receipt = _receipt(payload, key_id, artifacts_dir, duplicate=True)
+                return payload["manifest"], state, receipt
             raise BumpRejected("event id conflicts with bump history; rotate the event id")
         if prior.get("producer") == payload["producer"] and prior.get("sequence", 0) >= payload["sequence"]:
             raise BumpRejected("event sequence is stale; publish the next producer sequence")
@@ -119,7 +120,28 @@ def prepare(event: dict[str, Any], trust_dir: Path, artifacts_dir: Path, schema:
         "event_id": payload["event_id"], "producer": payload["producer"],
         "sequence": payload["sequence"], "bundle_digest": payload["bundle_digest"],
     }]}
-    return payload["manifest"], state
+    return payload["manifest"], state, _receipt(payload, key_id, artifacts_dir)
+
+
+def _receipt(payload: dict[str, Any], key_id: str, artifacts_dir: Path,
+             duplicate: bool = False) -> dict[str, Any]:
+    """Return audit evidence derived only from already verified immutable inputs."""
+    return {
+        "schema": "simplicio.release-bump-receipt/v1",
+        "event_id": payload["event_id"],
+        "producer": payload["producer"],
+        "sequence": payload["sequence"],
+        "signing_key_id": key_id,
+        "bundle_digest": payload["bundle_digest"],
+        "artifact_digests": {
+            component["name"]: hashlib.sha256(
+                (artifacts_dir / component["name"]).read_bytes()
+            ).hexdigest()
+            for component in payload["manifest"]["components"]
+        },
+        "duplicate": duplicate,
+        "decision": "verified",
+    }
 
 
 def _atomic_json(path: Path, value: Any) -> None:
@@ -138,13 +160,17 @@ def main() -> int:
                         default=Path("docs/contracts/component-release-v1.schema.json"))
     parser.add_argument("--manifest-out", type=Path, required=True)
     parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--receipt-out", type=Path, required=True)
     args = parser.parse_args()
     try:
         event = json.loads(args.event.read_text(encoding="utf-8"))
         state = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() else None
-        manifest, next_state = prepare(event, args.trust_dir, args.artifacts_dir, args.schema, state)
+        manifest, next_state, receipt = prepare(
+            event, args.trust_dir, args.artifacts_dir, args.schema, state
+        )
         _atomic_json(args.manifest_out, manifest)
         _atomic_json(args.state, next_state)
+        _atomic_json(args.receipt_out, receipt)
     except (OSError, json.JSONDecodeError, BumpRejected) as exc:
         print(json.dumps({"status": "blocked", "next_action": str(exc)}, sort_keys=True))
         return 2
