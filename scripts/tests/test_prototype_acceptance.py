@@ -77,6 +77,36 @@ def test_non_list_contract_collections_fail_closed():
     assert any("missing states" in error for error in result["errors"])
 
 
+def test_malformed_nested_collections_fail_closed_instead_of_crashing():
+    loop, runtime, e2e = receipts()
+    loop["states"] = [{"forged": "state"}]
+    runtime["tools"] = [None]
+    e2e["runs"][0]["steps"] = [{"forged": "step"}]
+    result = validate(loop, runtime, e2e)
+    assert result["status"] == "blocked"
+    assert any("array of non-empty strings" in error for error in result["errors"])
+
+
+def test_duplicate_or_contradictory_surface_cannot_turn_failure_into_success():
+    loop, runtime, e2e = receipts()
+    failed = copy.deepcopy(e2e["runs"][0])
+    failed["status"] = "failed"
+    e2e["runs"].insert(0, failed)
+    result = validate(loop, runtime, e2e)
+    assert result["status"] == "blocked"
+    assert any("contradictory or duplicate" in error for error in result["errors"])
+
+
+def test_unknown_surface_and_non_finite_json_fail_closed():
+    loop, runtime, e2e = receipts()
+    e2e["runs"][0]["surface"] = "web"
+    loop["measurement"] = float("nan")
+    result = validate(loop, runtime, e2e)
+    assert result["status"] == "blocked"
+    assert any("unknown surface" in error for error in result["errors"])
+    assert any("canonical JSON" in error for error in result["errors"])
+
+
 def test_benchmark_reports_measured_numbers():
     loop, runtime, e2e = receipts()
     result = benchmark(loop, runtime, e2e, 10)
