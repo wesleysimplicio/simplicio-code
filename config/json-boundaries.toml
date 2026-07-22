@@ -107,6 +107,36 @@ reason = "These exact paths were introduced after the prior inventory: Runtime/L
 expires = "2099-12-31"
 
 [[boundary]]
+paths = [
+  'crates/codegen/simplicio-agent-native/src/lib.rs',
+  'crates/codegen/simplicio-agent-native/src/main.rs',
+  'crates/codegen/simplicio-runtime-client/src/external_routing.rs',
+]
+category = "external_protocol_adapter"
+owner = "code-runtime"
+producer = "AgentHost/Runtime external routing adapter"
+consumer = "installed Code AgentHost or Runtime peer"
+lifecycle = "ephemeral versioned protocol envelope; never Code-owned persistent state"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "These paths terminate JSON at the external AgentHost/Runtime protocol boundary and do not persist workspace, session, cache, IPC, queue, or execution state in Code."
+
+[[boundary]]
+paths = [
+  'scripts/release/promote_component_bundle.py',
+  'scripts/tests/test_promote_component_bundle.py',
+]
+category = "external_release_protocol"
+owner = "code-release"
+producer = "component bundle promotion harness"
+consumer = "release publisher and promotion regression tests"
+lifecycle = "ephemeral staged/canary/rollback receipt; never application state"
+target_format = "versioned external JSON release contract"
+status = "exception"
+reason = "These release-only paths produce and verify publisher receipts for staged bundle promotion; the JSON is an explicit release boundary and not Code-owned runtime state."
+expires = "2027-07-22"
+
+[[boundary]]
 path = "install.sh"
 category = "toolchain"
 owner = "code-release"
@@ -123,9 +153,11 @@ paths = [
   'crates/codegen/simplicio-runtime-client/src/component_release.rs',
   'crates/codegen/simplicio-runtime-client/src/loop_hub.rs',
   'crates/codegen/simplicio-runtime-client/tests/fake_server_search.rs',
+  'crates/codegen/xai-grok-pager/src/prototype_first.rs',
   'crates/codegen/xai-grok-tools/src/computer/types.rs',
   'crates/codegen/xai-grok-tools/src/implementations/codex/apply_patch/tool.rs',
   'crates/codegen/xai-grok-workspace-types/src/types/prototype_first.rs',
+  'crates/codegen/xai-grok-workspace/src/prototype_first.rs',
   'crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs',
   'crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs',
   'docs/contracts/component-release-v1.schema.json',
@@ -1332,6 +1364,22 @@ lifecycle = "ephemeral human-readable report"
 target_format = "Markdown"
 status = "exception"
 reason = "The package scanner inspects artifacts and emits text/Markdown; it does not persist JSON state."
+expires = "2099-12-31"
+
+[[boundary]]
+paths = [
+  'tools/policy_scan.py',
+  'tools/policy_scan.mjs',
+  'scripts/tests/test_policy_scan.py',
+]
+category = "toolchain_mandated"
+owner = "runtime-governance"
+producer = "pinned no-internal-JSON scanner and its regression tests"
+consumer = "pull-request and release fail-closed gates"
+lifecycle = "source-only policy tooling; findings are emitted as Markdown and HBP"
+target_format = "Markdown/HBP"
+status = "exception"
+reason = "The scanner and its tests necessarily contain the JSON tokens they detect; exact paths prevent this self-scan exception from authorizing product state."
 expires = "2099-12-31"
 
 [[boundary]]

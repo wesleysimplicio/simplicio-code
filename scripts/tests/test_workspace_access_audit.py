@@ -50,6 +50,21 @@ def test_explicit_violation_is_reported(tmp_path):
     assert result["violations"][0]["kind"] == "filesystem"
 
 
+def test_cfg_test_access_is_classified_as_fixture_without_hiding_productive_access(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.rs").write_text(
+        "let _ = tokio::fs::read(path).await;\n"
+        "#[cfg(test)]\n"
+        "mod tests { let _ = std::fs::write(path, data); }\n",
+        encoding="utf-8",
+    )
+    result = audit(tmp_path, _manifest(tmp_path / "manifest.json", []))
+    assert result["summary"]["violations"] == 1
+    assert result["summary"]["unclassified"] == 1
+    assert [item["classification"] for item in result["findings"]] == ["violation", "test-fixture"]
+    assert result["findings"][1]["owner"] == "test-suite"
+
+
 def test_baseline_rejects_new_occurrence_hidden_by_broad_rule(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "main.rs").write_text(

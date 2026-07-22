@@ -9,13 +9,28 @@ import json
 import os
 from pathlib import Path
 import socket
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 
 SURFACES = ("tui", "headless", "acp", "workspace")
-REQUIRED_RUNTIME_TOOLS = frozenset(("simplicio_edit", "simplicio_exec"))
+REQUIRED_RUNTIME_TOOLS = frozenset(
+    (
+        "simplicio_edit",
+        "simplicio_exec",
+        "simplicio_file_read",
+        "simplicio_fs_delete",
+        "simplicio_fs_list",
+        "simplicio_fs_stat",
+        "simplicio_fs_write",
+        "simplicio_search",
+    )
+)
+REQUIRED_AGENT_CAPABILITIES = frozenset(
+    ("host.advisories", "host.status", "turn.cancel", "turn.reconcile", "turn.start")
+)
 
 
 def validate_agent_status(status: dict[str, object] | None) -> None:
@@ -26,6 +41,9 @@ def validate_agent_status(status: dict[str, object] | None) -> None:
         status.get("protocol_schema") != "simplicio.agent-host/v1"
         or status.get("agent_protocol") != "agent/v1"
         or not isinstance(status.get("host_instance_id"), str)
+        or not status.get("host_instance_id")
+        or not REQUIRED_AGENT_CAPABILITIES.issubset(status.get("capabilities", []))
+        or not status.get("host", {}).get("ready")
     ):
         raise RuntimeError("agent_host_incompatible")
 
@@ -39,9 +57,7 @@ def validate_runtime_contract(
     if initialized.get("protocolVersion") != "2024-11-05":
         raise RuntimeError("runtime_incompatible")
     advertised = {
-        tool.get("name")
-        for tool in tools.get("tools", [])
-        if isinstance(tool, dict)
+        tool.get("name") for tool in tools.get("tools", []) if isinstance(tool, dict)
     }
     if not REQUIRED_RUNTIME_TOOLS.issubset(advertised):
         raise RuntimeError("runtime_incompatible")
@@ -94,9 +110,19 @@ def request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]:
     return json.loads(b"".join(chunks))
 
 
-def runtime_call(process: subprocess.Popen[str], request_id: int, method: str, params: dict[str, object]) -> dict[str, object]:
+def runtime_call(
+    process: subprocess.Popen[str],
+    request_id: int,
+    method: str,
+    params: dict[str, object],
+) -> dict[str, object]:
     assert process.stdin and process.stdout
-    process.stdin.write(json.dumps({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}) + "\n")
+    process.stdin.write(
+        json.dumps(
+            {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params}
+        )
+        + "\n"
+    )
     process.stdin.flush()
     response = json.loads(process.stdout.readline())
     if response.get("id") != request_id or "result" not in response:
@@ -104,19 +130,74 @@ def runtime_call(process: subprocess.Popen[str], request_id: int, method: str, p
     return response["result"]
 
 
-def run(root: Path) -> dict[str, object]:
+def _external_dependencies() -> tuple[list[str], list[str]]:
+    """Resolve independently installed executors without inventing a fallback."""
+    encoded = os.environ.get("SIMPLICIO_AGENT_HOST_E2E_COMMAND")
+    if not encoded:
+        raise RuntimeError("agent_host_missing: set SIMPLICIO_AGENT_HOST_E2E_COMMAND")
+    try:
+        agent = json.loads(encoded)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "agent_host_incompatible: AgentHost command is not JSON argv"
+        ) from error
+    if (
+        not isinstance(agent, list)
+        or not agent
+        or not all(isinstance(item, str) for item in agent)
+    ):
+        raise RuntimeError(
+            "agent_host_incompatible: AgentHost command must be JSON argv"
+        )
+    runtime = os.environ.get("SIMPLICIO_RUNTIME_BIN") or shutil.which("simplicio")
+    if not runtime:
+        raise RuntimeError("runtime_missing: set SIMPLICIO_RUNTIME_BIN")
+    agent_executable = shutil.which(agent[0]) or agent[0]
+    if not Path(agent_executable).is_file() or not os.access(agent_executable, os.X_OK):
+        raise RuntimeError("agent_host_missing: AgentHost executable is not executable")
+    if not Path(runtime).is_file() or not os.access(runtime, os.X_OK):
+        raise RuntimeError("runtime_missing: Runtime executable is not executable")
+    return agent, [runtime, "serve", "--mcp", "--stdio", "--json"]
+
+
+def run(
+    root: Path,
+    installed_binary: Path | None = None,
+    *,
+    fixture_mode: bool = False,
+) -> dict[str, object]:
+    if installed_binary is not None and fixture_mode:
+        raise RuntimeError("installed_binary_conflicts_with_fixture")
     fixture = root / "scripts/fixtures/simplicio_installed_fixture.py"
-    digest = hashlib.sha256(fixture.read_bytes()).hexdigest()
-    env = {**os.environ, "SIMPLICIO_CODE_E2E_FIXTURE": "1"}
+    digest = hashlib.sha256(fixture.read_bytes()).hexdigest() if fixture_mode else None
+    env = dict(os.environ)
+    if installed_binary is not None:
+        installed = installed_binary.resolve()
+        if not installed.is_file() or not os.access(installed, os.X_OK):
+            raise RuntimeError(f"installed_binary_unavailable:{installed}")
+        agent_template = [str(installed), "agent", "{socket}"]
+        runtime_command = [str(installed), "serve", "--mcp", "--stdio", "--json"]
+    elif fixture_mode:
+        env["SIMPLICIO_CODE_E2E_FIXTURE"] = "1"
+        agent_template = [sys.executable, str(fixture), "agent", "{socket}"]
+        runtime_command = [
+            sys.executable,
+            str(fixture),
+            "serve",
+            "--mcp",
+            "--stdio",
+            "--json",
+        ]
+    else:
+        agent_template, runtime_command = _external_dependencies()
     started = time.perf_counter_ns()
     with tempfile.TemporaryDirectory(prefix="simplicio-code-e2e-") as temporary:
         temp = Path(temporary)
-        installed = temp / "bin/simplicio"
-        installed.parent.mkdir()
-        installed.write_bytes(fixture.read_bytes())
-        installed.chmod(0o700)
         agent_socket = temp / "agent.sock"
-        agent = subprocess.Popen([sys.executable, str(installed), "agent", str(agent_socket)], env=env)
+        agent_command = [
+            item.replace("{socket}", str(agent_socket)) for item in agent_template
+        ]
+        agent = subprocess.Popen(agent_command, env=env)
         try:
             for _ in range(100):
                 if agent_socket.exists():
@@ -127,39 +208,185 @@ def run(root: Path) -> dict[str, object]:
 
             # Both independently installed dependencies must be compatible
             # before the first productive turn on any Code surface.
-            runtime = subprocess.Popen([str(installed), "serve", "--mcp", "--stdio", "--json"], cwd=temp, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            runtime = subprocess.Popen(
+                runtime_command,
+                cwd=temp,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                text=True,
+            )
             try:
-                initialized = runtime_call(runtime, 1, "initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "simplicio-code-e2e", "version": "1"}})
+                initialized = runtime_call(
+                    runtime,
+                    1,
+                    "initialize",
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "simplicio-code-e2e", "version": "1"},
+                    },
+                )
                 tools = runtime_call(runtime, 2, "tools/list", {})
                 validate_runtime_contract(initialized, tools)
                 surfaces = []
                 for surface in SURFACES:
                     turn_id = f"e2e-{surface}-turn"
-                    identity = {"workspace_id": "fixture-workspace", "session_id": f"fixture-{surface}", "turn_id": turn_id, "attempt_id": "0", "idempotency_key": turn_id, "run_id": turn_id, "stage_id": "conversation", "fence": "0", "revision": 7}
-                    result = request(agent_socket, {"op": "turn.start", "profile": surface, "message": "contract probe", **identity})
+                    identity = {
+                        "workspace_id": "fixture-workspace",
+                        "session_id": f"fixture-{surface}",
+                        "turn_id": turn_id,
+                        "attempt_id": "0",
+                        "idempotency_key": turn_id,
+                        "run_id": turn_id,
+                        "stage_id": "conversation",
+                        "fence": "0",
+                        "revision": 7,
+                    }
+                    result = request(
+                        agent_socket,
+                        {
+                            "op": "turn.start",
+                            "profile": surface,
+                            "message": "contract probe",
+                            **identity,
+                        },
+                    )
                     if not result.get("result", {}).get("completed"):
                         raise RuntimeError(f"{surface} turn did not complete")
-                    surfaces.append({"surface": surface, "turn_id": turn_id, "completed": True})
-                cancel = request(agent_socket, {"op": "turn.cancel", "turn_id": "e2e-tui-turn", "host_instance_id": status["host_instance_id"]})
-                reconcile = request(agent_socket, {"op": "turn.reconcile", "turn_id": "e2e-tui-turn", "host_instance_id": status["host_instance_id"]})
-                first = request(agent_socket, {"op": "host.advisories", "cursor": 0, "host_instance_id": status["host_instance_id"]})
-                replay = request(agent_socket, {"op": "host.advisories", "cursor": 0, "host_instance_id": status["host_instance_id"]})
-                edit = runtime_call(runtime, 3, "tools/call", {"name": "simplicio_edit", "arguments": {"repo": str(temp), "plan": json.dumps({"files": [{"file": "result.txt", "operation": "update", "content": "runtime-owned\n"}]}), "atomic": True, "rollback": True}})
-                execution = runtime_call(runtime, 4, "tools/call", {"name": "simplicio_exec", "arguments": {"repo": str(temp), "cwd": ".", "argv": [sys.executable, "-c", "print('argv-safe')"], "env": {}, "timeout_ms": 5000, "idempotency_key": "e2e-exec"}})
+                    surfaces.append(
+                        {
+                            "surface": surface,
+                            "session_id": identity["session_id"],
+                            "turn_id": turn_id,
+                            "completed": True,
+                        }
+                    )
+                cancel = request(
+                    agent_socket,
+                    {
+                        "op": "turn.cancel",
+                        "turn_id": "e2e-tui-turn",
+                        "host_instance_id": status["host_instance_id"],
+                    },
+                )
+                reconcile = request(
+                    agent_socket,
+                    {
+                        "op": "turn.reconcile",
+                        "turn_id": "e2e-tui-turn",
+                        "host_instance_id": status["host_instance_id"],
+                    },
+                )
+                first = request(
+                    agent_socket,
+                    {
+                        "op": "host.advisories",
+                        "cursor": 0,
+                        "host_instance_id": status["host_instance_id"],
+                    },
+                )
+                replay = request(
+                    agent_socket,
+                    {
+                        "op": "host.advisories",
+                        "cursor": 0,
+                        "host_instance_id": status["host_instance_id"],
+                    },
+                )
+                edit = runtime_call(
+                    runtime,
+                    3,
+                    "tools/call",
+                    {
+                        "name": "simplicio_edit",
+                        "arguments": {
+                            "repo": str(temp),
+                            "plan": json.dumps(
+                                {
+                                    "files": [
+                                        {
+                                            "file": "result.txt",
+                                            "operation": "update",
+                                            "content": "runtime-owned\n",
+                                        }
+                                    ]
+                                }
+                            ),
+                            "atomic": True,
+                            "rollback": True,
+                        },
+                    },
+                )
+                listing = runtime_call(
+                    runtime,
+                    4,
+                    "tools/call",
+                    {
+                        "name": "simplicio_fs_list",
+                        "arguments": {
+                            "repo": str(temp),
+                            "path": ".",
+                            "options": {"depth": 1, "limit": 100},
+                        },
+                    },
+                )
+                stat = runtime_call(
+                    runtime,
+                    5,
+                    "tools/call",
+                    {
+                        "name": "simplicio_fs_stat",
+                        "arguments": {"repo": str(temp), "path": "result.txt"},
+                    },
+                )
+                execution = runtime_call(
+                    runtime,
+                    6,
+                    "tools/call",
+                    {
+                        "name": "simplicio_exec",
+                        "arguments": {
+                            "repo": str(temp),
+                            "cwd": ".",
+                            "argv": [sys.executable, "-c", "print('argv-safe')"],
+                            "env": {},
+                            "timeout_ms": 5000,
+                            "max_output_bytes": 4096,
+                            "shell": False,
+                            "idempotency_key": "e2e-exec",
+                        },
+                    },
+                )
             finally:
-                runtime.terminate(); runtime.wait(timeout=2)
+                runtime.terminate()
+                runtime.wait(timeout=2)
                 if runtime.stdin:
                     runtime.stdin.close()
                 if runtime.stdout:
                     runtime.stdout.close()
             edit_payload = json.loads(edit["content"][0]["text"])
+            list_payload = json.loads(listing["content"][0]["text"])
+            stat_payload = json.loads(stat["content"][0]["text"])
             exec_payload = json.loads(execution["content"][0]["text"])
-            if (temp / "result.txt").read_text() != "runtime-owned\n" or exec_payload.get("stdout") != "argv-safe\n":
+            if (
+                temp / "result.txt"
+            ).read_text() != "runtime-owned\n" or exec_payload.get(
+                "stdout"
+            ) != "argv-safe\n":
                 raise RuntimeError("Runtime effects did not match receipts")
+            listed_paths = {node.get("path") for node in list_payload.get("nodes", list_payload.get("entries", []))}
+            stat_exists = stat_payload.get("exists", stat_payload.get("kind") is not None or stat_payload.get("type") is not None)
+            if "result.txt" not in listed_paths or not stat_exists:
+                raise RuntimeError("Runtime list/stat did not observe the Runtime edit")
+            if exec_payload.get("effect_state") != "completed":
+                raise RuntimeError("Runtime exec did not return an authoritative completed effect")
             if first["advisories"] != replay["advisories"]:
                 raise RuntimeError("advisory replay is not deterministic")
-            agent.terminate(); agent.wait(timeout=2)
-            agent = subprocess.Popen([sys.executable, str(installed), "agent", str(agent_socket)], env=env)
+            agent.terminate()
+            agent.wait(timeout=2)
+            agent_socket.unlink(missing_ok=True)
+            agent = subprocess.Popen(agent_command, env=env)
             for _ in range(100):
                 try:
                     restarted = request(agent_socket, {"op": "host.status"})
@@ -168,22 +395,95 @@ def run(root: Path) -> dict[str, object]:
                     time.sleep(0.01)
             else:
                 raise RuntimeError("AgentHost did not reconnect after restart")
-            if restarted["host_instance_id"] != status["host_instance_id"]:
-                raise RuntimeError("fixture restart identity is not deterministic")
+            if (
+                not fixture_mode
+                and restarted["host_instance_id"] == status["host_instance_id"]
+            ):
+                raise RuntimeError(
+                    "AgentHost restart did not rotate causal host identity"
+                )
             elapsed = time.perf_counter_ns() - started
             negative_gates = negative_dependency_gates()
             scenario_count = len(surfaces) + len(negative_gates) + 7
-            return {"schema": "simplicio.code-installed-e2e-receipt/v1", "fixture_sha256": digest, "agent_host": {"protocol": status["protocol_schema"], "host_instance_id": status["host_instance_id"], "cancel": cancel["status"], "reconcile": reconcile["status"], "advisory_replay_equal": True, "restart_reconnected": True}, "runtime": {"server": initialized["serverInfo"], "tools": sorted(tool["name"] for tool in tools["tools"]), "edit": edit_payload["schema"], "exec": exec_payload["schema"]}, "surfaces": surfaces, "negative_dependency_gates": negative_gates, "benchmark": {"scenario_count": scenario_count, "elapsed_ns": elapsed, "operations_per_second": round(scenario_count * 1_000_000_000 / elapsed, 2)}, "metrics_unavailable": {"production_latency_ns": {"value": None, "reason": "fixture is hermetic; production metric is not observed"}}}
+            return {
+                "schema": "simplicio.code-installed-e2e-receipt/v1",
+                "proof_kind": (
+                    "hermetic_fixture_non_proof"
+                    if fixture_mode
+                    else "external_installed"
+                ),
+                "mode": "fixture" if fixture_mode else "installed",
+                "fixture_sha256": digest,
+                "agent_host": {
+                    "protocol": status["protocol_schema"],
+                    "host_instance_id": status["host_instance_id"],
+                    "restarted_host_instance_id": restarted["host_instance_id"],
+                    "cancel": cancel["status"],
+                    "reconcile": reconcile["status"],
+                    "advisory_replay_equal": True,
+                    "restart_reconnected": True,
+                },
+                "runtime": {
+                    "server": initialized["serverInfo"],
+                    "tools": sorted(tool["name"] for tool in tools["tools"]),
+                    "list": list_payload["schema"],
+                    "stat": stat_payload["schema"],
+                    "edit": edit_payload["schema"],
+                    "exec": exec_payload["schema"],
+                    "effect_state": exec_payload["effect_state"],
+                },
+                "surfaces": surfaces,
+                "profile_isolation": len({item["session_id"] for item in surfaces})
+                == len(SURFACES),
+                "negative_dependency_gates": negative_gates,
+                "benchmark": {
+                    "scenario_count": scenario_count,
+                    "elapsed_ns": elapsed,
+                    "operations_per_second": round(
+                        scenario_count * 1_000_000_000 / elapsed, 2
+                    ),
+                },
+                "metrics_unavailable": (
+                    {
+                        "production_latency_ns": {
+                            "value": None,
+                            "reason": "fixture is hermetic; production metric is not observed",
+                        }
+                    }
+                    if fixture_mode
+                    else {
+                        "production_latency_ns": {
+                            "value": None,
+                            "reason": "single E2E sample is not a production latency metric",
+                        }
+                    }
+                ),
+            }
         finally:
-            agent.terminate(); agent.wait(timeout=2)
+            agent.terminate()
+            agent.wait(timeout=2)
 
 
 def main() -> None:  # pragma: no cover - exercised by the documented system command
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument(
+        "--root", type=Path, default=Path(__file__).resolve().parents[1]
+    )
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--fixture",
+        action="store_true",
+        help="run hermetic non-proof regression fixture",
+    )
+    parser.add_argument(
+        "--installed",
+        type=Path,
+        help="exercise an actually installed simplicio binary instead of external env commands",
+    )
     args = parser.parse_args()
-    receipt = run(args.root.resolve())
+    receipt = run(
+        args.root.resolve(), args.installed, fixture_mode=args.fixture
+    )
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(encoded, encoding="utf-8")

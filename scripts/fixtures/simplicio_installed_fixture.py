@@ -82,6 +82,12 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(item.get("content", ""), encoding="utf-8")
         payload = {"schema": "simplicio.edit-result/v1", "accepted": True, "plan": plan, "rolled_back": False}
+    elif name == "simplicio_fs_list":
+        target = _safe_path(repo, str(arguments.get("path", ".")))
+        payload = {"schema": "simplicio.fs-list-result/v1", "nodes": [{"name": child.name, "path": child.relative_to(repo).as_posix(), "type": "directory" if child.is_dir() else "file"} for child in sorted(target.iterdir())], "truncated": False}
+    elif name == "simplicio_fs_stat":
+        target = _safe_path(repo, str(arguments.get("path", ".")))
+        payload = {"schema": "simplicio.fs-stat-result/v1", "exists": target.exists(), "type": "directory" if target.is_dir() else "file" if target.is_file() else None, "size": target.stat().st_size if target.exists() else None}
     elif name == "simplicio_exec":
         cwd = _safe_path(repo, str(arguments.get("cwd", ".")))
         completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)

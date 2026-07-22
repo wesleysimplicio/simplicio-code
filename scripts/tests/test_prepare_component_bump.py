@@ -41,10 +41,13 @@ def signed_event(tmp_path: Path):
 
 def test_verified_event_prepares_deterministic_bump_and_deduplicates(tmp_path):
     event, trust, artifacts = signed_event(tmp_path)
-    manifest, state = prepare(event, trust, artifacts, SCHEMA)
+    manifest, state, receipt = prepare(event, trust, artifacts, SCHEMA)
     assert canonical(manifest) == canonical(event["payload"]["manifest"])
     assert state["events"][0]["bundle_digest"] == event["payload"]["bundle_digest"]
-    assert prepare(event, trust, artifacts, SCHEMA, state) == (manifest, state)
+    assert receipt["artifact_digests"]["runtime"] == event["payload"]["manifest"]["components"][-1]["artifact_digest"]
+    duplicate_manifest, duplicate_state, duplicate_receipt = prepare(event, trust, artifacts, SCHEMA, state)
+    assert (duplicate_manifest, duplicate_state) == (manifest, state)
+    assert duplicate_receipt["duplicate"] is True
 
 
 @pytest.mark.parametrize("failure", ["signature", "digest", "missing", "revoked", "stale"])
@@ -93,11 +96,14 @@ def test_cli_writes_canonical_outputs_and_reports_duplicate(tmp_path, monkeypatc
     event, trust, artifacts = signed_event(tmp_path)
     event_path, manifest_path, state_path = tmp_path / "event.json", tmp_path / "out/manifest.json", tmp_path / "state.json"
     event_path.write_text(json.dumps(event))
+    receipt_path = tmp_path / "receipt.json"
     argv = ["prepare", "--event", str(event_path), "--trust-dir", str(trust),
-            "--artifacts-dir", str(artifacts), "--manifest-out", str(manifest_path), "--state", str(state_path)]
+            "--artifacts-dir", str(artifacts), "--manifest-out", str(manifest_path), "--state", str(state_path),
+            "--receipt-out", str(receipt_path)]
     monkeypatch.setattr("sys.argv", argv)
     assert main() == 0
     assert json.loads(manifest_path.read_text()) == event["payload"]["manifest"]
+    assert json.loads(receipt_path.read_text())["decision"] == "verified"
     assert main() == 0
     assert '"status": "ready"' in capsys.readouterr().out
 
@@ -131,6 +137,7 @@ def test_conflict_and_invalid_history_fail_closed(tmp_path):
 def test_cli_reports_bad_json_as_blocked(tmp_path, monkeypatch, capsys):
     event_path = tmp_path / "bad.json"; event_path.write_text("{")
     monkeypatch.setattr("sys.argv", ["prepare", "--event", str(event_path), "--trust-dir", str(tmp_path),
-        "--artifacts-dir", str(tmp_path), "--manifest-out", str(tmp_path / "manifest"), "--state", str(tmp_path / "state")])
+        "--artifacts-dir", str(tmp_path), "--manifest-out", str(tmp_path / "manifest"), "--state", str(tmp_path / "state"),
+        "--receipt-out", str(tmp_path / "receipt")])
     assert main() == 2
     assert '"status": "blocked"' in capsys.readouterr().out

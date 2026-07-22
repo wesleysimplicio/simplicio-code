@@ -49,6 +49,11 @@ jobs:
         run: >-
           python3 scripts/check_json_boundaries.py --mode strict --max-findings 100
           --scope-file config/json-boundaries-binary-formats.txt
+      - name: Enforce pinned Runtime no-internal-JSON policy scanner
+        run: >-
+          python3 tools/policy_scan.py
+          --repo crates/codegen/simplicio-code-formats
+          --policy policy/no-internal-json.toml --mode strict
       - name: Block release while repository-wide migration evidence is incomplete
         run: python3 scripts/check_json_boundaries.py --mode strict --max-findings 100
 

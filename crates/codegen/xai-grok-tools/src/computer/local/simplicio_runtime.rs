@@ -6,7 +6,7 @@ use std::{
 
 use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socket_path};
 use simplicio_runtime_client::{
-    DEFAULT_MAX_FILE_BYTES, RuntimeClient, SharedRuntimeClient, start_workspace_map,
+    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SharedRuntimeClient, start_workspace_map,
 };
 
 use super::preflight::{ProductivePreflightReport, run_installed_preflight};
@@ -464,6 +464,21 @@ impl SimplicioRuntimeFs {
         .await
     }
 
+    /// Reads a bounded byte range through Runtime without probing the local
+    /// filesystem for size, metadata, or content.
+    pub async fn read_workspace_range(
+        &self,
+        path: &Path,
+        start: Option<u64>,
+        end: Option<u64>,
+        max_bytes: usize,
+    ) -> Result<FileReadResult, ComputerError> {
+        self.with_client(path, move |client, root, relative| {
+            client.read_file_range(root, relative, start, end, max_bytes)
+        })
+        .await
+    }
+
     /// Searches through Runtime while retaining the mandatory AgentHost gate.
     pub async fn search_workspace(
         &self,
@@ -634,8 +649,10 @@ mod tests {
             .exec_workspace(
                 Path::new("."),
                 &["echo".to_owned(), "blocked".to_owned()],
+                &BTreeMap::new(),
                 1_000,
                 1_024,
+                "fail-closed-test",
             )
             .await;
         assert!(edit.is_err(), "edit must require the Runtime boundary");

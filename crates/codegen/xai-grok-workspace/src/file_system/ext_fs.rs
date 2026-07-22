@@ -56,7 +56,7 @@ fn resolve_abs(
 struct RuntimeListNode {
     name: String,
     path: String,
-    #[serde(rename = "type", alias = "nodeType")]
+    #[serde(rename = "type", alias = "nodeType", alias = "kind")]
     node_type: String,
     #[serde(default)]
     is_symlink: Option<bool>,
@@ -81,8 +81,10 @@ struct RuntimeListResponse {
 struct RuntimeStatResponse {
     #[serde(default)]
     exists: Option<bool>,
-    #[serde(rename = "type", alias = "nodeType", default)]
+    #[serde(rename = "type", alias = "nodeType", alias = "kind", default)]
     node_type: Option<String>,
+    #[serde(default)]
+    size: Option<u64>,
 }
 
 fn runtime_payload(value: Value) -> WorkspaceResult<Value> {
@@ -146,6 +148,16 @@ fn runtime_exists(value: Value) -> WorkspaceResult<bool> {
     Ok(response
         .exists
         .unwrap_or_else(|| response.node_type.is_some()))
+}
+
+fn runtime_size(value: Value) -> WorkspaceResult<u64> {
+    let response: RuntimeStatResponse =
+        serde_json::from_value(runtime_payload(value)?).map_err(|error| {
+            WorkspaceError::HubError(format!("invalid Runtime stat response: {error}"))
+        })?;
+    response
+        .size
+        .ok_or_else(|| WorkspaceError::HubError("Runtime stat omitted file size".into()))
 }
 
 fn is_missing_path_error(error: &str) -> bool {
@@ -225,32 +237,35 @@ impl WorkspaceOp for FsReadFileReq {
         let ranged = self.offset.is_some()
             || self.length.is_some()
             || self.encoding == FsReadEncoding::Base64;
+        let runtime = SimplicioRuntimeFs::new(ws.root_cwd()?.to_path_buf());
         if !ranged {
-            let bytes = tokio::fs::read(&abs)
+            let bytes = runtime
+                .read_file(&abs)
                 .await
-                .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+                .map_err(|error| WorkspaceError::HubError(error.to_string()))?;
             return Ok(build_file_entry(&bytes));
         }
 
-        // Binary-safe ranged read: `size` is the full file size, the
-        // chunk is `[offset, offset + min(length, max_bytes, cap))`.
-        let md = tokio::fs::metadata(&abs)
+        // Runtime owns both metadata and the bounded byte range. Code does
+        // not probe the local filesystem before or after this call.
+        let size = runtime
+            .stat_workspace(&abs)
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
-        if md.is_dir() {
-            return Err(WorkspaceError::HubError(format!(
-                "not a file: {}",
-                self.path
-            )));
-        }
-        // Best-effort snapshot: a concurrent truncate/grow between here and
-        // read_range can make `size` inconsistent with the returned chunk.
-        let size = md.len();
+            .map_err(|error| WorkspaceError::HubError(error.to_string()))
+            .and_then(runtime_size)?;
         let offset = self.offset.unwrap_or(0);
         let length = super::walk::clamp_read_length(self.length, self.max_bytes);
-        let chunk = super::walk::read_range(&abs, offset, length)
+        let chunk = runtime
+            .read_workspace_range(
+                &abs,
+                Some(offset),
+                Some(offset.saturating_add(length)),
+                self.max_bytes as usize,
+            )
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+            .map_err(|error| WorkspaceError::HubError(error.to_string()))?
+            .bytes()
+            .map_err(|error| WorkspaceError::HubError(error.to_string()))?;
         Ok(build_ranged_entry(chunk, size, self.encoding))
     }
 }
@@ -264,17 +279,11 @@ impl WorkspaceOp for FsWriteFileReq {
     ) -> WorkspaceResult<Self::Response> {
         let abs_unconfined = resolve_abs(&self.path, &self.cwd, ws)?;
         let (abs, _) = ws.confine_to_workspace_root(&abs_unconfined).await?;
-        let content = self.content.clone();
-        let create_dirs = self.create_dirs;
-        tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-            if create_dirs && let Some(parent) = abs.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&abs, content.as_bytes())
-        })
-        .await
-        .map_err(|e| WorkspaceError::HubError(e.to_string()))?
-        .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+        let runtime = SimplicioRuntimeFs::new(ws.root_cwd()?.to_path_buf());
+        runtime
+            .write_file(&abs, self.content.as_bytes())
+            .await
+            .map_err(|error| WorkspaceError::HubError(error.to_string()))?;
         Ok(())
     }
 }
@@ -288,9 +297,11 @@ impl WorkspaceOp for FsDeleteFileReq {
     ) -> WorkspaceResult<Self::Response> {
         let abs_unconfined = resolve_abs(&self.path, &self.cwd, ws)?;
         let (abs, _) = ws.confine_to_workspace_root(&abs_unconfined).await?;
-        tokio::fs::remove_file(&abs)
+        let runtime = SimplicioRuntimeFs::new(ws.root_cwd()?.to_path_buf());
+        runtime
+            .delete_file(&abs)
             .await
-            .map_err(|e| WorkspaceError::HubError(e.to_string()))?;
+            .map_err(|error| WorkspaceError::HubError(error.to_string()))?;
         Ok(())
     }
 }

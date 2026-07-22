@@ -127,7 +127,7 @@ fn system_time_ms(st: std::time::SystemTime) -> i64 {
 struct RuntimeListNode {
     name: String,
     path: String,
-    #[serde(rename = "type", alias = "nodeType")]
+    #[serde(rename = "type", alias = "nodeType", alias = "kind")]
     node_type: String,
     #[serde(default)]
     is_symlink: Option<bool>,
@@ -150,10 +150,11 @@ struct RuntimeListResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeStatResponse {
-    exists: bool,
+    #[serde(default)]
+    exists: Option<bool>,
     #[serde(default)]
     node_type: Option<FsNodeType>,
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type", alias = "kind", default)]
     legacy_node_type: Option<FsNodeType>,
     #[serde(default)]
     size: Option<u64>,
@@ -225,7 +226,9 @@ fn runtime_stat_response(value: Value) -> WorkspaceResult<FsStatRes> {
             WorkspaceError::HubError(format!("invalid Runtime stat response: {error}"))
         })?;
     Ok(FsStatRes {
-        exists: response.exists,
+        exists: response
+            .exists
+            .unwrap_or_else(|| response.node_type.is_some() || response.legacy_node_type.is_some()),
         node_type: response.node_type.or(response.legacy_node_type),
         size: response.size,
         mtime_ms: response.mtime_ms,
@@ -304,52 +307,48 @@ pub(crate) async fn stat(ws: &WorkspaceHandle, req: &FsStatReq) -> WorkspaceResu
 // read_file
 // =========================================================================
 
-/// Read a byte range of `req.path` (binary-safe, capped at
-/// `min(req.max_bytes, MAX_READ_BYTES)`) together with the full-file
-/// SHA-256. When the hash is memoized for the current `(size, mtime)`
-/// only the requested range is read; otherwise the whole file streams
-/// once (via the shared [`crate::handle::stream_hash_and_range`]) to
-/// hash it.
+/// Read a byte range of `req.path` through Runtime (binary-safe, capped at
+/// `min(req.max_bytes, MAX_READ_BYTES)`) together with Runtime-owned metadata.
+/// Code never probes or hashes workspace files locally on this productive
+/// path.
 pub(crate) async fn read_file(
     ws: &WorkspaceHandle,
     req: &FsReadFileReq,
 ) -> WorkspaceResult<FsReadFileRes> {
     let abs = resolve(ws, &req.path).await?;
-    let read_err =
-        |e: std::io::Error| WorkspaceError::HubError(format!("read failed for {}: {e}", req.path));
-    let md = tokio::fs::metadata(&abs).await.map_err(read_err)?;
-    if md.is_dir() {
+    let runtime = SimplicioRuntimeFs::new(ws.root_cwd()?.to_path_buf());
+    let metadata = runtime
+        .stat_workspace(&abs)
+        .await
+        .map_err(|error| WorkspaceError::HubError(error.to_string()))
+        .and_then(runtime_stat_response)?;
+    if metadata.node_type == Some(FsNodeType::Directory) {
         return Err(WorkspaceError::HubError(format!(
             "not a file: {}",
             req.path
         )));
     }
-    let size = md.len();
-    let mtime_ms = md.modified().ok().map(system_time_ms);
     let offset = req.offset.unwrap_or(0);
     // Server-side clamp: a hostile/buggy caller cannot lift the per-chunk
     // budget past MAX_READ_BYTES regardless of `maxBytes`.
     let length = super::walk::clamp_read_length(req.length, req.max_bytes);
-
-    let memo = &ws.shared.client_fs_hash_memo;
-    let (hash, chunk, size) = match mtime_ms.and_then(|m| memo.lookup(&abs, size, m)) {
-        Some(hash) => {
-            let chunk = super::walk::read_range(&abs, offset, length)
-                .await
-                .map_err(read_err)?;
-            (hash, chunk, size)
-        }
-        None => {
-            let (hash, chunk, streamed) =
-                crate::handle::stream_hash_and_range(&abs, offset, length)
-                    .await
-                    .map_err(read_err)?;
-            if let Some(m) = mtime_ms {
-                memo.store(&abs, streamed, m, hash.clone());
-            }
-            (hash, chunk, streamed)
-        }
-    };
+    let chunk = runtime
+        .read_workspace_range(
+            &abs,
+            Some(offset),
+            Some(offset.saturating_add(length)),
+            req.max_bytes as usize,
+        )
+        .await
+        .map_err(|error| WorkspaceError::HubError(error.to_string()))?
+        .bytes()
+        .map_err(|error| WorkspaceError::HubError(error.to_string()))?;
+    let size = metadata
+        .size
+        .ok_or_else(|| WorkspaceError::HubError("Runtime stat omitted file size".into()))?;
+    let hash = metadata
+        .hash
+        .ok_or_else(|| WorkspaceError::HubError("Runtime stat omitted file hash".into()))?;
 
     // Shared encoder keeps the paired wire fields coherent with one UTF-8
     // validation pass; `type` is text iff the bytes were valid UTF-8.
