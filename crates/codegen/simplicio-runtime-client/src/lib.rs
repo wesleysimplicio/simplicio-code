@@ -54,7 +54,12 @@ pub const EXEC_RESULT_SCHEMA_V1: &str = "simplicio.exec-result/v1";
 /// Runtime-owned namespace for Prototype-First receipts and candidate
 /// artifacts. Callers must use [`RuntimeClient::write_prototype_artifact`]
 /// instead of writing this directory directly.
-pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first";\n/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
+pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first";
+/// Canonical Runtime capability required by the external Prototype-First
+/// acceptance handshake. Generic filesystem write support is not evidence of
+/// Runtime-owned artifact semantics.
+pub const PROTOTYPE_ARTIFACT_WRITE_TOOL: &str = "simplicio_prototype_artifact_write";
+/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
 /// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
 /// during connection negotiation instead of hanging for tens of seconds.
 pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
@@ -556,7 +561,7 @@ impl RuntimeClient {
         )
     }
 
-    /// Persist a preview artifact through the negotiated Runtime write tool.
+    /// Persist a preview artifact through the negotiated Runtime artifact tool.
     ///
     /// The Code process never creates this path locally. The Runtime remains
     /// the authority for artifact storage, atomicity, and rollback.
@@ -571,9 +576,23 @@ impl RuntimeClient {
                 "prototype artifact id contains unsafe path characters".into(),
             ));
         }
-        let path = Path::new(PROTOTYPE_ARTIFACT_ROOT).join(format!("{artifact_id}.json"));
-        self.write_file(repo, &path, data)
-    }\n\n    pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
+        let repo = canonical_repo(repo)?;
+        self.call_tool(
+            "prototype_artifact_write",
+            PROTOTYPE_ARTIFACT_WRITE_TOOL,
+            json!({
+                "repo": repo,
+                "artifact_id": artifact_id,
+                "path": format!("{PROTOTYPE_ARTIFACT_ROOT}/{artifact_id}.json"),
+                "content_base64": base64::engine::general_purpose::STANDARD.encode(data),
+                "encoding": "base64",
+                "atomic": true,
+                "rollback": true,
+            }),
+        )
+    }
+
+    pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
         let repo = canonical_repo(repo)?;
         let path = secure_relative_path(&repo, path)?;
         self.call_tool(
@@ -916,7 +935,9 @@ fn safe_artifact_id(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-}\n\n/// Force-kills a process by pid, cross-platform, best-effort. Used only to
+}
+
+/// Force-kills a process by pid, cross-platform, best-effort. Used only to
 /// unblock a hung handshake read after [`DEFAULT_HANDSHAKE_TIMEOUT_MS`]; a
 /// failure to kill is not itself fatal (the caller has already decided to
 /// report a timeout either way).

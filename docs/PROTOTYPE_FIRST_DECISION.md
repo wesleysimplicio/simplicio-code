@@ -30,7 +30,19 @@ repository/headless preflight and can render `--surface tui|ui|headless|acp`.
 The contract fixture is
 [`docs/contracts/prototype-first-decision.v1.json`](contracts/prototype-first-decision.v1.json).
 
-The external Loop #568 state/reporting contract and a Runtime binary are not
-available in this checkout. Code therefore exposes the typed state and keeps
-the integration fail-closed; the full product E2E remains dependent on those
-upstream surfaces.
+External acceptance evidence is combined with
+`scripts/validate_prototype_acceptance.py`. The deterministic receipt requires
+Loop #568 to accept every state, a versioned negotiated Runtime binary with a
+SHA-256 identity and `simplicio_prototype_artifact_write`, identical plan/source
+revisions, all four complete product surfaces, failure/rollback evidence, and
+matching replay hashes. Missing upstream evidence remains explicitly
+`blocked`; the validator never substitutes a mock or local filesystem result.
+
+```bash
+python3 scripts/validate_prototype_acceptance.py \
+  --loop /path/loop.json --runtime /path/runtime.json --e2e /path/e2e.json
+```
+
+Use `--benchmark 10000` to measure the receipt-validation hot path. Timing is
+otherwise `null` with a reason so a deterministic receipt never estimates an
+unobserved metric.
