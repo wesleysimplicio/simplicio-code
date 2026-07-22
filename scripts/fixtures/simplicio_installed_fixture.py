@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Hermetic installed AgentHost/Runtime fixture for Code's productive E2E.
+
+This executable deliberately refuses to run unless the E2E runner supplies its
+private opt-in variable.  It is a contract fixture, never a product fallback.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import socket
+import subprocess
+import sys
+
+HOST_ID = "code-e2e-agent-host-00000001"
+TOOLS = ["simplicio_edit", "simplicio_exec", "simplicio_file_read", "simplicio_fs_delete", "simplicio_fs_list", "simplicio_fs_stat", "simplicio_fs_write", "simplicio_search"]
+
+
+def _host_envelope(**extra: object) -> dict[str, object]:
+    return {"ok": True, "host_instance_id": HOST_ID, "protocol_schema": "simplicio.agent-host/v1", "protocol_version": 1, "agent_protocol": "agent/v1", "profile": "e2e", "capabilities": ["host.advisories", "host.status", "turn.cancel", "turn.reconcile", "turn.start"], "advisory_schema": "simplicio.agent-advisory/v1", **extra}
+
+
+def agent_response(request: dict[str, object], state: dict[str, object]) -> dict[str, object]:
+    op = request.get("op")
+    if op == "host.status":
+        return _host_envelope(host={"ready": True, "stopping": False, "host_instance_id": HOST_ID})
+    if op == "turn.start":
+        identity = {key: request.get(key) for key in ("workspace_id", "session_id", "turn_id", "attempt_id", "idempotency_key", "run_id", "stage_id", "fence", "revision")}
+        if any(value is None or value == "" for value in identity.values()) or identity["turn_id"] != identity["idempotency_key"]:
+            return {**_host_envelope(), "ok": False, "error": "invalid causal identity"}
+        turn_id = str(identity["turn_id"])
+        state.setdefault("turns", {})[turn_id] = identity
+        state["sequence"] = int(state.get("sequence", 1)) + 1
+        return _host_envelope(result={"final_response": f"fixture:{request.get('profile')}", "messages": [], "api_calls": 0, "completed": True, "failed": False, "interrupted": False})
+    if op == "turn.cancel":
+        turn_id = str(request.get("turn_id", ""))
+        status = "cancelled" if turn_id in state.setdefault("turns", {}) else "not_found"
+        return _host_envelope(status=status)
+    if op == "turn.reconcile":
+        found = str(request.get("turn_id", "")) in state.setdefault("turns", {})
+        return _host_envelope(status="terminal" if found else "not_found")
+    if op == "host.advisories":
+        cursor = int(request.get("cursor", 0))
+        events = [{"schema": "simplicio.agent-advisory/v1", "sequence": 1, "kind": "host.ready", "severity": "info", "summary": "Agent host is ready.", "action": None, "ts_wall_ns": 0}] if cursor < 1 else []
+        return _host_envelope(advisories={"schema": "simplicio.agent-advisory/v1", "host_instance_id": HOST_ID, "events": events, "next_cursor": 1, "truncated": False})
+    return {**_host_envelope(), "ok": False, "error": "unsupported operation"}
+
+
+def serve_agent(socket_path: Path) -> None:  # pragma: no cover - system subprocess boundary
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    socket_path.unlink(missing_ok=True)
+    state: dict[str, object] = {}
+    with socket.socket(socket.AF_UNIX) as server:
+        server.bind(str(socket_path))
+        os.chmod(socket_path, 0o600)
+        server.listen(8)
+        while True:
+            connection, _ = server.accept()
+            with connection:
+                chunks = []
+                while chunk := connection.recv(65536):
+                    chunks.append(chunk)
+                request = json.loads(b"".join(chunks))
+                connection.sendall(json.dumps(agent_response(request, state), sort_keys=True).encode())
+
+
+def _safe_path(repo: Path, relative: str) -> Path:
+    resolved = (repo / relative).resolve()
+    if resolved != repo and repo not in resolved.parents:
+        raise ValueError("path escapes repository")
+    return resolved
+
+
+def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+    repo = Path(str(arguments.get("repo", "."))).resolve()
+    if name == "simplicio_edit":
+        plan = json.loads(str(arguments["plan"]))
+        for item in plan.get("files", []):
+            target = _safe_path(repo, item["file"])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(item.get("content", ""), encoding="utf-8")
+        payload = {"schema": "simplicio.edit-result/v1", "accepted": True, "plan": plan, "rolled_back": False}
+    elif name == "simplicio_exec":
+        cwd = _safe_path(repo, str(arguments.get("cwd", ".")))
+        completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)
+        payload = {"schema": "simplicio.exec-result/v1", "stdout": completed.stdout, "stderr": completed.stderr, "exit_code": completed.returncode, "timed_out": False, "truncated": False, "effect_state": "completed"}
+    else:
+        payload = {"schema": "simplicio.fixture-result/v1", "accepted": True}
+    return {"isError": False, "content": [{"type": "text", "text": json.dumps(payload, sort_keys=True)}]}
+
+
+def serve_runtime() -> None:  # pragma: no cover - system subprocess boundary
+    for line in sys.stdin:
+        message = json.loads(line)
+        method, request_id = message.get("method"), message.get("id")
+        if request_id is None:
+            continue
+        if method == "initialize":
+            result = {"protocolVersion": "2024-11-05", "serverInfo": {"name": "simplicio", "version": "code-e2e-fixture/1"}}
+        elif method == "tools/list":
+            result = {"tools": [{"name": tool} for tool in TOOLS]}
+        elif method == "tools/call":
+            params = message["params"]
+            result = runtime_tool(params["name"], params.get("arguments", {}))
+        else:
+            result = {}
+        print(json.dumps({"jsonrpc": "2.0", "id": request_id, "result": result}, sort_keys=True), flush=True)
+
+
+def main() -> None:  # pragma: no cover - system subprocess boundary
+    if os.environ.get("SIMPLICIO_CODE_E2E_FIXTURE") != "1":
+        raise SystemExit("refusing productive use: set by scripts/installed_code_e2e.py only")
+    if len(sys.argv) == 3 and sys.argv[1] == "agent":
+        serve_agent(Path(sys.argv[2]))
+    elif sys.argv[1:5] == ["serve", "--mcp", "--stdio", "--json"]:
+        serve_runtime()
+    else:
+        raise SystemExit("usage: fixture agent SOCKET | fixture serve --mcp --stdio --json")
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

@@ -41,6 +41,7 @@ remain behind `SimplicioRuntimeFs::with_runtime`: AgentHost is checked first,
 Runtime owns the filesystem/exec effect, and any missing or incompatible
 dependency fails closed. A valid offline fixture cannot satisfy that gate.
 
-An actual installed E2E receipt still requires an installed AgentHost and
-Runtime fixture on the target operating system; this change intentionally does
-not manufacture that evidence.
+The repository's hermetic installed contract fixture and its explicit trust
+boundary are documented in [INSTALLED_CODE_E2E.md](INSTALLED_CODE_E2E.md).
+It supplies repeatable Code-side integration evidence without being eligible
+for production discovery or replacing independently released executors.
