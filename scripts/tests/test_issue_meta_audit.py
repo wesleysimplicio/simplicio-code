@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from scripts.issue_meta_audit import SCHEMA, audit, fetch_all, main, render_markdown
+from scripts.issue_meta_audit import REWRITE_SCHEMA, SCHEMA, audit, build_rewrite_bundle, fetch_all, main, render_markdown
 
 
 def _issue(number=1, body="", **overrides):
@@ -71,6 +71,21 @@ def test_markdown_records_counts_hash_and_reproduction_command():
     assert "**1** accessible issues" in report
     assert "Body SHA-256" in report
     assert "python3 scripts/issue_meta_audit.py" in report
+    assert "--rewrites docs/audits/issue-139-rewrites.json" in report
+
+
+def test_rewrite_bundle_is_append_only_hash_guarded_and_never_claims_completion():
+    item = _issue(body="## Objetivo\nPreservar o objetivo existente.\n")
+    result = audit([item], "owner/repo", "fixture")
+    bundle = build_rewrite_bundle([item], result)
+    draft = bundle["drafts"][0]
+    assert bundle["schema"] == REWRITE_SCHEMA
+    assert draft["expected_body_sha256"] == result["issues"][0]["body_sha256"]
+    assert draft["status"] == "draft-needs-owner-review"
+    assert "## Objetivo" not in draft["append_markdown"]
+    assert "Não fechar" in draft["append_markdown"]
+    proposed = item["body"].rstrip() + "\n" + draft["append_markdown"]
+    assert audit([{**item, "body": proposed}], "owner/repo", "proposed")["summary"]["reviewed_compliant"] == 1
 
 
 def test_fetch_all_paginates_and_preserves_pull_request_entries():
@@ -110,10 +125,12 @@ def test_main_writes_both_reproducible_artifacts(tmp_path):
     source = tmp_path / "source.json"
     output = tmp_path / "nested" / "audit.json"
     report = tmp_path / "nested" / "audit.md"
+    rewrites = tmp_path / "nested" / "rewrites.json"
     source.write_text(json.dumps([_issue(body=COMPLETE_BODY)]), encoding="utf-8")
-    assert main(["--repository", "owner/repo", "--input", str(source), "--json", str(output), "--markdown", str(report)]) == 0
+    assert main(["--repository", "owner/repo", "--input", str(source), "--json", str(output), "--markdown", str(report), "--rewrites", str(rewrites)]) == 0
     assert json.loads(output.read_text())["summary"]["accessible_issues"] == 1
     assert "# Issue meta-audit report" in report.read_text()
+    assert json.loads(rewrites.read_text())["drafts"] == []
 
 
 def test_main_fails_closed_for_invalid_export(tmp_path):
