@@ -500,6 +500,10 @@ mod tests {
             highest_severity: severity,
             latest_summary: summary.map(str::to_owned),
             suggested_action: action.map(str::to_owned),
+            latest_kind: None,
+            latest_evidence: None,
+            latest_confidence_bps: None,
+            latest_receipt_id: None,
             history_truncated: false,
         }
     }

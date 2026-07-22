@@ -7,7 +7,7 @@
 //! built-in coordinator or local fallback in this crate.
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 #[cfg(windows)]
 use std::net::{IpAddr, SocketAddr};
 use std::{
@@ -125,6 +125,16 @@ pub struct AgentAdvisory {
     pub severity: AdvisorySeverity,
     pub summary: String,
     pub action: Option<String>,
+    /// Runtime-backed evidence reference. This is an opaque receipt/hash, not
+    /// workspace content, so advisory polling cannot exfiltrate source text.
+    #[serde(default)]
+    pub evidence: Option<String>,
+    /// Agent-reported confidence in basis points (0..=10_000).
+    #[serde(default)]
+    pub confidence_bps: Option<u16>,
+    /// Receipt produced by Runtime after an explicitly approved effect.
+    #[serde(default)]
+    pub receipt_id: Option<String>,
     pub ts_wall_ns: u64,
 }
 
@@ -144,6 +154,10 @@ pub struct AgentAttentionState {
     pub highest_severity: Option<AdvisorySeverity>,
     pub latest_summary: Option<String>,
     pub suggested_action: Option<String>,
+    pub latest_kind: Option<String>,
+    pub latest_evidence: Option<String>,
+    pub latest_confidence_bps: Option<u16>,
+    pub latest_receipt_id: Option<String>,
     pub history_truncated: bool,
 }
 
@@ -155,6 +169,13 @@ impl AdvisoryPage {
             highest_severity: self.events.iter().map(|event| event.severity).max(),
             latest_summary: self.events.last().map(|event| event.summary.clone()),
             suggested_action: self.events.last().and_then(|event| event.action.clone()),
+            latest_kind: self.events.last().map(|event| event.kind.clone()),
+            latest_evidence: self.events.last().and_then(|event| event.evidence.clone()),
+            latest_confidence_bps: self.events.last().and_then(|event| event.confidence_bps),
+            latest_receipt_id: self
+                .events
+                .last()
+                .and_then(|event| event.receipt_id.clone()),
             history_truncated: self.truncated,
         }
     }
@@ -210,7 +231,11 @@ impl CausalIdentity {
             if value.trim().is_empty() {
                 return Err(Error::InvalidCausalIdentity(format!("{field} is required")));
             }
-            if value.len() > 256 || value.chars().any(|character| character.is_control() || character.is_whitespace()) {
+            if value.len() > 256
+                || value
+                    .chars()
+                    .any(|character| character.is_control() || character.is_whitespace())
+            {
                 return Err(Error::InvalidCausalIdentity(format!(
                     "{field} contains unsupported characters"
                 )));
@@ -919,6 +944,43 @@ fn parse_advisory_page(
 }
 
 fn validate_advisory(event: &AgentAdvisory) -> Result<(), Error> {
+    validate_projection_text("summary", &event.summary, 512)?;
+    for (name, value) in [
+        ("action", event.action.as_deref()),
+        ("evidence", event.evidence.as_deref()),
+        ("receipt_id", event.receipt_id.as_deref()),
+    ] {
+        if let Some(value) = value {
+            validate_projection_text(name, value, 512)?;
+        }
+    }
+    if event.confidence_bps.is_some_and(|value| value > 10_000) {
+        return Err(Error::InvalidResponse(
+            "advisory confidence exceeds 100%".into(),
+        ));
+    }
+
+    // Proactive advisories carry bounded presentation data and opaque Runtime
+    // evidence only. Suggested actions remain inert until a separate approval.
+    if matches!(
+        event.kind.as_str(),
+        "attention" | "finding" | "risk" | "suggestion" | "plan" | "progress" | "receipt"
+    ) {
+        if matches!(event.kind.as_str(), "finding" | "risk" | "suggestion")
+            && (event.evidence.is_none() || event.confidence_bps.is_none())
+        {
+            return Err(Error::InvalidResponse(format!(
+                "proactive advisory '{}' requires evidence and confidence",
+                event.kind
+            )));
+        }
+        if event.kind == "receipt" && event.receipt_id.is_none() {
+            return Err(Error::InvalidResponse(
+                "receipt advisory requires receipt_id".into(),
+            ));
+        }
+        return Ok(());
+    }
     let expected = match event.kind.as_str() {
         "host.ready" => (AdvisorySeverity::Info, "Agent host is ready.", None),
         "host.backpressure" => (
@@ -946,6 +1008,18 @@ fn validate_advisory(event: &AgentAdvisory) -> Result<(), Error> {
         return Err(Error::InvalidResponse(format!(
             "advisory '{}' does not match its fixed catalog entry",
             event.kind
+        )));
+    }
+    Ok(())
+}
+
+fn validate_projection_text(name: &str, value: &str, max_bytes: usize) -> Result<(), Error> {
+    if value.trim().is_empty()
+        || value.len() > max_bytes
+        || value.chars().any(|character| character.is_control())
+    {
+        return Err(Error::InvalidResponse(format!(
+            "advisory {name} is not safe for projection"
         )));
     }
     Ok(())
@@ -1084,8 +1158,7 @@ mod tests {
     #[test]
     fn causal_identity_is_complete_and_serializable_at_the_turn_boundary() {
         let identity = CausalIdentity::new("workspace-1", "session-1", "turn-1").unwrap();
-        let request =
-            AgentTurnRequest::with_identity("desktop", &identity, "inspect").unwrap();
+        let request = AgentTurnRequest::with_identity("desktop", &identity, "inspect").unwrap();
         let wire = serde_json::to_value(request).unwrap();
         for field in [
             "workspace_id",
@@ -1219,8 +1292,97 @@ mod tests {
                 highest_severity: Some(AdvisorySeverity::Warning),
                 latest_summary: Some("Agent host is saturated.".into()),
                 suggested_action: Some("retry".into()),
+                latest_kind: Some("host.backpressure".into()),
+                latest_evidence: None,
+                latest_confidence_bps: None,
+                latest_receipt_id: None,
                 history_truncated: false,
             }
+        );
+    }
+
+    #[test]
+    fn projects_proactive_finding_with_evidence_and_confidence() {
+        let mut response = host_response();
+        response["advisories"] = json!({
+            "host_instance_id": HOST_ID,
+            "schema": ADVISORY_SCHEMA,
+            "events": [{
+                "schema": ADVISORY_SCHEMA,
+                "sequence": 1,
+                "kind": "finding",
+                "severity": "warning",
+                "summary": "Validation coverage regressed.",
+                "action": "review_validation",
+                "evidence": "runtime://receipt/test-42",
+                "confidence_bps": 9750,
+                "ts_wall_ns": 1
+            }],
+            "next_cursor": 1,
+            "truncated": false
+        });
+
+        let attention = parse_advisory_page(&response, 0, &host_instance_id())
+            .unwrap()
+            .attention_state();
+        assert_eq!(attention.latest_kind.as_deref(), Some("finding"));
+        assert_eq!(
+            attention.latest_evidence.as_deref(),
+            Some("runtime://receipt/test-42")
+        );
+        assert_eq!(attention.latest_confidence_bps, Some(9750));
+        assert_eq!(
+            attention.suggested_action.as_deref(),
+            Some("review_validation")
+        );
+    }
+
+    #[test]
+    fn rejects_unsubstantiated_or_unbounded_proactive_advisories() {
+        let base = AgentAdvisory {
+            schema: ADVISORY_SCHEMA.into(),
+            sequence: 1,
+            kind: "risk".into(),
+            severity: AdvisorySeverity::Warning,
+            summary: "Possible regression.".into(),
+            action: None,
+            evidence: None,
+            confidence_bps: Some(10_001),
+            receipt_id: None,
+            ts_wall_ns: 1,
+        };
+        assert!(validate_advisory(&base).is_err());
+        let mut oversized = base;
+        oversized.confidence_bps = Some(5000);
+        oversized.evidence = Some("x".repeat(513));
+        assert!(validate_advisory(&oversized).is_err());
+    }
+
+    #[test]
+    #[ignore = "microbenchmark; run explicitly with --ignored --nocapture"]
+    fn benchmark_proactive_advisory_validation() {
+        let advisory = AgentAdvisory {
+            schema: ADVISORY_SCHEMA.into(),
+            sequence: 1,
+            kind: "finding".into(),
+            severity: AdvisorySeverity::Warning,
+            summary: "Validation coverage regressed.".into(),
+            action: Some("review_validation".into()),
+            evidence: Some("runtime://receipt/test-42".into()),
+            confidence_bps: Some(9750),
+            receipt_id: None,
+            ts_wall_ns: 1,
+        };
+        let iterations = 100_000u32;
+        let started = std::time::Instant::now();
+        for _ in 0..iterations {
+            std::hint::black_box(validate_advisory(std::hint::black_box(&advisory))).unwrap();
+        }
+        let elapsed = started.elapsed();
+        eprintln!(
+            "proactive_advisory_validation iterations={iterations} elapsed_ns={} ns_per_op={:.2}",
+            elapsed.as_nanos(),
+            elapsed.as_nanos() as f64 / f64::from(iterations)
         );
     }
 
