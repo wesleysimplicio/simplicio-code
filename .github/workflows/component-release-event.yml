@@ -47,7 +47,8 @@ jobs:
             --event /tmp/release/event.json --trust-dir /tmp/release/trust \
             --artifacts-dir /tmp/release/artifacts \
             --manifest-out config/component-bundle.json \
-            --state config/component-release-events.json
+            --state config/component-release-events.json \
+            --receipt-out config/component-release-receipt.json
           python3 scripts/release/generate_component_client.py \
             --schema docs/contracts/component-release-v1.schema.json \
             --out crates/codegen/simplicio-runtime-client/src/generated.rs

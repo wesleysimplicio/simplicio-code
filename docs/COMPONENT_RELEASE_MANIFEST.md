@@ -55,6 +55,12 @@ contracts. Re-running the same event with `--check` proves byte reproducibility.
 The signed-event workflow additionally materializes the operator trust root and
 four immutable HTTPS artifacts, verifies their digests and compatibility before
 writing state, and uses an event-id branch/PR with durable replay protection.
+Every bump also records `config/component-release-receipt.json`, a deterministic
+`simplicio.release-bump-receipt/v1` containing the immutable event identity,
+producer sequence, bundle digest, artifact digests, and explicit verification
+results. It deliberately contains no timestamps, host paths, or environment data,
+so replaying the same event produces identical review evidence. Only Runtime,
+Loop, and Agent ecosystem authorities are accepted as event producers.
 Missing or revoked keys, malformed events, stale sequences, incompatible
 protocols, and incorrect artifacts fail closed; the workflow only prepares a
 Code bump and never becomes a Runtime/map/queue authority.
