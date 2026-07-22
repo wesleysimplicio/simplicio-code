@@ -6,6 +6,7 @@
 //! request. This lets older Runtimes keep the already-supported read path
 //! while rejecting newer operations with an actionable incompatibility error.
 
+pub mod agent_workers;
 pub mod component_release;
 pub mod external_routing;
 pub mod loop_hub;
