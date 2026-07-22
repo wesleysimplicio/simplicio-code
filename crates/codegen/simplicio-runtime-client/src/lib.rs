@@ -7,6 +7,7 @@
 //! while rejecting newer operations with an actionable incompatibility error.
 
 pub mod component_release;
+pub mod external_routing;
 pub mod loop_hub;
 pub mod loop_hub_transport;
 pub mod map_cache;
