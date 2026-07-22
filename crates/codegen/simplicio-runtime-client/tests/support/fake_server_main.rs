@@ -165,7 +165,16 @@ fn handle_tool_call(name: &str, arguments: &Value) -> Value {
             if argv.and_then(|values| values.first()).and_then(Value::as_str) == Some("__fail__") {
                 json!({"isError":true,"content":[{"type":"text","text":"injected exec failure"}]})
             } else {
-                tool_ok(json!({"schema":"simplicio.exec-result/v1","exit_code":0,"stdout":"fake stdout","stderr":"","effect":"committed","idempotency_key":arguments.get("idempotency_key")}).to_string())
+                let effect_state = if argv
+                    .and_then(|values| values.first())
+                    .and_then(Value::as_str)
+                    == Some("__unknown__")
+                {
+                    "effect_unknown"
+                } else {
+                    "completed"
+                };
+                tool_ok(json!({"schema":"simplicio.exec-result/v1","exit_code":0,"stdout":"fake stdout","stderr":"","effect_state":effect_state,"idempotency_key":arguments.get("idempotency_key")}).to_string())
             }
         }
         other => json!({
