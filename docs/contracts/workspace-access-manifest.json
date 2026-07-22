@@ -97,18 +97,6 @@
       "max_count": 2
     },
     {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/content.rs",
-      "kind": "process",
-      "classification": "violation",
-      "max_count": 3
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/content.rs",
-      "kind": "walk",
-      "classification": "violation",
-      "max_count": 5
-    },
-    {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
       "kind": "filesystem",
       "classification": "violation",
