@@ -6,7 +6,9 @@
 It makes the ownership decision explicit for Code: with a ready Hub, Runtime,
 Mapper, scheduler, and inference capacity have one Hub owner and Code reuses
 the negotiated handles; `standalone` is an explicit mode, not a silent
-fallback.
+fallback. `standalone` means only that a simple operation does not create a
+Loop workflow; it never removes the production requirement for a compatible
+Simplicio Agent and Runtime.
 
 `LoopHubClient` also forwards interactive submissions with deterministic
 session/turn/goal idempotency keys, queue admission/backpressure, progress
@@ -60,9 +62,10 @@ with that cursor. Submit, cancel, and resume are deliberately not retried
 after a broken connection: their receipt may be unknown, so the client
 reattaches and returns a fail-closed error instead of duplicating an effect.
 
-The adapter validates that the Hub owns Runtime, Mapper, scheduler, and
-inference, exposes bounded interactive/background capacity, and declares one
-active inference slot. A handshake or attach mismatch blocks the client.
+The adapter validates a ready, versioned external Agent and that the Hub owns
+Runtime, Mapper, scheduler, and inference, exposes bounded
+interactive/background capacity, and declares one active inference slot. A
+handshake or attach mismatch blocks the client.
 
 This completes the Code-side transport boundary for #55/#106. The external
 Loop Hub daemon/endpoint provider, Mapper service, queue/fairness enforcement,
@@ -71,3 +74,10 @@ issues must stay open until two TUIs plus headless and ACP attach to the same
 running Hub and receipts/process counts prove the no-duplication invariant.
 The contract tests use an in-process Unix socket fixture only; they do not
 pretend to be external Loop Hub evidence.
+
+Coordinated goals (waves, multiple issues, global queues, or parallel work)
+must use a ready Hub. The admission validator rejects `coordinated` scope when
+the Hub is absent rather than falling back to Code-local fan-out. The natural
+request “finish all issues for project X” is therefore routed Code → Agent →
+Loop Hub → Runtime/Mapper/workers; completion still requires a remotely
+requeried delivery receipt from the external ecosystem.
