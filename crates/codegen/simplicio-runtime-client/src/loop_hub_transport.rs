@@ -537,6 +537,7 @@ mod tests {
                     "protocol": LOOP_HUB_PROTOCOL,
                     "hub_id": "hub-1",
                     "ready": true,
+                    "agent":{"agent_id":"agent-1","protocol":"simplicio.agent/v1","ready":true},
                     "services": [
                         {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
                         {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
@@ -591,6 +592,9 @@ mod tests {
                     "terminal":false
                 }),
             );
+            // Close both cloned descriptors so the client observes EOF and
+            // exercises reconnect instead of waiting forever for a frame.
+            drop(reader);
             drop(writer);
 
             let (stream, _) = listener.accept().unwrap();
@@ -605,6 +609,7 @@ mod tests {
                     "protocol": LOOP_HUB_PROTOCOL,
                     "hub_id": "hub-1",
                     "ready": true,
+                    "agent":{"agent_id":"agent-1","protocol":"simplicio.agent/v1","ready":true},
                     "services": [
                         {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
                         {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
