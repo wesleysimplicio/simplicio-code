@@ -26,13 +26,24 @@ pub enum HbpError {
     BrokenChain(u64),
     #[error("HBP payload exceeds the safety limit")]
     TooLarge,
+    #[error("HBP sequence is not contiguous: expected {expected}, found {actual}")]
+    NonContiguousSequence { expected: u64, actual: u64 },
 }
 
 pub fn encode_hbp(records: &[HbpRecord]) -> Result<Vec<u8>, HbpError> {
     let mut output = Vec::new();
     let mut previous = [0u8; HASH_SIZE];
-    for record in records {
-        if record.payload.len() > MAX_RECORD_BYTES { return Err(HbpError::TooLarge); }
+    for (index, record) in records.iter().enumerate() {
+        let expected = index as u64;
+        if record.sequence != expected {
+            return Err(HbpError::NonContiguousSequence {
+                expected,
+                actual: record.sequence,
+            });
+        }
+        if record.payload.len() > MAX_RECORD_BYTES {
+            return Err(HbpError::TooLarge);
+        }
         let mut header = [0u8; HEADER_SIZE];
         header[..4].copy_from_slice(&HBP_MAGIC);
         header[4..6].copy_from_slice(&HBP_VERSION.to_le_bytes());
@@ -56,25 +67,53 @@ pub fn decode_hbp(bytes: &[u8]) -> Result<Vec<HbpRecord>, HbpError> {
     let mut previous = [0u8; HASH_SIZE];
     let mut records = Vec::new();
     while offset < bytes.len() {
-        if bytes.len() - offset < HEADER_SIZE { return Err(HbpError::Truncated(records.len() as u64)); }
+        if bytes.len() - offset < HEADER_SIZE {
+            return Err(HbpError::Truncated(records.len() as u64));
+        }
         let header = &bytes[offset..offset + HEADER_SIZE];
-        if &header[..4] != HBP_MAGIC.as_slice() { return Err(HbpError::BadMagic); }
+        if &header[..4] != HBP_MAGIC.as_slice() {
+            return Err(HbpError::BadMagic);
+        }
         let version = u16::from_le_bytes(header[4..6].try_into().unwrap());
-        if version != HBP_VERSION { return Err(HbpError::UnsupportedVersion(version)); }
+        if version != HBP_VERSION {
+            return Err(HbpError::UnsupportedVersion(version));
+        }
         let sequence = u64::from_le_bytes(header[8..16].try_into().unwrap());
+        let expected_sequence = records.len() as u64;
+        if sequence != expected_sequence {
+            return Err(HbpError::NonContiguousSequence {
+                expected: expected_sequence,
+                actual: sequence,
+            });
+        }
         let length = u64::from_le_bytes(header[16..24].try_into().unwrap()) as usize;
-        if length > MAX_RECORD_BYTES { return Err(HbpError::TooLarge); }
-        if header[24..56] != previous { return Err(HbpError::BrokenChain(sequence)); }
-        let end = offset.checked_add(HEADER_SIZE).and_then(|n| n.checked_add(length)).and_then(|n| n.checked_add(HASH_SIZE)).ok_or(HbpError::InvalidLength)?;
-        if end > bytes.len() { return Err(HbpError::Truncated(sequence)); }
+        if length > MAX_RECORD_BYTES {
+            return Err(HbpError::TooLarge);
+        }
+        if header[24..56] != previous {
+            return Err(HbpError::BrokenChain(sequence));
+        }
+        let end = offset
+            .checked_add(HEADER_SIZE)
+            .and_then(|n| n.checked_add(length))
+            .and_then(|n| n.checked_add(HASH_SIZE))
+            .ok_or(HbpError::InvalidLength)?;
+        if end > bytes.len() {
+            return Err(HbpError::Truncated(sequence));
+        }
         let payload = &bytes[offset + HEADER_SIZE..offset + HEADER_SIZE + length];
         let expected = &bytes[end - HASH_SIZE..end];
         let mut hasher = blake3::Hasher::new();
         hasher.update(header);
         hasher.update(payload);
-        if hasher.finalize().as_bytes() != expected { return Err(HbpError::BrokenChain(sequence)); }
+        if hasher.finalize().as_bytes() != expected {
+            return Err(HbpError::BrokenChain(sequence));
+        }
         previous.copy_from_slice(expected);
-        records.push(HbpRecord { sequence, payload: payload.to_vec() });
+        records.push(HbpRecord {
+            sequence,
+            payload: payload.to_vec(),
+        });
         offset = end;
     }
     Ok(records)
@@ -86,7 +125,16 @@ mod tests {
 
     #[test]
     fn hash_chain_round_trip_and_tamper_detection() {
-        let records = vec![HbpRecord { sequence: 0, payload: b"one".to_vec() }, HbpRecord { sequence: 1, payload: b"two".to_vec() }];
+        let records = vec![
+            HbpRecord {
+                sequence: 0,
+                payload: b"one".to_vec(),
+            },
+            HbpRecord {
+                sequence: 1,
+                payload: b"two".to_vec(),
+            },
+        ];
         let mut bytes = encode_hbp(&records).unwrap();
         assert_eq!(decode_hbp(&bytes).unwrap(), records);
         bytes[HEADER_SIZE] ^= 1;

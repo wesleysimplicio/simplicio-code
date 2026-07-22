@@ -12,12 +12,21 @@ on:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: python scripts/check_json_boundaries.py --mode baseline --max-findings 100
+      - name: Strict Code-owned binary-format lane
+        run: >-
+          python scripts/check_json_boundaries.py --mode strict --max-findings 100
+          --scope-file config/json-boundaries-binary-formats.txt
+      - name: Scanner and package-policy regression tests
+        run: python -m pytest scripts/tests/test_json_boundaries.py scripts/tests/test_package_contents.py
       - if: ${{ inputs.strict == true }}
         run: python scripts/check_json_boundaries.py --mode strict --max-findings 100
