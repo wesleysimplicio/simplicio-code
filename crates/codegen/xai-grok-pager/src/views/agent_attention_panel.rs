@@ -116,7 +116,7 @@ pub fn render_agent_attention_panel(
 
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
-        "Host advisories",
+        "Proactive advisories",
         Style::default()
             .fg(theme.text_primary)
             .add_modifier(Modifier::BOLD),
@@ -136,6 +136,12 @@ pub fn render_agent_attention_panel(
                 Span::styled(label, Style::default().fg(color)),
             ]));
         }
+        if let Some(kind) = &attention.latest_kind {
+            lines.push(Line::from(Span::styled(
+                format!("event: {kind}"),
+                Style::default().fg(theme.accent_system),
+            )));
+        }
         if let Some(summary) = &attention.latest_summary {
             lines.push(Line::default());
             lines.push(Line::from(Span::styled(
@@ -145,6 +151,24 @@ pub fn render_agent_attention_panel(
             lines.push(Line::from(Span::styled(
                 summary.clone(),
                 Style::default().fg(theme.text_primary),
+            )));
+        }
+        if let Some(evidence) = &attention.latest_evidence {
+            lines.push(Line::from(Span::styled(
+                format!("evidence: {evidence}"),
+                Style::default().fg(theme.gray_bright),
+            )));
+        }
+        if let Some(confidence) = attention.latest_confidence_bps {
+            lines.push(Line::from(Span::styled(
+                format!("confidence: {}.{:02}%", confidence / 100, confidence % 100),
+                Style::default().fg(theme.gray_bright),
+            )));
+        }
+        if let Some(receipt) = &attention.latest_receipt_id {
+            lines.push(Line::from(Span::styled(
+                format!("receipt: {receipt}"),
+                Style::default().fg(theme.accent_success),
             )));
         }
         if let Some(action) = &attention.suggested_action {
@@ -172,7 +196,7 @@ pub fn render_agent_attention_panel(
     }
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
-        "Passive: no actions run",
+        "Effects require approval",
         Style::default().fg(theme.gray_dim),
     )));
 
@@ -251,7 +275,7 @@ mod tests {
         assert!(text.contains("DEGRADED"));
         assert!(text.contains("Agent host is unavailable."));
         assert!(text.contains("reason: agent_unavailable"));
-        assert!(text.contains("Passive: no actions run"));
+        assert!(text.contains("Effects require approval"));
     }
 
     #[test]
@@ -266,8 +290,12 @@ mod tests {
                 cursor: 7,
                 unread: 1,
                 highest_severity: Some(AdvisorySeverity::Warning),
-                latest_summary: Some("Agent host is saturated.".into()),
-                suggested_action: Some("retry".into()),
+                latest_summary: Some("Validation coverage regressed.".into()),
+                suggested_action: Some("review_validation".into()),
+                latest_kind: Some("finding".into()),
+                latest_evidence: Some("runtime://receipt/test-42".into()),
+                latest_confidence_bps: Some(9750),
+                latest_receipt_id: Some("receipt-test-42".into()),
                 history_truncated: true,
             },
         );
@@ -275,9 +303,13 @@ mod tests {
         let mut buf = Buffer::empty(area);
         render_agent_attention_panel(area, &mut buf, &state);
         let text = buffer_text(&buf);
-        assert!(text.contains("Agent host is saturated."));
+        assert!(text.contains("Validation coverage regressed."));
+        assert!(text.contains("event: finding"));
+        assert!(text.contains("evidence: runtime://receipt/test-42"));
+        assert!(text.contains("confidence: 97.50%"));
+        assert!(text.contains("receipt: receipt-test-42"));
         assert!(text.contains("Suggested (not run)"));
-        assert!(text.contains("retry"));
+        assert!(text.contains("review_validation"));
     }
 
     #[test]
@@ -313,6 +345,10 @@ mod tests {
                 highest_severity: None,
                 latest_summary: None,
                 suggested_action: None,
+                latest_kind: None,
+                latest_evidence: None,
+                latest_confidence_bps: None,
+                latest_receipt_id: None,
                 history_truncated: false,
             },
         );
@@ -339,6 +375,10 @@ mod tests {
                 highest_severity: Some(AdvisorySeverity::Info),
                 latest_summary: Some("Agent host is ready.".into()),
                 suggested_action: None,
+                latest_kind: None,
+                latest_evidence: None,
+                latest_confidence_bps: None,
+                latest_receipt_id: None,
                 history_truncated: false,
             },
         );
@@ -353,6 +393,10 @@ mod tests {
                 highest_severity: Some(AdvisorySeverity::Info),
                 latest_summary: Some("Agent host is ready.".into()),
                 suggested_action: None,
+                latest_kind: None,
+                latest_evidence: None,
+                latest_confidence_bps: None,
+                latest_receipt_id: None,
                 history_truncated: false,
             },
         );
