@@ -1,0 +1,65 @@
+name: component release event
+
+on:
+  repository_dispatch:
+    types: [component-release-v1]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: component-release-${{ github.event.client_payload.event.payload.event_id }}
+  cancel-in-progress: false
+
+jobs:
+  verified-bump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Materialize event, trust root, and immutable artifacts
+        env:
+          EVENT_JSON: ${{ toJSON(github.event.client_payload.event) }}
+          ARTIFACT_URLS: ${{ toJSON(github.event.client_payload.artifact_urls) }}
+          RELEASE_TRUST_KEYS: ${{ secrets.RELEASE_EVENT_TRUST_KEYS }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, urllib.request
+          event = json.loads(os.environ['EVENT_JSON'])
+          urls = json.loads(os.environ['ARTIFACT_URLS'])
+          keys = json.loads(os.environ['RELEASE_TRUST_KEYS'])
+          pathlib.Path('/tmp/release/trust').mkdir(parents=True)
+          pathlib.Path('/tmp/release/artifacts').mkdir(parents=True)
+          pathlib.Path('/tmp/release/event.json').write_text(json.dumps(event))
+          for key_id, pem in keys.items():
+              if not key_id.replace('-', '').replace('_', '').isalnum(): raise SystemExit('invalid trusted key id')
+              pathlib.Path('/tmp/release/trust', key_id + '.pem').write_text(pem)
+          if set(urls) != {'agent-contracts', 'code', 'loop-hub', 'runtime'}: raise SystemExit('four artifact URLs required')
+          for name, url in urls.items():
+              if not isinstance(url, str) or not url.startswith('https://'): raise SystemExit('artifact URLs must use HTTPS')
+              with urllib.request.urlopen(url, timeout=60) as response:
+                  pathlib.Path('/tmp/release/artifacts', name).write_bytes(response.read(1_073_741_825))
+          PY
+      - name: Verify event and prepare deterministic bump
+        run: |
+          PYTHONPATH=. python3 scripts/release/prepare_component_bump.py \
+            --event /tmp/release/event.json --trust-dir /tmp/release/trust \
+            --artifacts-dir /tmp/release/artifacts \
+            --manifest-out config/component-bundle.json \
+            --state config/component-release-events.json
+          python3 scripts/release/generate_component_client.py \
+            --schema docs/contracts/component-release-v1.schema.json \
+            --out crates/codegen/simplicio-runtime-client/src/generated.rs
+      - name: Create one deduplicated bump PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: release/component-${{ github.event.client_payload.event.payload.event_id }}
+          delete-branch: true
+          commit-message: "chore(release): apply ${{ github.event.client_payload.event.payload.event_id }}"
+          title: "chore(release): promote ${{ github.event.client_payload.event.payload.event_id }}"
+          body: |
+            Verified ecosystem release bump generated from an immutable signed event.
+
+            Closes #110
+          labels: release

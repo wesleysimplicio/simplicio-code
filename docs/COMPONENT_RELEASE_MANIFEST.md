@@ -37,8 +37,12 @@ persists event ids, rejects conflicting or stale events, checks active-receipt
 drift, and invokes the existing stage/canary/active/previous promotion path.
 Duplicate delivery is a no-op and never runs the canary again.
 
-This is a Code-side ingestion boundary, not an external release publisher. It
-does not fabricate events, fetch `latest`, publish artifacts, or claim installed
-Windows/Linux/macOS E2E. External ecosystem event delivery, signed provenance
-publication, generated bump PR automation, and installed cross-platform evidence
-remain dependencies of issue #110.
+The `component-release-v1` repository dispatch workflow accepts the signed
+event plus HTTPS locations for its four immutable artifacts. It verifies the
+operator-managed trust root, every artifact digest, compatibility, ordering,
+and replay history before atomically recording the canonical manifest. It then
+opens a deterministic event-id branch/PR; workflow concurrency and durable
+event history make redelivery a no-op. A missing/revoked key, malformed event,
+stale sequence, incompatible protocol, or missing/wrong artifact fails closed
+with a next action. The workflow only prepares a Code bump: it does not resolve
+`latest`, publish artifacts, or start another Runtime/map/queue authority.
