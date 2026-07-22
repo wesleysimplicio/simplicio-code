@@ -1,0 +1,42 @@
+name: component release event
+
+on:
+  repository_dispatch:
+    types: [simplicio-component-release-v1]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: component-release-${{ github.event.client_payload.event_id }}
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Persist authenticated release event
+        env:
+          RELEASE_EVENT: ${{ toJson(github.event.client_payload) }}
+        run: printf '%s' "$RELEASE_EVENT" > "$RUNNER_TEMP/release-event.json"
+      - name: Validate pins and regenerate deterministic clients
+        run: python3 scripts/release/apply_component_release.py "$RUNNER_TEMP/release-event.json"
+      - name: Verify reproducibility
+        run: python3 scripts/release/apply_component_release.py "$RUNNER_TEMP/release-event.json" --check
+      - name: Test release contracts
+        run: python3 -m pytest scripts/tests/test_component_release.py scripts/tests/test_component_client_codegen.py scripts/tests/test_apply_component_release.py
+      - name: Open deduplicated release bump
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/component-release
+          delete-branch: true
+          commit-message: "chore(release): regenerate compatible ecosystem bundle"
+          title: "chore(release): regenerate compatible ecosystem bundle"
+          body: |
+            Applies an authenticated, digest-pinned ecosystem release event.
+
+            Refs #57
+          labels: release-train
