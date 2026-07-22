@@ -865,3 +865,870 @@
     }
   ]
 }
+{
+  "schema": "simplicio.issue-meta-audit-rewrites/v1",
+  "repository": "wesleysimplicio/simplicio-code",
+  "source": "docs/audits/issue-139-source.json",
+  "generated_at": "2026-07-21T20:46:00Z",
+  "mutation_policy": "append-only; verify expected_body_sha256 immediately before a reviewed remote edit; never close issues",
+  "drafts": [
+    {
+      "number": 3,
+      "expected_body_sha256": "df8ce8b49e47ab785365ee53418e62c75ef2a61e6fd3664508da3928e3944fed",
+      "proposed_body_sha256": "70202dce68686c0743d3a6db9e0967a97879557e3cba6b75813327a34775fe93",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 4,
+      "expected_body_sha256": "12c31a25727324227a4401853d3574e5da6f90df846815e163252571509237ca",
+      "proposed_body_sha256": "263980dd28e43abd34ec4fcbedcf37aa51565911e09eafb376cc179cc09f96e2",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 5,
+      "expected_body_sha256": "244822608ee4e8051fbae9ab596a705eed1dbe493ed83cfdf3061d3b6d1ee5f7",
+      "proposed_body_sha256": "900aa9fbd7ae177d3bda7168ea191b67fc4bb84bc3c47c3d2e993c4cdda58821",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 6,
+      "expected_body_sha256": "d2561909b7bb733ad20d1f28eade7b5299532688ee014e46ee1433a3ca6a978f",
+      "proposed_body_sha256": "f1f4350cd07521978e3d49b6317a151c9c603b955f4821a00ddb6ec017c76612",
+      "gaps_addressed": [
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 7,
+      "expected_body_sha256": "c1e06f57b813085d1c7a68685a06de67694388abe1b054736b41fbc8298d610e",
+      "proposed_body_sha256": "c2a298e8458245ea3dca327f42cb4ce25d377f4ee2d5173d24f74f0cd980407c",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 8,
+      "expected_body_sha256": "dd6155179747a0119ab74a1f4c315e9370400414f76121f15c5a504948a3f42e",
+      "proposed_body_sha256": "512c82544b513bd2090be9b83ba3a6eea321991f32cb6979dc18ef02934f913b",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 9,
+      "expected_body_sha256": "800c81d1253c1dde9353692f96413b2d223edab9f7776b2fa42b72dabb8c637a",
+      "proposed_body_sha256": "32ac09fa4a446dbca18e61b172cef01ebd9912456971802db835ba78c5f086c7",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 10,
+      "expected_body_sha256": "a3950d7c066a55f0e582680a2c8328a3b79876b2390b7f20dfa54c18a4d87f02",
+      "proposed_body_sha256": "5d577edbce4b014aaf9d7dffbfd3a9d0959c5b4fe0d86439d97661a1bb85eae9",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 11,
+      "expected_body_sha256": "a8bec5588f7b57fe1b5242e77b10a8a4a54f3f9024835e17b8264bc08f0ef431",
+      "proposed_body_sha256": "8d5ed4fdb85ef770889064cfa6881a3f77f5038ab43919c5be76734dfb64592b",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 12,
+      "expected_body_sha256": "854827ed4ef4e0eca755340f1386fc87939e28f49c5ee206d77185017af521ee",
+      "proposed_body_sha256": "a29080743eceb7756c753c45bbd25a436e3478aa5943baa0cad199cad9834c1d",
+      "gaps_addressed": [
+        "out_of_scope",
+        "dependencies",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 13,
+      "expected_body_sha256": "1cdb474a830639680e7b4bd13253819ce80824e0d168d92827655a28868f019b",
+      "proposed_body_sha256": "7e82bce8e345e4ed2adc228cee6f8d1cb59ba702220349af05de0ae5e925360f",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 14,
+      "expected_body_sha256": "2bd4a6b89566e3acf4d8f883fa19800ef3619c9a450b6dc7fc9686ed7cde13d6",
+      "proposed_body_sha256": "253e453d5bd520439e45f8f34cba508e4ae4d2b6555e60ea16a020142fadced0",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 15,
+      "expected_body_sha256": "9ce18d67ebd2bf1f260381e44903e5b6711ba9856ed77152f12705191328ea55",
+      "proposed_body_sha256": "987c3e2039f35ec5684129c21700b307a6784c9865f4ad01bc477b9919a5705b",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 16,
+      "expected_body_sha256": "1f161612e5bedc684b89846eab75da92ff24774241d8b7cd12b6c0a6e6116e74",
+      "proposed_body_sha256": "042feee47be75e6d45780b7eef2bda918f0b91a0ab138cd2185a83ffffce9465",
+      "gaps_addressed": [
+        "steps",
+        "acceptance",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 22,
+      "expected_body_sha256": "078b4860484526590eafb0d94adf1d2d145924dfbb5c34fae2f1158a4b585eb7",
+      "proposed_body_sha256": "6739d97f43a5be0fd05d8ceca79f2bde918caee2233909b930bece53e890cadb",
+      "gaps_addressed": [
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 25,
+      "expected_body_sha256": "e83f938edba8a53fd2632069b7fd0b46218ef96795c1f9d013d58a149d5301a1",
+      "proposed_body_sha256": "4e409fdf2e4af7685ef27707b18b8fb72125efa1232ba51d7aa18ee139522745",
+      "gaps_addressed": [
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 28,
+      "expected_body_sha256": "cd77a2eb6c1340d5375c2d3d0a102776da2e4ff12117846ceca3f7fb4a6b8978",
+      "proposed_body_sha256": "7df1791942c92a5a8a1f1891d63f1124e324de40bff1b419d24a3725c7e3edcf",
+      "gaps_addressed": [
+        "objective",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 29,
+      "expected_body_sha256": "2606b3de9c087493acfff3fea3953b16e78f9f189f83273dbd01fb30f43c2ee5",
+      "proposed_body_sha256": "2969c0e20ce98c75d02387e8faede50ef844dc6f344b58144b2291a45e999079",
+      "gaps_addressed": [
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 30,
+      "expected_body_sha256": "e244ac54522fd4761bf2e2263d706e75cbf3c2f8fc677b54c7621aabff413ee2",
+      "proposed_body_sha256": "bac4a4b9391102e2d32864c2d91c46e2b4b65354c500ee85f4a9be07707621e6",
+      "gaps_addressed": [
+        "out_of_scope",
+        "dependencies",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 31,
+      "expected_body_sha256": "bd9c383c8105595cadab2fc57258d8e5c1a47af3198f7398aa77265dd78701b5",
+      "proposed_body_sha256": "e99a630f9d56615498d0788a092f366adb7e898742d50f2da629b09c8c228641",
+      "gaps_addressed": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 32,
+      "expected_body_sha256": "5d8e90825514ec861dd21e0901bf3c9e813107e66a47f398bd6706b7c7ad06d0",
+      "proposed_body_sha256": "131ec12f7acd2e49452a3e0cea94aade903ccad75750b40b5632699d1c8b5df2",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 35,
+      "expected_body_sha256": "030beef29a2aa06a267f4c2efeb7ee565f7fa8077aefb40dc09c77cc270ecbf5",
+      "proposed_body_sha256": "15c11b16c74dfd67d6e3ff370447b72eecbb469373fd6e58577b1c9893697db4",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "steps",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 38,
+      "expected_body_sha256": "20e5ef39bc0f14b62e000124d852116abadee8519d0484368fd4536360105c1d",
+      "proposed_body_sha256": "075933be4b300caea3a7d0bd22c3ca8f048bc77b9b4b94b75740e5b5dd8dd51e",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 42,
+      "expected_body_sha256": "aa1d4922fa50b63fa3a4fcbd830ac79002289a2611d49fe04c7f01c6cff1b632",
+      "proposed_body_sha256": "761c7911b98aa0dec56b7ed81d7a8af5a134a3120797635938dd086ac05b643d",
+      "gaps_addressed": [
+        "out_of_scope",
+        "dependencies",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 43,
+      "expected_body_sha256": "9d291361c2e8e7a91519a036fed2788dd3116021c93b1225fbc439dc9f10110a",
+      "proposed_body_sha256": "70939e011c3d5d1affb2858034f2472055a7138762b834bb3134c4f10e18491e",
+      "gaps_addressed": [
+        "out_of_scope",
+        "dependencies",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 49,
+      "expected_body_sha256": "362b53b3d6a1260ecaa230418c7c1cb3fce62b1e2825ef9847fd7a8c56cbfbd3",
+      "proposed_body_sha256": "f1ed0eb1a790a82d1221ba89b38bd7583eb3f50663d5aae4a61fe9bfeeefc484",
+      "gaps_addressed": [
+        "contracts",
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 50,
+      "expected_body_sha256": "fbc4566d1d35d03ddd7b7b3e56f473d453059450ccd51557b4b01c35d86b6fde",
+      "proposed_body_sha256": "9c4293cd27b6066d1cad8281095be657c2eee3574d341612a408d1eed1be32dd",
+      "gaps_addressed": [
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 51,
+      "expected_body_sha256": "2c549864949b954d2481e17128160cb02f9727d4bcaaee1f3386fa3270314be7",
+      "proposed_body_sha256": "692b7480e1ed3b70443df35d3c306e2c5baecc25153a5bbe610388aa31c9260c",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 52,
+      "expected_body_sha256": "929434b647592eb321a02c87c2c6d1ae3e3107338e13c779f71fb3b2089f004f",
+      "proposed_body_sha256": "6230ec561f6e94dbb967faccd8fa973b9c2893a8529aef7a1caabd930a8b0c4b",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 53,
+      "expected_body_sha256": "bae9c4b34d4c8132faa00f19ca099c657efc64ac2e6f6d27b2763e26660dfd3f",
+      "proposed_body_sha256": "7aeae2c59b42ee59ce266e44f19259aaa03e807610dcb1b4a4466e61d2f1e7aa",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 54,
+      "expected_body_sha256": "9b3d3158ed0f823bff0e0146968086246c465f7f88b5e36e84e8ddaebd5a530f",
+      "proposed_body_sha256": "bf63fed56b94b840018f9170eb9c8fc998db77a02c138e407cb8c2ea4cf73333",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 55,
+      "expected_body_sha256": "b1d695ca41afca9a7b055af062b57225221a348d25afaa2bc54545dad355273e",
+      "proposed_body_sha256": "f2fe764792562cf4081b321e0c12cd6933f1995a4f0f0b3463bfd146cca3b34a",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 56,
+      "expected_body_sha256": "8fa782392bd34b6408bd85f93b7268f74d3e39e71f0e9bc14c3395de004813d8",
+      "proposed_body_sha256": "27b2c4b42265434a749171fbfaf4eae0599f96b4bb85a155b4889d75d84d8163",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Passos adicionais da auditoria\n\n1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 57,
+      "expected_body_sha256": "e6afbeb0a36c641683cfee46a7c64b248c99a282ef43207617fba309b658f24c",
+      "proposed_body_sha256": "4fe991fc7f5567022579bfd6445f957b1819a62ed5918d4a7854a8afc99a38c0",
+      "gaps_addressed": [
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 58,
+      "expected_body_sha256": "1cc872b0f08b6af3a0d9b065efe82202a8a3d38e5b85af58c8afa757aec4dd81",
+      "proposed_body_sha256": "f415ce0a30a275dbe3370c7ed8b923a3bd2e649a65a0ff657e31f821dcfabb99",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 59,
+      "expected_body_sha256": "34523b4490731515ec5b69cbbc914194f1d7129124b956370435f7b2d8be27a1",
+      "proposed_body_sha256": "d9410cec43e495fd4dbbe538a7067a70d3785a98d0a88ee39d065539265200d8",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 60,
+      "expected_body_sha256": "4d866fa4a560ee536783c63c75eb2f3fd63fa31a5bfe2f2250e6e60510af8b9d",
+      "proposed_body_sha256": "f0df6fdc44a7229cee909a0a8a0a6e1f73072995154719906dae0e07db1f5021",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 61,
+      "expected_body_sha256": "afa04666f69f97f5347bfc51c38e59094e4f5ac4e77f614b73bd2a6e52d09949",
+      "proposed_body_sha256": "e4031317044941a8509c3e8d917cfec96e206158333b2cb434ea1b96c14aa48d",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision",
+        "measurement_evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Medição\n\nRegistrar baseline, comando, ambiente e valor observado; não estimar métricas ausentes.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 63,
+      "expected_body_sha256": "d1b1925dbc6fe825b326278e4d101b5e76c14807c5ed06d153f9d74d021c140b",
+      "proposed_body_sha256": "b6523e6f1da1c7db04b81a961791742b082571f0e54033b282f09b69877b1e36",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 64,
+      "expected_body_sha256": "9116a87714f48e0ce558e795d2dfdd89a6896f7fb95535789244e6852f3af6f1",
+      "proposed_body_sha256": "408f68c22b0b8dfdec579d48d1072420bde40c93df36710a126b2a82db3fd779",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 66,
+      "expected_body_sha256": "08b674295b98bbd129b99f3e95f9c0610aeb55d416b77bc9da8f4ed52f22d9b1",
+      "proposed_body_sha256": "1c5399e9258b2489b13e88449a4d182d6bbe3cc91326d04a712ac5c8fda65266",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 67,
+      "expected_body_sha256": "52a99e9d2324a76f060aad0995611b9d2190eca94959c7288645cc4c152e25c9",
+      "proposed_body_sha256": "214868d040a41e863d9dc8ef7991fcde11b74cf2e8787d64152cfdee6da1080d",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "measurement_evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Medição\n\nRegistrar baseline, comando, ambiente e valor observado; não estimar métricas ausentes.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 68,
+      "expected_body_sha256": "3c3d656d4417191138e0c25249d38680192dfba9f0b6fb3ba0822d3c177f36e3",
+      "proposed_body_sha256": "678c8a7e74b54c5cb8d8a885fb151a6b1d39ddc73a44fd833ec0e7258b59755c",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 82,
+      "expected_body_sha256": "e96df5381dd078283420e95b4fc37331c63c61b38400c86506a74f96e411b44f",
+      "proposed_body_sha256": "766a3b0dc5ee8c26a7f8efd01d3210839afe1c637d54b59ec39846c4b40b02da",
+      "gaps_addressed": [
+        "context",
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps",
+        "measurement_evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Medição\n\nRegistrar baseline, comando, ambiente e valor observado; não estimar métricas ausentes.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 85,
+      "expected_body_sha256": "b92eb65c08a20d247070cbe9b5bce50a849d748eaa0b8d2969411a7d8c548ec5",
+      "proposed_body_sha256": "cd8cfde16189bfe995d89c726af6957a0a83126e436554b301d86dc1c6a357f1",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 87,
+      "expected_body_sha256": "751d519e0a76d82be076bee5a7fa8be7de2924a5a57aa63837c03ae0b1ae710f",
+      "proposed_body_sha256": "c0ab7eba4ca550d9055a3000becb97da22024e02f3db2a21a79df598eb60a76c",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 88,
+      "expected_body_sha256": "874782fe8e01146da86d01ce8d857696195452ff782ae13a2e4021fb1c2b6f5d",
+      "proposed_body_sha256": "a64552a5f7f35f2acccd82b7d9ebf20d2248c9a6b6b7ac1cd2e63f737e7007a1",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 90,
+      "expected_body_sha256": "32042a5926d84aae4609ab3b69527bffee6a6cdf4fbc61c73a21b0cf7ae2703c",
+      "proposed_body_sha256": "9adb3b79ddf0ea1680bc524b2fe4baba08e91531737a654604cdd92d3616e0c5",
+      "gaps_addressed": [
+        "objective",
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "risk_rollback_decision",
+        "numbered_steps",
+        "measurement_evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Objetivo\n\nDefinir o resultado verificável desta issue sem ampliar o escopo original.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Medição\n\nRegistrar baseline, comando, ambiente e valor observado; não estimar métricas ausentes.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 92,
+      "expected_body_sha256": "1c6985cda4fb43957ef7c02d64f989433f221194939ce038708234dfe8690228",
+      "proposed_body_sha256": "45ce46879f4c8b0a8c5808517228dfd834d3f3547a7d603af04471530988d69e",
+      "gaps_addressed": [
+        "context",
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "acceptance",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps",
+        "measurement_evidence"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Critérios de aceite verificáveis\n\n- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n\n## Medição\n\nRegistrar baseline, comando, ambiente e valor observado; não estimar métricas ausentes.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 94,
+      "expected_body_sha256": "2ed665bdf82ccc9ad8e083ff59953cc7a5f9d69a3093c6e9785e168c5ca6c4df",
+      "proposed_body_sha256": "2bc1cfedb9652759c8751dcb73376cfdd1f41243f14e49da39c41b9b339554c8",
+      "gaps_addressed": [
+        "contracts",
+        "dependencies",
+        "steps",
+        "test_flow",
+        "evidence",
+        "risk_rollback_decision",
+        "numbered_steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n\n## Fluxo de testes\n\nExecutar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados.\n\n## Evidências obrigatórias\n\nAnexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações.\n\n## Riscos, rollback e decisão de encerramento\n\nDocumentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 99,
+      "expected_body_sha256": "79b2a30e84d717b7a85902e01fffa54d0628153686ce91fee29c205c5d2c8ccd",
+      "proposed_body_sha256": "ea706291fdf57cac3acecf4c2e60c64d5a9b28d4c7114c3c5a8c43846b5a82e3",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 100,
+      "expected_body_sha256": "b395122091e9cf31fc59c9be0ae580d53f7024c6ff95007b77a880344444d74a",
+      "proposed_body_sha256": "5ef76d960d947ff2c0c7470816b0fe5ea5f30c9bfe9a4d1584dcfb441255d2eb",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 106,
+      "expected_body_sha256": "95f39bdc58a3647346a8c8082f913f85411e0b920222eb17e0d0185c9b538983",
+      "proposed_body_sha256": "a3997e4bec0f10c8688f939f21625c226ba2daeea0b730341593a1491035d320",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 108,
+      "expected_body_sha256": "145cdd7c9d4c4c3fb6974bd1c62826a9edc8ad7a73087bd5bbca0cdc05ef9e35",
+      "proposed_body_sha256": "754cd2c883ebf3f46cdb376a1338b0fad12300fc7b78553aee5aef1539e64a80",
+      "gaps_addressed": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 109,
+      "expected_body_sha256": "48e6ecafe36036436ac14f4fc052472952defda1d31f6ee2becf92d9dd22e555",
+      "proposed_body_sha256": "33d40c96aaaca03f5eb4efbe66708439129543846131bae7b09eea327701f63e",
+      "gaps_addressed": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 110,
+      "expected_body_sha256": "3a6d03b969f0e69e1f9bfc114e526c671423d0850920e5802ac8493bb95a9be8",
+      "proposed_body_sha256": "deaa4f97dd1e7da9b816578a55d06948f6ab3e595037ae1ef7da67311eaaedca",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 116,
+      "expected_body_sha256": "06cd64cfb5901fb77d9001028464d5fbfb088c2a852a3b0118870c5615195e15",
+      "proposed_body_sha256": "b0375c103468abdf7fa675aecf569bbcd4ebe77e79e3e98f05ceb3ab8ee3765c",
+      "gaps_addressed": [
+        "out_of_scope",
+        "dependencies",
+        "steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 121,
+      "expected_body_sha256": "845a4114fb7d603eea97891cec300724c2ee976ebba9597c23931cc7b30db079",
+      "proposed_body_sha256": "5e00a1894b7a5caa797880b24fa81bc19dd0a510fed1d20788116fffc32de6a5",
+      "gaps_addressed": [
+        "out_of_scope",
+        "contracts",
+        "dependencies",
+        "steps"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n\n## Passo a passo implementável\n\n1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback.\n",
+      "status": "draft-needs-owner-review"
+    },
+    {
+      "number": 139,
+      "expected_body_sha256": "1cddd6fd56cf1d06125f6ad53ef45429a196ab566bb2a0d97d5095ca5036d238",
+      "proposed_body_sha256": "f8177b341bc4a529d21e85e2b04ad5b4cc6d85c41217bb578b0d26492f9f3432",
+      "gaps_addressed": [
+        "context",
+        "out_of_scope",
+        "contracts",
+        "dependencies"
+      ],
+      "append_markdown": "\n<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->\n## Contexto e problema\n\nRevisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar.\n\n## Fora de escopo\n\nMudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo.\n\n## Entradas, saídas e contratos\n\nIdentificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis.\n\n## Dependências e ordem\n\nConfirmar dependências e referências cruzadas contra a `main` antes da implementação.\n",
+      "status": "draft-needs-owner-review"
+    }
+  ]
+}
