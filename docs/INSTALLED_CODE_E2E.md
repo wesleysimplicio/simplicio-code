@@ -41,3 +41,16 @@ The regression suite is also standalone and requires no paid Actions:
 ```console
 python3 -m unittest scripts.tests.test_installed_code_e2e
 ```
+To exercise the independently installed product binaries rather than the
+hermetic contract fixture, pass the installed launcher explicitly:
+
+```bash
+python3 scripts/installed_code_e2e.py --installed /path/to/simplicio
+```
+
+This mode is deliberately fail-closed: the executable must exist and advertise
+`simplicio_fs_list`, `simplicio_fs_stat`, `simplicio_edit`, and
+`simplicio_exec`. The E2E edits a file, observes it through list/stat, then
+executes an argv-safe command and requires an authoritative `completed` effect
+receipt. It never substitutes the fixture when the installed binary is absent
+or incompatible.

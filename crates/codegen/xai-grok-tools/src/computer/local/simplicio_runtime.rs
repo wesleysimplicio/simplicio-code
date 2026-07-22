@@ -634,8 +634,10 @@ mod tests {
             .exec_workspace(
                 Path::new("."),
                 &["echo".to_owned(), "blocked".to_owned()],
+                &BTreeMap::new(),
                 1_000,
                 1_024,
+                "fail-closed-test",
             )
             .await;
         assert!(edit.is_err(), "edit must require the Runtime boundary");

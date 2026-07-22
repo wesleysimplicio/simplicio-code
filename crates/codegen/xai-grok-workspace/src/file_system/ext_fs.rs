@@ -56,7 +56,7 @@ fn resolve_abs(
 struct RuntimeListNode {
     name: String,
     path: String,
-    #[serde(rename = "type", alias = "nodeType")]
+    #[serde(rename = "type", alias = "nodeType", alias = "kind")]
     node_type: String,
     #[serde(default)]
     is_symlink: Option<bool>,
@@ -81,7 +81,7 @@ struct RuntimeListResponse {
 struct RuntimeStatResponse {
     #[serde(default)]
     exists: Option<bool>,
-    #[serde(rename = "type", alias = "nodeType", default)]
+    #[serde(rename = "type", alias = "nodeType", alias = "kind", default)]
     node_type: Option<String>,
 }
 

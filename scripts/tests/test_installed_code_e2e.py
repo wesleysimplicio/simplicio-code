@@ -30,8 +30,12 @@ class InstalledCodeE2ETest(unittest.TestCase):
         self.assertEqual(receipt["agent_host"]["reconcile"], "terminal")
         self.assertTrue(receipt["agent_host"]["advisory_replay_equal"])
         self.assertTrue(receipt["agent_host"]["restart_reconnected"])
+        self.assertEqual(receipt["mode"], "fixture")
+        self.assertEqual(receipt["runtime"]["list"], "simplicio.fs-list-result/v1")
+        self.assertEqual(receipt["runtime"]["stat"], "simplicio.fs-stat-result/v1")
         self.assertEqual(receipt["runtime"]["edit"], "simplicio.edit-result/v1")
         self.assertEqual(receipt["runtime"]["exec"], "simplicio.exec-result/v1")
+        self.assertEqual(receipt["runtime"]["effect_state"], "completed")
         gates = receipt["negative_dependency_gates"]
         self.assertEqual(len(gates), len(MODULE.SURFACES) * 4)
         self.assertTrue(all(gate["blocked"] for gate in gates))
@@ -62,6 +66,12 @@ class InstalledCodeE2ETest(unittest.TestCase):
                 RuntimeError, reason
             ):
                 probe()
+
+    def test_explicit_installed_mode_never_falls_back_to_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing-simplicio"
+            with self.assertRaisesRegex(RuntimeError, "installed_binary_unavailable"):
+                MODULE.run(ROOT, missing)
 
     def test_receipt_is_serializable_and_has_no_environment(self):
         receipt = MODULE.run(ROOT, fixture_mode=True)

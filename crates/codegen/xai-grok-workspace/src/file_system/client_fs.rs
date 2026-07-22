@@ -127,7 +127,7 @@ fn system_time_ms(st: std::time::SystemTime) -> i64 {
 struct RuntimeListNode {
     name: String,
     path: String,
-    #[serde(rename = "type", alias = "nodeType")]
+    #[serde(rename = "type", alias = "nodeType", alias = "kind")]
     node_type: String,
     #[serde(default)]
     is_symlink: Option<bool>,
@@ -150,10 +150,11 @@ struct RuntimeListResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RuntimeStatResponse {
-    exists: bool,
+    #[serde(default)]
+    exists: Option<bool>,
     #[serde(default)]
     node_type: Option<FsNodeType>,
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type", alias = "kind", default)]
     legacy_node_type: Option<FsNodeType>,
     #[serde(default)]
     size: Option<u64>,
@@ -225,7 +226,9 @@ fn runtime_stat_response(value: Value) -> WorkspaceResult<FsStatRes> {
             WorkspaceError::HubError(format!("invalid Runtime stat response: {error}"))
         })?;
     Ok(FsStatRes {
-        exists: response.exists,
+        exists: response
+            .exists
+            .unwrap_or_else(|| response.node_type.is_some() || response.legacy_node_type.is_some()),
         node_type: response.node_type.or(response.legacy_node_type),
         size: response.size,
         mtime_ms: response.mtime_ms,

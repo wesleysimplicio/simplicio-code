@@ -160,11 +160,24 @@ def _external_dependencies() -> tuple[list[str], list[str]]:
     return agent, [runtime, "serve", "--mcp", "--stdio", "--json"]
 
 
-def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
+def run(
+    root: Path,
+    installed_binary: Path | None = None,
+    *,
+    fixture_mode: bool = False,
+) -> dict[str, object]:
+    if installed_binary is not None and fixture_mode:
+        raise RuntimeError("installed_binary_conflicts_with_fixture")
     fixture = root / "scripts/fixtures/simplicio_installed_fixture.py"
     digest = hashlib.sha256(fixture.read_bytes()).hexdigest() if fixture_mode else None
     env = dict(os.environ)
-    if fixture_mode:
+    if installed_binary is not None:
+        installed = installed_binary.resolve()
+        if not installed.is_file() or not os.access(installed, os.X_OK):
+            raise RuntimeError(f"installed_binary_unavailable:{installed}")
+        agent_template = [str(installed), "agent", "{socket}"]
+        runtime_command = [str(installed), "serve", "--mcp", "--stdio", "--json"]
+    elif fixture_mode:
         env["SIMPLICIO_CODE_E2E_FIXTURE"] = "1"
         agent_template = [sys.executable, str(fixture), "agent", "{socket}"]
         runtime_command = [
@@ -305,9 +318,31 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                         },
                     },
                 )
-                execution = runtime_call(
+                listing = runtime_call(
                     runtime,
                     4,
+                    "tools/call",
+                    {
+                        "name": "simplicio_fs_list",
+                        "arguments": {
+                            "repo": str(temp),
+                            "path": ".",
+                            "options": {"depth": 1, "limit": 100},
+                        },
+                    },
+                )
+                stat = runtime_call(
+                    runtime,
+                    5,
+                    "tools/call",
+                    {
+                        "name": "simplicio_fs_stat",
+                        "arguments": {"repo": str(temp), "path": "result.txt"},
+                    },
+                )
+                execution = runtime_call(
+                    runtime,
+                    6,
                     "tools/call",
                     {
                         "name": "simplicio_exec",
@@ -317,6 +352,8 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                             "argv": [sys.executable, "-c", "print('argv-safe')"],
                             "env": {},
                             "timeout_ms": 5000,
+                            "max_output_bytes": 4096,
+                            "shell": False,
                             "idempotency_key": "e2e-exec",
                         },
                     },
@@ -329,6 +366,8 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                 if runtime.stdout:
                     runtime.stdout.close()
             edit_payload = json.loads(edit["content"][0]["text"])
+            list_payload = json.loads(listing["content"][0]["text"])
+            stat_payload = json.loads(stat["content"][0]["text"])
             exec_payload = json.loads(execution["content"][0]["text"])
             if (
                 temp / "result.txt"
@@ -336,6 +375,12 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                 "stdout"
             ) != "argv-safe\n":
                 raise RuntimeError("Runtime effects did not match receipts")
+            listed_paths = {node.get("path") for node in list_payload.get("nodes", list_payload.get("entries", []))}
+            stat_exists = stat_payload.get("exists", stat_payload.get("kind") is not None or stat_payload.get("type") is not None)
+            if "result.txt" not in listed_paths or not stat_exists:
+                raise RuntimeError("Runtime list/stat did not observe the Runtime edit")
+            if exec_payload.get("effect_state") != "completed":
+                raise RuntimeError("Runtime exec did not return an authoritative completed effect")
             if first["advisories"] != replay["advisories"]:
                 raise RuntimeError("advisory replay is not deterministic")
             agent.terminate()
@@ -367,6 +412,7 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                     if fixture_mode
                     else "external_installed"
                 ),
+                "mode": "fixture" if fixture_mode else "installed",
                 "fixture_sha256": digest,
                 "agent_host": {
                     "protocol": status["protocol_schema"],
@@ -380,8 +426,11 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                 "runtime": {
                     "server": initialized["serverInfo"],
                     "tools": sorted(tool["name"] for tool in tools["tools"]),
+                    "list": list_payload["schema"],
+                    "stat": stat_payload["schema"],
                     "edit": edit_payload["schema"],
                     "exec": exec_payload["schema"],
+                    "effect_state": exec_payload["effect_state"],
                 },
                 "surfaces": surfaces,
                 "profile_isolation": len({item["session_id"] for item in surfaces})
@@ -402,7 +451,12 @@ def run(root: Path, *, fixture_mode: bool = False) -> dict[str, object]:
                         }
                     }
                     if fixture_mode
-                    else {}
+                    else {
+                        "production_latency_ns": {
+                            "value": None,
+                            "reason": "single E2E sample is not a production latency metric",
+                        }
+                    }
                 ),
             }
         finally:
@@ -421,8 +475,15 @@ def main() -> None:  # pragma: no cover - exercised by the documented system com
         action="store_true",
         help="run hermetic non-proof regression fixture",
     )
+    parser.add_argument(
+        "--installed",
+        type=Path,
+        help="exercise an actually installed simplicio binary instead of external env commands",
+    )
     args = parser.parse_args()
-    receipt = run(args.root.resolve(), fixture_mode=args.fixture)
+    receipt = run(
+        args.root.resolve(), args.installed, fixture_mode=args.fixture
+    )
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(encoded, encoding="utf-8")
