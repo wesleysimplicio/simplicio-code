@@ -54,6 +54,9 @@ SHA-256 identity and `simplicio_prototype_artifact_write`, identical plan/source
 revisions, all four complete product surfaces, failure/rollback evidence, and
 matching replay hashes. Missing upstream evidence remains explicitly
 `blocked`; the validator never substitutes a mock or local filesystem result.
+Malformed capability arrays, unknown or contradictory surface results, and
+non-finite JSON measurements also fail closed, so a failed run cannot be
+masked by appending a second successful result for the same surface.
 
 ```bash
 python3 scripts/validate_prototype_acceptance.py \
