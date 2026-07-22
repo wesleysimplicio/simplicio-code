@@ -17,6 +17,10 @@ The gate is fail-closed:
 - `revise` and `reject` require an explanation;
 - missing evidence, missing AC coverage, unsafe artifact references, invalid
   controls, malformed receipts, and source/plan drift block Build;
+- recorded comparisons are recomputed from their two distinct candidates, so
+  unknown IDs or forged `changed_fields` cannot enter an auditable receipt;
+- URI validation decodes percent escapes and rejects POSIX/Windows traversal,
+  malformed escapes, backslashes, and NUL bytes before an artifact is opened;
 - Build requires a current `accept` and yields a
   `simplicio.build-authorization/v1` receipt;
 - `RuntimeClient::write_prototype_artifact` is the only Code-side persistence
