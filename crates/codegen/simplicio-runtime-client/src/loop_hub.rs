@@ -576,11 +576,15 @@ impl LoopHubClient {
                 }
             })?,
         };
-        // One physical transport/session per Hub endpoint and workspace. The
-        // logical Code session id remains on each clone so multiple surfaces
-        // can multiplex over the same Hub connection without sharing turn
-        // state accidentally.
-        let key = format!("{}\0{}", endpoint, config.workspace_id);
+        // An external transport is attached to exactly one logical Code
+        // session (the socket/pipe attach contract carries `session_id`).
+        // Reuse it only for clones of that session. Other surfaces attach
+        // independently to the same Hub endpoint and therefore cannot submit
+        // work under a session that the Hub never admitted.
+        let key = format!(
+            "{}\0{}\0{}",
+            endpoint, config.workspace_id, config.session_id
+        );
         let mut sessions = HUB_SESSIONS
             .lock()
             .map_err(|_| HubError::Protocol("Hub session registry lock poisoned".into()))?;
@@ -945,7 +949,7 @@ mod tests {
     }
 
     #[test]
-    fn clones_reuse_one_handshake_and_forward_interactive_priority() {
+    fn clones_reuse_one_handshake_and_distinct_sessions_attach_separately() {
         HUB_SESSIONS.lock().unwrap().clear();
         let hub = Arc::new(FakeHub::default());
         let factory_hub = Arc::clone(&hub);
@@ -959,7 +963,7 @@ mod tests {
         let other_session = LoopHubClient::connect(config("session-2"), &factory)
             .unwrap()
             .unwrap();
-        assert_eq!(hub.handshakes.load(Ordering::SeqCst), 1);
+        assert_eq!(hub.handshakes.load(Ordering::SeqCst), 2);
         let mut job = clone
             .submit_interactive(InteractiveGoal::new(
                 "goal",

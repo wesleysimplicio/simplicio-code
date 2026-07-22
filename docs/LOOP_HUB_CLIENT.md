@@ -25,6 +25,15 @@ can verify that Map and Runtime came from one Hub rather than comparing
 fallible string identifiers. None of these accessors opens a connection or
 starts a local service.
 
+Connections are reused only by clones with the same endpoint, workspace, and
+logical session. A second TUI, headless process, or ACP session attaches its
+own logical session to the same external Hub endpoint. This is intentional:
+the wire-level `attach` receipt admits one `session_id`, so reusing that
+transport for a different session would submit work under an identity the Hub
+never admitted. The surfaces still share the Hub-owned Runtime, Mapper,
+scheduler, and inference identities reported by their handshakes; Code does
+not create any of those services.
+
 `LoopHubClient::connect` uses the explicit endpoint in `HubClientConfig` first,
 then the `SIMPLICIO_LOOP_HUB_ENDPOINT` environment variable. Product adapters
 with a user/machine discovery mechanism can implement
