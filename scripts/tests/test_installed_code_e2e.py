@@ -24,7 +24,33 @@ class InstalledCodeE2ETest(unittest.TestCase):
         self.assertTrue(receipt["agent_host"]["restart_reconnected"])
         self.assertEqual(receipt["runtime"]["edit"], "simplicio.edit-result/v1")
         self.assertEqual(receipt["runtime"]["exec"], "simplicio.exec-result/v1")
+        gates = receipt["negative_dependency_gates"]
+        self.assertEqual(len(gates), len(MODULE.SURFACES) * 4)
+        self.assertTrue(all(gate["blocked"] for gate in gates))
+        self.assertTrue(all(not gate["effect_attempted"] for gate in gates))
+        self.assertEqual({gate["surface"] for gate in gates}, set(MODULE.SURFACES))
         self.assertGreater(receipt["benchmark"]["operations_per_second"], 0)
+
+    def test_dependency_contract_fails_closed_before_productive_turns(self):
+        cases = (
+            (lambda: MODULE.validate_agent_status(None), "agent_host_missing"),
+            (
+                lambda: MODULE.validate_agent_status(
+                    {"protocol_schema": "simplicio.agent-host/v1"}
+                ),
+                "agent_host_incompatible",
+            ),
+            (lambda: MODULE.validate_runtime_contract(None, None), "runtime_missing"),
+            (
+                lambda: MODULE.validate_runtime_contract(
+                    {"protocolVersion": "2024-11-05"}, {"tools": []}
+                ),
+                "runtime_incompatible",
+            ),
+        )
+        for probe, reason in cases:
+            with self.subTest(reason=reason), self.assertRaisesRegex(RuntimeError, reason):
+                probe()
 
     def test_receipt_is_serializable_and_has_no_environment(self):
         receipt = MODULE.run(ROOT)

@@ -91,6 +91,9 @@ pub struct HubHandshake {
     pub protocol: String,
     pub hub_id: String,
     pub ready: bool,
+    /// Compatible external Agent through which reasoning is routed. Code must
+    /// never substitute its embedded loop for this production dependency.
+    pub agent: AgentCapability,
     pub services: Vec<ServiceOwnership>,
     pub resources: SharedResources,
     pub queue: QueueCapabilities,
@@ -98,6 +101,13 @@ pub struct HubHandshake {
     /// instead of silently creating a local fan-out loop.
     #[serde(default)]
     pub local_scheduler: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AgentCapability {
+    pub agent_id: String,
+    pub protocol: String,
+    pub ready: bool,
 }
 
 impl HubHandshake {
@@ -120,6 +130,12 @@ impl HubHandshake {
         }
         if !self.ready {
             errors.push("Loop Hub is not ready".into());
+        }
+        if !self.agent.ready
+            || self.agent.agent_id.trim().is_empty()
+            || self.agent.protocol.trim().is_empty()
+        {
+            errors.push("a ready, versioned Simplicio Agent is required".into());
         }
         if self.local_scheduler {
             errors.push("Code cannot attach while a local scheduler is declared".into());
@@ -829,6 +845,11 @@ mod tests {
             protocol: LOOP_HUB_PROTOCOL.into(),
             hub_id: "hub-1".into(),
             ready: true,
+            agent: AgentCapability {
+                agent_id: "agent-1".into(),
+                protocol: "simplicio.agent/v1".into(),
+                ready: true,
+            },
             services: [
                 (SharedService::Runtime, "runtime-1"),
                 (SharedService::Mapper, "mapper-1"),
@@ -1069,6 +1090,15 @@ mod tests {
         let error = topology.validate().unwrap_err().to_string();
         assert!(error.contains("runtime must be owned by Loop Hub"));
         assert!(error.contains("duplicate mapper"));
+    }
+
+    #[test]
+    fn topology_rejects_missing_external_agent() {
+        let mut topology = handshake();
+        topology.agent.ready = false;
+        topology.agent.agent_id.clear();
+        let error = topology.validate().unwrap_err().to_string();
+        assert!(error.contains("versioned Simplicio Agent is required"));
     }
 
     #[test]

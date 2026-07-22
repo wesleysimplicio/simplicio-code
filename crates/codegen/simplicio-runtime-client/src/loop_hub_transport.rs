@@ -537,6 +537,7 @@ mod tests {
                     "protocol": LOOP_HUB_PROTOCOL,
                     "hub_id": "hub-1",
                     "ready": true,
+                    "agent":{"agent_id":"agent","protocol":"simplicio.agent/v1","ready":true},
                     "services": [
                         {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
                         {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
@@ -608,6 +609,7 @@ mod tests {
                     "protocol": LOOP_HUB_PROTOCOL,
                     "hub_id": "hub-1",
                     "ready": true,
+                    "agent":{"agent_id":"agent","protocol":"simplicio.agent/v1","ready":true},
                     "services": [
                         {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
                         {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
