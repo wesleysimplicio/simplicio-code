@@ -2,6 +2,76 @@ schema = "simplicio.json-boundaries/v1"
 generated = false
 policy = "Internal workspace/session/evidence state uses Runtime HBP/HBI/TOML; release/toolchain JSON is explicitly owned."
 
+# Repository additions must be classified here in the same change that adds
+# their JSON boundary.  These paths are adapters, reviewed audit snapshots, or
+# release tooling; none is a Code-owned workspace/session persistence fallback.
+[[boundary]]
+paths = [
+  'scripts/installed_code_e2e.py',
+  'scripts/fixtures/simplicio_installed_fixture.py',
+  'scripts/tests/test_installed_code_e2e.py',
+]
+category = "external_protocol_system_fixture"
+owner = "code-runtime"
+producer = "hermetic installed-product test and its AgentHost/Runtime fixture"
+consumer = "installed Code system-test runner"
+lifecycle = "ephemeral JSON-RPC wire messages and a test receipt; never production state"
+target_format = "versioned external JSON-RPC contract"
+status = "exception"
+reason = "The installed-system fixture exercises the external AgentHost and Runtime JSON-RPC adapters. Its raw JSON is confined to the fixture boundary and temporary test output."
+expires = "2027-07-22"
+
+[[boundary]]
+paths = [
+  'scripts/validate_prototype_acceptance.py',
+  'scripts/tests/test_prototype_acceptance.py',
+]
+category = "external_protocol_acceptance_adapter"
+owner = "code-runtime"
+producer = "versioned Runtime, Loop, and product-E2E dependency receipts"
+consumer = "prototype dependency acceptance validator and tests"
+lifecycle = "explicit cross-repository evidence import/export; not live Code state"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "The validator terminates signed or hashed dependency receipts at an explicit adapter and emits a redacted export for external acceptance review."
+expires = "2027-07-22"
+
+[[boundary]]
+paths = [
+  '.github/workflows/component-release-event.yml',
+  'scripts/release/apply_component_release.py',
+  'scripts/release/prepare_component_bump.py',
+  'scripts/tests/test_apply_component_release.py',
+  'scripts/tests/test_prepare_component_bump.py',
+]
+category = "external_release_protocol"
+owner = "code-release"
+producer = "authenticated ecosystem release-event publisher"
+consumer = "Code release-event workflow, immutable lock generator, and tests"
+lifecycle = "signed external event import and reviewed release PR export"
+target_format = "versioned signed external JSON release contract"
+status = "exception"
+reason = "Release events are ecosystem boundary artifacts authenticated before offline validation; they are not workspace, session, cache, IPC, queue, or execution evidence."
+expires = "2027-07-22"
+
+[[boundary]]
+paths = [
+  'scripts/issue_meta_audit.py',
+  'scripts/tests/test_issue_meta_audit.py',
+  'docs/audits/issue-139-source.json',
+  'docs/audits/issue-139-inventory.json',
+  'docs/audits/issue-139-rewrites.json',
+]
+category = "immutable_historical_audit"
+owner = "code-quality"
+producer = "GitHub issue API audit tool"
+consumer = "human governance review and audit regression tests"
+lifecycle = "source-controlled immutable audit snapshot; never application state"
+target_format = "GitHub API JSON historical export"
+status = "exception"
+reason = "The exact snapshots preserve third-party GitHub API evidence for issue #139 and are consumed only by the offline governance audit."
+expires = "2027-07-22"
+
 [[boundary]]
 paths = [
   'crates/codegen/simplicio-runtime-client/src/loop_hub_transport.rs',
