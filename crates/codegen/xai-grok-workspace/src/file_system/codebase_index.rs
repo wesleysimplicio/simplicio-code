@@ -64,17 +64,7 @@ impl CodebaseIndexManager {
             return (handle, false);
         }
 
-        // Create cache directory if needed
         let cache_path = get_index_cache_path(&cwd);
-        if let Some(parent) = cache_path.parent()
-            && let Err(e) = std::fs::create_dir_all(parent)
-        {
-            tracing::warn!(
-                path = %parent.display(),
-                error = %e,
-                "Failed to create cache directory"
-            );
-        }
 
         tracing::info!(
             cwd = %cwd.display(),
