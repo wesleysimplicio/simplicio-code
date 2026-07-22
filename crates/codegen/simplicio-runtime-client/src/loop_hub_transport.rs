@@ -591,6 +591,9 @@ mod tests {
                     "terminal":false
                 }),
             );
+            // Both cloned descriptors must close so the client observes EOF
+            // and exercises reconnect instead of waiting forever for a frame.
+            drop(reader);
             drop(writer);
 
             let (stream, _) = listener.accept().unwrap();
