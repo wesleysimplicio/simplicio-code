@@ -29,8 +29,8 @@ pub mod hub_server;
 pub mod mcp;
 pub mod permission;
 pub mod preview_supervisor;
-pub mod prototype_first;
 pub mod project_config;
+pub mod prototype_first;
 pub mod recovery;
 pub mod rpc_envelope;
 pub mod session;
@@ -42,8 +42,8 @@ pub(crate) mod upload;
 pub mod util;
 pub mod workspace_ops;
 pub mod worktree;
-pub use capability::CapabilityMode;
 pub use agent_host::WorkspaceAgentCoordinator;
+pub use capability::CapabilityMode;
 pub use channel::{TransportCallResult, TransportContext, TransportError, TransportNotification};
 pub use config::{
     AgentSessionConfig, DEFAULT_EVENT_BUFFER_CAPACITY, HookSourceConfig, IsolationMode,

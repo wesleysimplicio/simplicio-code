@@ -401,13 +401,13 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         // `AsyncSearch` trait objects so read/write/delete/search reuse the
         // same lazily-spawned Runtime MCP session instead of each opening
         // its own subprocess.
-        let simplicio_runtime_fs = Arc::new(xai_grok_tools::computer::local::SimplicioRuntimeFs::new(
-            cwd.clone(),
-        ));
+        let simplicio_runtime_fs = Arc::new(
+            xai_grok_tools::computer::local::SimplicioRuntimeFs::new(cwd.clone()),
+        );
         let fs = simplicio_runtime_fs.clone()
             as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
-        let search = Some(simplicio_runtime_fs
-            as Arc<dyn xai_grok_tools::computer::types::AsyncSearch>);
+        let search =
+            Some(simplicio_runtime_fs as Arc<dyn xai_grok_tools::computer::types::AsyncSearch>);
         let notification_handle = xai_grok_tools::notification::ToolNotificationHandle::noop();
         let (image_gen_config, video_gen_config, web_search_config, app_builder_deployer_config) =
             if let (Some(auth), Some(url)) = (&self.auth, &self.api_base_url) {
@@ -482,12 +482,12 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             system_reminder_tag: xai_grok_tools::reminders::DEFAULT_REMINDER_TAG,
         }
     }
-    fn build_terminal_backend(&self, cwd: &std::path::Path) -> crate::config::SessionTerminalBackend {
+    fn build_terminal_backend(
+        &self,
+        cwd: &std::path::Path,
+    ) -> crate::config::SessionTerminalBackend {
         let backend = xai_grok_tools::computer::local::SimplicioRuntimeTerminalBackend::new(cwd);
-        crate::config::SessionTerminalBackend::new(
-            Arc::new(backend),
-            Arc::new(|| {}),
-        )
+        crate::config::SessionTerminalBackend::new(Arc::new(backend), Arc::new(|| {}))
     }
     fn registry_builder(&self) -> ToolRegistryBuilder {
         ToolRegistryBuilder::new()
@@ -601,7 +601,10 @@ pub mod test_support {
                 system_reminder_tag: xai_grok_tools::reminders::DEFAULT_REMINDER_TAG,
             }
         }
-        fn build_terminal_backend(&self, _cwd: &std::path::Path) -> crate::config::SessionTerminalBackend {
+        fn build_terminal_backend(
+            &self,
+            _cwd: &std::path::Path,
+        ) -> crate::config::SessionTerminalBackend {
             crate::config::SessionTerminalBackend::local(LocalTerminalBackend::new())
         }
         fn registry_builder(&self) -> ToolRegistryBuilder {

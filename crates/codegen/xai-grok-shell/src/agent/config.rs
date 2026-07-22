@@ -10457,7 +10457,10 @@ telemetry = "garbage"
         unsafe { std::env::remove_var("DISABLE_TELEMETRY") };
         unsafe { std::env::set_var("GROK_TELEMETRY_ENABLED", "1") };
         unsafe { std::env::remove_var("DO_NOT_TRACK") };
-        assert!(!is_telemetry_disabled_sync(), "sanity: enabled without DO_NOT_TRACK");
+        assert!(
+            !is_telemetry_disabled_sync(),
+            "sanity: enabled without DO_NOT_TRACK"
+        );
         unsafe { std::env::set_var("DO_NOT_TRACK", "1") };
         assert!(
             is_telemetry_disabled_sync(),

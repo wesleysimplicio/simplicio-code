@@ -15,6 +15,16 @@ Runtime, Mapper, or inference process. `SharedRuntimeClient` prevents multiple
 Code surfaces in one process from opening duplicate Runtime MCP children for
 the same workspace.
 
+UI and headless adapters can retain `LoopHubClient::interactive_transport()`
+as an interactive-only capability: it can submit validated interactive goals
+but cannot access the raw transport or select another priority. The
+`shared_runtime_handle()` and `shared_map_handle()` accessors expose the
+Hub-negotiated service identity and capacity. These cloneable handles retain
+the same negotiated session and provide `shares_session_with()` so an adapter
+can verify that Map and Runtime came from one Hub rather than comparing
+fallible string identifiers. None of these accessors opens a connection or
+starts a local service.
+
 `LoopHubClient::connect` uses the explicit endpoint in `HubClientConfig` first,
 then the `SIMPLICIO_LOOP_HUB_ENDPOINT` environment variable. Product adapters
 with a user/machine discovery mechanism can implement

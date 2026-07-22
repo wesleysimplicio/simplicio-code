@@ -7,9 +7,9 @@
 //! while rejecting newer operations with an actionable incompatibility error.
 
 pub mod component_release;
-pub mod map_cache;
 pub mod loop_hub;
 pub mod loop_hub_transport;
+pub mod map_cache;
 
 pub use loop_hub_transport::{
     HubAttachReceipt, HubAttachRequest, HubCursor, SocketPipeHubTransport,
@@ -19,8 +19,8 @@ pub use loop_hub_transport::{
 pub mod generated;
 
 pub use component_release::{
-    BundleManifest, BundleStore, CompatibilityContract, CompatibilityHandshake,
-    ComponentRelease, ReleaseError, ReleaseIdentity, CODE_VERSIONS_SCHEMA, REQUIRED_COMPONENTS,
+    BundleManifest, BundleStore, CODE_VERSIONS_SCHEMA, CompatibilityContract,
+    CompatibilityHandshake, ComponentRelease, REQUIRED_COMPONENTS, ReleaseError, ReleaseIdentity,
 };
 
 pub use map_cache::{
@@ -55,6 +55,10 @@ pub const EXEC_RESULT_SCHEMA_V1: &str = "simplicio.exec-result/v1";
 /// artifacts. Callers must use [`RuntimeClient::write_prototype_artifact`]
 /// instead of writing this directory directly.
 pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first";
+/// Canonical Runtime capability required by the external Prototype-First
+/// acceptance handshake. Generic filesystem write support is not evidence of
+/// Runtime-owned artifact semantics.
+pub const PROTOTYPE_ARTIFACT_WRITE_TOOL: &str = "simplicio_prototype_artifact_write";
 /// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
 /// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
 /// during connection negotiation instead of hanging for tens of seconds.
@@ -557,7 +561,7 @@ impl RuntimeClient {
         )
     }
 
-    /// Persist a preview artifact through the negotiated Runtime write tool.
+    /// Persist a preview artifact through the negotiated Runtime artifact tool.
     ///
     /// The Code process never creates this path locally. The Runtime remains
     /// the authority for artifact storage, atomicity, and rollback.
@@ -572,8 +576,20 @@ impl RuntimeClient {
                 "prototype artifact id contains unsafe path characters".into(),
             ));
         }
-        let path = Path::new(PROTOTYPE_ARTIFACT_ROOT).join(format!("{artifact_id}.json"));
-        self.write_file(repo, &path, data)
+        let repo = canonical_repo(repo)?;
+        self.call_tool(
+            "prototype_artifact_write",
+            PROTOTYPE_ARTIFACT_WRITE_TOOL,
+            json!({
+                "repo": repo,
+                "artifact_id": artifact_id,
+                "path": format!("{PROTOTYPE_ARTIFACT_ROOT}/{artifact_id}.json"),
+                "content_base64": base64::engine::general_purpose::STANDARD.encode(data),
+                "encoding": "base64",
+                "atomic": true,
+                "rollback": true,
+            }),
+        )
     }
 
     pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
@@ -625,14 +641,13 @@ impl RuntimeClient {
         if env.keys().any(|key| {
             key.is_empty()
                 || key.bytes().any(|byte| byte == 0)
-                || !key
-                    .bytes()
-                    .enumerate()
-                    .all(|(index, byte)| {
-                        (index == 0 && (byte == b'_' || byte.is_ascii_alphabetic()))
-                            || (index > 0 && (byte == b'_' || byte.is_ascii_alphanumeric()))
-                    })
-        }) || env.values().any(|value| value.bytes().any(|byte| byte == 0))
+                || !key.bytes().enumerate().all(|(index, byte)| {
+                    (index == 0 && (byte == b'_' || byte.is_ascii_alphabetic()))
+                        || (index > 0 && (byte == b'_' || byte.is_ascii_alphanumeric()))
+                })
+        }) || env
+            .values()
+            .any(|value| value.bytes().any(|byte| byte == 0))
         {
             return Err(Error::ExecRejected(
                 "environment keys/values must be NUL-free and keys must be POSIX identifiers"
@@ -1111,7 +1126,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn shared_runtime_handles_reuse_one_lazy_session_slot() {
         SHARED_RUNTIME_CLIENTS.lock().unwrap().clear();
         let workspace = tempfile::tempdir().unwrap();
@@ -1121,6 +1135,7 @@ mod tests {
         assert!(first.session.client.lock().unwrap().is_none());
     }
 
+    #[test]
     fn secure_path_rejects_parent_traversal_and_external_absolute_paths() {
         let repo = tempfile::tempdir().unwrap();
         fs::write(repo.path().join("inside.txt"), "ok").unwrap();

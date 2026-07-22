@@ -15,10 +15,10 @@ use tokio_util::sync::CancellationToken;
 use crate::client_identity::{HEADLESS_CLIENT_TYPE, PAGER_CLIENT_TYPE, PAGER_CLIENT_VERSION};
 use agent_client_protocol as acp;
 use xai_acp_lib::{AcpAgentTx, AcpClientRx, acp_send};
+use xai_grok_agent::SimplicioAgentCoordinator;
 use xai_grok_shell::agent::auth_method::AuthMethodKind;
 use xai_grok_shell::agent::config::Config as AgentConfig;
 use xai_grok_shell::sampling::types::ReasoningEffort;
-use xai_grok_agent::SimplicioAgentCoordinator;
 
 pub use model_state::ModelState;
 
@@ -237,9 +237,7 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
 
     let (needs_login, login_label, login_method_id, auth_start_mode, auth_meta) =
         if guest_access_enabled() {
-            tracing::info!(
-                "XAI account login bypassed; running in Simpleti guest mode"
-            );
+            tracing::info!("XAI account login bypassed; running in Simpleti guest mode");
             (false, None, None, AuthStartMode::Pending, None)
         } else {
             eager_auth_or_login_fallback(
@@ -358,9 +356,7 @@ pub async fn connect_via_leader(
 
     let (needs_login, login_label, login_method_id, auth_start_mode, auth_meta) =
         if guest_access_enabled() {
-            tracing::info!(
-                "XAI account login bypassed; running in Simpleti guest mode"
-            );
+            tracing::info!("XAI account login bypassed; running in Simpleti guest mode");
             (false, None, None, AuthStartMode::Pending, None)
         } else {
             eager_auth_or_login_fallback(

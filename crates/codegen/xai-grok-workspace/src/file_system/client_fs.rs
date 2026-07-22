@@ -180,8 +180,8 @@ fn runtime_payload(value: Value) -> WorkspaceResult<Value> {
 }
 
 fn runtime_list_response(value: Value) -> WorkspaceResult<FsListRes> {
-    let response: RuntimeListResponse = serde_json::from_value(runtime_payload(value)?)
-        .map_err(|error| {
+    let response: RuntimeListResponse =
+        serde_json::from_value(runtime_payload(value)?).map_err(|error| {
             WorkspaceError::HubError(format!("invalid Runtime list response: {error}"))
         })?;
     let nodes = response
@@ -194,7 +194,7 @@ fn runtime_list_response(value: Value) -> WorkspaceResult<FsListRes> {
                 other => {
                     return Err(WorkspaceError::HubError(format!(
                         "invalid Runtime list node type: {other}"
-                    )))
+                    )));
                 }
             };
             Ok(FsListNode {
@@ -220,8 +220,8 @@ fn runtime_list_response(value: Value) -> WorkspaceResult<FsListRes> {
 }
 
 fn runtime_stat_response(value: Value) -> WorkspaceResult<FsStatRes> {
-    let response: RuntimeStatResponse = serde_json::from_value(runtime_payload(value)?)
-        .map_err(|error| {
+    let response: RuntimeStatResponse =
+        serde_json::from_value(runtime_payload(value)?).map_err(|error| {
             WorkspaceError::HubError(format!("invalid Runtime stat response: {error}"))
         })?;
     Ok(FsStatRes {
@@ -628,5 +628,4 @@ mod tests {
             "unexpected error: {err}"
         );
     }
-
 }

@@ -86,8 +86,7 @@ pub(crate) struct AgentRebuildSpec {
     /// alongside `fs_backend`/`with_fs`. `None` for callers that don't set a
     /// Runtime-backed search adapter (test harnesses, non-Runtime sessions).
     pub search_backend: Option<Arc<dyn xai_grok_tools::computer::types::AsyncSearch>>,
-    pub directory_backend:
-        Option<Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>>,
+    pub directory_backend: Option<Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>>,
     pub tools_notification_handle: ToolNotificationHandle,
     pub bridge_state_path: PathBuf,
     pub session_env: Arc<HashMap<String, String>>,

@@ -88,8 +88,9 @@ pub fn verify_manifest_signature(
         .context("public key is not valid base64")?;
 
     let key = ring::signature::UnparsedPublicKey::new(&ring::signature::ED25519, &public_key);
-    key.verify(manifest_bytes, &signature)
-        .map_err(|_| anyhow::anyhow!("manifest signature verification failed (tampered or wrong key)"))?;
+    key.verify(manifest_bytes, &signature).map_err(|_| {
+        anyhow::anyhow!("manifest signature verification failed (tampered or wrong key)")
+    })?;
 
     serde_json::from_slice(manifest_bytes).context("signed manifest is not valid JSON")
 }
@@ -124,7 +125,12 @@ pub fn find_artifact<'a>(
         .artifacts
         .iter()
         .find(|a| a.platform == platform)
-        .with_context(|| format!("no artifact for platform '{platform}' in manifest v{}", manifest.version))
+        .with_context(|| {
+            format!(
+                "no artifact for platform '{platform}' in manifest v{}",
+                manifest.version
+            )
+        })
 }
 
 fn hex_encode(bytes: &[u8]) -> String {
@@ -146,8 +152,8 @@ mod tests {
     fn generate_test_keypair() -> (ring::signature::Ed25519KeyPair, Vec<u8>) {
         use ring::signature::KeyPair as _;
         let rng = ring::rand::SystemRandom::new();
-        let pkcs8 = ring::signature::Ed25519KeyPair::generate_pkcs8(&rng)
-            .expect("keygen should not fail");
+        let pkcs8 =
+            ring::signature::Ed25519KeyPair::generate_pkcs8(&rng).expect("keygen should not fail");
         let keypair = ring::signature::Ed25519KeyPair::from_pkcs8(pkcs8.as_ref())
             .expect("parsing freshly generated pkcs8 should not fail");
         let public_key = keypair.public_key().as_ref().to_vec();
@@ -203,7 +209,10 @@ mod tests {
         tampered[flip_index] ^= 0xFF;
 
         let result = verify_manifest_signature(&tampered, &b64(&signature), &b64(&public_key));
-        assert!(result.is_err(), "tampered manifest body must fail verification");
+        assert!(
+            result.is_err(),
+            "tampered manifest body must fail verification"
+        );
     }
 
     #[test]
@@ -213,8 +222,12 @@ mod tests {
         let mut signature = sign(&keypair, &manifest_bytes);
         signature[0] ^= 0xFF;
 
-        let result = verify_manifest_signature(&manifest_bytes, &b64(&signature), &b64(&public_key));
-        assert!(result.is_err(), "corrupted signature must fail verification");
+        let result =
+            verify_manifest_signature(&manifest_bytes, &b64(&signature), &b64(&public_key));
+        assert!(
+            result.is_err(),
+            "corrupted signature must fail verification"
+        );
     }
 
     #[test]
@@ -225,8 +238,12 @@ mod tests {
         let signature = sign(&keypair_a, &manifest_bytes);
 
         // Signed with key A, verified against key B's public key.
-        let result = verify_manifest_signature(&manifest_bytes, &b64(&signature), &b64(&public_key_b));
-        assert!(result.is_err(), "signature made with a different key must fail verification");
+        let result =
+            verify_manifest_signature(&manifest_bytes, &b64(&signature), &b64(&public_key_b));
+        assert!(
+            result.is_err(),
+            "signature made with a different key must fail verification"
+        );
     }
 
     #[test]
@@ -281,6 +298,9 @@ mod tests {
         assert_eq!(found.filename, "simplicio-code-0.3.0-beta.1-linux-x86_64");
 
         let missing = find_artifact(&manifest, "windows-x86_64");
-        assert!(missing.is_err(), "unlisted platform must error, not silently pass");
+        assert!(
+            missing.is_err(),
+            "unlisted platform must error, not silently pass"
+        );
     }
 }

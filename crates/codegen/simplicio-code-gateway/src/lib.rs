@@ -15,8 +15,8 @@ pub use auth::{
     SecretString, TokenResponse,
 };
 pub use gateway::{
-    ChatMessage, ChatRequest, FakeGateway, GatewayError, GatewayEvent, GatewayLimits,
-    GatewayModel, GatewayUsage, PrivateGateway, ToolCall, ToolDefinition, parse_sse_events,
+    ChatMessage, ChatRequest, FakeGateway, GatewayError, GatewayEvent, GatewayLimits, GatewayModel,
+    GatewayUsage, PrivateGateway, ToolCall, ToolDefinition, parse_sse_events,
 };
 pub use redaction::{RedactedDiagnostics, redact_diagnostics};
 

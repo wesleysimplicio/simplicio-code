@@ -596,9 +596,9 @@ pub(crate) async fn spawn_session_actor(
         simplicio_runtime_fs.clone();
     let search_backend: std::sync::Arc<dyn xai_grok_tools::computer::types::AsyncSearch> =
         simplicio_runtime_fs.clone();
-    let directory_backend:
-        std::sync::Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing> =
-        simplicio_runtime_fs;
+    let directory_backend: std::sync::Arc<
+        dyn xai_grok_tools::types::resources::AsyncDirectoryListing,
+    > = simplicio_runtime_fs;
     let bridge_state_path =
         crate::session::persistence::session_dir(&session_info).join("tool_state.json");
     let initial_agent_type = Some(agent_definition.name.clone());
