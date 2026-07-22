@@ -15,6 +15,9 @@ import tempfile
 import time
 
 SURFACES = ("tui", "headless", "acp", "workspace")
+REQUIRED_AGENT_CAPABILITIES = {
+    "host.advisories", "host.status", "turn.cancel", "turn.reconcile", "turn.start"
+}
 
 
 def request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]:
@@ -59,6 +62,11 @@ def run(root: Path) -> dict[str, object]:
             status = request(agent_socket, {"op": "host.status"})
             if status.get("protocol_schema") != "simplicio.agent-host/v1" or status.get("agent_protocol") != "agent/v1":
                 raise RuntimeError("AgentHost discovery contract mismatch")
+            missing_capabilities = REQUIRED_AGENT_CAPABILITIES - set(status.get("capabilities", []))
+            if missing_capabilities:
+                raise RuntimeError(
+                    f"AgentHost capabilities missing: {', '.join(sorted(missing_capabilities))}"
+                )
             surfaces = []
             for index, surface in enumerate(SURFACES):
                 turn_id = f"e2e-{surface}-turn"
@@ -103,7 +111,51 @@ def run(root: Path) -> dict[str, object]:
             if restarted["host_instance_id"] != status["host_instance_id"]:
                 raise RuntimeError("fixture restart identity is not deterministic")
             elapsed = time.perf_counter_ns() - started
-            return {"schema": "simplicio.code-installed-e2e-receipt/v1", "fixture_sha256": digest, "agent_host": {"protocol": status["protocol_schema"], "host_instance_id": status["host_instance_id"], "cancel": cancel["status"], "reconcile": reconcile["status"], "advisory_replay_equal": True, "restart_reconnected": True}, "runtime": {"server": initialized["serverInfo"], "tools": sorted(tool["name"] for tool in tools["tools"]), "edit": edit_payload["schema"], "exec": exec_payload["schema"]}, "surfaces": surfaces, "benchmark": {"scenario_count": len(surfaces) + 7, "elapsed_ns": elapsed, "operations_per_second": round((len(surfaces) + 7) * 1_000_000_000 / elapsed, 2)}, "metrics_unavailable": {"production_latency_ns": {"value": None, "reason": "fixture is hermetic; production metric is not observed"}}}
+            evidence = {
+                "fixture_sha256": digest,
+                "agent_host": {
+                    "protocol": status["protocol_schema"],
+                    "agent_protocol": status["agent_protocol"],
+                    "host_instance_id": status["host_instance_id"],
+                    "capabilities": sorted(status["capabilities"]),
+                    "cancel": cancel["status"],
+                    "reconcile": reconcile["status"],
+                    "advisory_replay_equal": True,
+                    "restart_reconnected": True,
+                },
+                "runtime": {
+                    "server": initialized["serverInfo"],
+                    "tools": sorted(tool["name"] for tool in tools["tools"]),
+                    "edit": edit_payload["schema"],
+                    "edit_atomic": True,
+                    "rollback_requested": True,
+                    "rolled_back": edit_payload["rolled_back"],
+                    "exec": exec_payload["schema"],
+                    "exec_effect_state": exec_payload["effect_state"],
+                },
+                "surfaces": surfaces,
+            }
+            evidence_sha256 = hashlib.sha256(
+                json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            return {
+                "schema": "simplicio.code-installed-e2e-receipt/v1",
+                "evidence_sha256": evidence_sha256,
+                **evidence,
+                "benchmark": {
+                    "scenario_count": len(surfaces) + 7,
+                    "elapsed_ns": elapsed,
+                    "operations_per_second": round(
+                        (len(surfaces) + 7) * 1_000_000_000 / elapsed, 2
+                    ),
+                },
+                "metrics_unavailable": {
+                    "production_latency_ns": {
+                        "value": None,
+                        "reason": "fixture is hermetic; production metric is not observed",
+                    }
+                },
+            }
         finally:
             agent.terminate(); agent.wait(timeout=2)
 

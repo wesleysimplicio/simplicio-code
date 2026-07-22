@@ -93,6 +93,10 @@ jobs:
           python3 scripts/tests/test_ci_diagnostics.py
       - name: Run gate self-tests
         run: python3 scripts/tests/test_issue_68_gates.py
+      - name: Run installed AgentHost and Runtime E2E
+        run: |
+          python3 -m unittest scripts.tests.test_installed_code_e2e
+          python3 scripts/installed_code_e2e.py --output installed-e2e-receipt.json
       - name: Verify reproducible issue meta-audit
         run: |
           python3 -m pytest scripts/tests/test_issue_meta_audit.py -q
@@ -109,6 +113,7 @@ jobs:
           path: |
             struct-initializer-report.json
             headless-invocation-matrix.json
+            installed-e2e-receipt.json
 
   # Fails the build on any secret-shaped string introduced by this push/PR.
   # This is the CI-side half of issue #9's "block release when the scanner

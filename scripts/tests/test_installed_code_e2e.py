@@ -24,7 +24,34 @@ class InstalledCodeE2ETest(unittest.TestCase):
         self.assertTrue(receipt["agent_host"]["restart_reconnected"])
         self.assertEqual(receipt["runtime"]["edit"], "simplicio.edit-result/v1")
         self.assertEqual(receipt["runtime"]["exec"], "simplicio.exec-result/v1")
+        self.assertEqual(receipt["runtime"]["exec_effect_state"], "completed")
+        self.assertTrue(receipt["runtime"]["edit_atomic"])
+        self.assertTrue(receipt["runtime"]["rollback_requested"])
+        self.assertFalse(receipt["runtime"]["rolled_back"])
         self.assertGreater(receipt["benchmark"]["operations_per_second"], 0)
+
+    def test_repeated_run_has_identical_evidence_hash(self):
+        first = MODULE.run(ROOT)
+        second = MODULE.run(ROOT)
+        self.assertEqual(first["evidence_sha256"], second["evidence_sha256"])
+        self.assertNotEqual(first["benchmark"]["elapsed_ns"], 0)
+        self.assertNotEqual(second["benchmark"]["elapsed_ns"], 0)
+
+    def test_missing_agent_capability_fails_closed(self):
+        original = MODULE.request
+
+        def missing_capability(socket_path, payload):
+            response = original(socket_path, payload)
+            if payload.get("op") == "host.status":
+                response["capabilities"] = ["host.status"]
+            return response
+
+        MODULE.request = missing_capability
+        try:
+            with self.assertRaisesRegex(RuntimeError, "capabilities missing"):
+                MODULE.run(ROOT)
+        finally:
+            MODULE.request = original
 
     def test_receipt_is_serializable_and_has_no_environment(self):
         receipt = MODULE.run(ROOT)

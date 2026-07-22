@@ -12,7 +12,10 @@ then removes the complete installation. It exercises `host.status`, stable
 causal identity, turns from the TUI, headless, ACP, and workspace entry-point
 profiles, cancellation/reconciliation, deterministic restart and advisory replay,
 Runtime atomic edit, and argv-safe execution. The JSON receipt includes the
-fixture SHA-256 and measured fixture throughput; unobservable production
+fixture SHA-256, a deterministic `evidence_sha256` over all non-timing
+evidence, the requested atomic/rollback policy and resulting effect state,
+and measured fixture throughput. Repeating the command must produce the same
+`evidence_sha256` even though elapsed time differs. Unobservable production
 latency is explicitly `null`-equivalent with a reason.
 
 This fixture is external to Code's productive process, but it is **not** a
@@ -26,3 +29,8 @@ The regression suite is also standalone and requires no paid Actions:
 ```console
 python3 -m unittest scripts.tests.test_installed_code_e2e
 ```
+
+CI runs this command in the secret-free `simplicio-owned-reports` job and
+uploads the receipt. The suite includes a missing-capability failure injection,
+invalid causal identity and path traversal rejection, deterministic replay,
+restart/reconnect, cancellation/reconciliation, and two-run evidence comparison.
