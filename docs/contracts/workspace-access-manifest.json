@@ -27,18 +27,18 @@
       "rationale": "Git/JJ status is bootstrap metadata and cannot read workspace content through a fallback."
     },
     {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/**",
-      "kind": "*",
-      "classification": "violation",
-      "owner": "runtime-wiring",
-      "rationale": "Existing direct workspace access remains an explicit migration finding until #49 wiring lands."
-    },
-    {
       "path": "crates/codegen/**/tests/**",
       "kind": "*",
       "classification": "test-fixture",
       "owner": "test-suite",
       "rationale": "Test fixture I/O is not a production workspace path."
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/**",
+      "kind": "*",
+      "classification": "violation",
+      "owner": "runtime-wiring",
+      "rationale": "Existing direct workspace access remains an explicit migration finding until #49 wiring lands."
     }
   ],
   "baseline": [
@@ -80,15 +80,33 @@
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 7
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
       "kind": "process",
       "classification": "violation",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "process",
+      "classification": "test-fixture",
       "max_count": 1
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 6
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 5
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
@@ -97,10 +115,22 @@
       "max_count": 2
     },
     {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 1
+    },
+    {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 6
+      "max_count": 0
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 1
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/file_tree.rs",
@@ -124,6 +154,12 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
       "kind": "filesystem",
       "classification": "violation",
+      "max_count": 16
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
       "max_count": 16
     },
     {

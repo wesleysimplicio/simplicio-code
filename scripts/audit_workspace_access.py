@@ -48,12 +48,25 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
             continue
         for path in sorted(p for p in scope_path.rglob("*") if p.is_file() and p.suffix in {".rs", ".py", ".ts", ".tsx"}):
             rel = path.relative_to(root).as_posix()
+            in_cfg_test = False
             for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+                if re.search(r"^\s*#\[cfg\(test\)\]", line):
+                    in_cfg_test = True
                 for kind, pattern in DEFAULT_PATTERNS.items():
                     if not pattern.search(line):
                         continue
                     rule = next((r for r in rules if isinstance(r, dict) and _rule_matches(r, rel, kind, line)), None)
-                    classification = str(rule.get("classification")) if rule else "violation"
+                    if rule and not (in_cfg_test and str(rule.get("classification")) == "violation"):
+                        classification = str(rule.get("classification"))
+                    elif in_cfg_test:
+                        classification = "test-fixture"
+                        rule = {
+                            "classification": "test-fixture",
+                            "owner": "test-suite",
+                            "rationale": "Access is contained in a cfg(test) module and is not a productive workspace path.",
+                        }
+                    else:
+                        classification = "violation"
                     if classification not in CLASSIFICATIONS:
                         classification = "violation"
                     findings.append({

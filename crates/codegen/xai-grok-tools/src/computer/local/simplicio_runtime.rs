@@ -6,7 +6,7 @@ use std::{
 
 use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socket_path};
 use simplicio_runtime_client::{
-    DEFAULT_MAX_FILE_BYTES, RuntimeClient, SharedRuntimeClient, start_workspace_map,
+    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SharedRuntimeClient, start_workspace_map,
 };
 
 use super::preflight::{ProductivePreflightReport, run_installed_preflight};
@@ -460,6 +460,21 @@ impl SimplicioRuntimeFs {
             client
                 .read_file(root, relative, DEFAULT_MAX_FILE_BYTES)
                 .map(|read| read.content)
+        })
+        .await
+    }
+
+    /// Reads a bounded byte range through Runtime without probing the local
+    /// filesystem for size, metadata, or content.
+    pub async fn read_workspace_range(
+        &self,
+        path: &Path,
+        start: Option<u64>,
+        end: Option<u64>,
+        max_bytes: usize,
+    ) -> Result<FileReadResult, ComputerError> {
+        self.with_client(path, move |client, root, relative| {
+            client.read_file_range(root, relative, start, end, max_bytes)
         })
         .await
     }
