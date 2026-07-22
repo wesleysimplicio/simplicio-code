@@ -20,6 +20,7 @@ import subprocess
 import tempfile
 from typing import Any
 
+from scripts.release.generate_component_client import render
 from scripts.validate_component_release import COMPONENTS, validate
 
 EVENT_SCHEMA = "simplicio.release-event/v1"
@@ -54,7 +55,7 @@ def _verify_signature(payload: dict[str, Any], signature: str, key: Path) -> Non
         raise BumpRejected("signature verification failed; verify publisher key and payload")
 
 
-def prepare(event: dict[str, Any], trust_dir: Path, artifacts_dir: Path,
+def prepare(event: dict[str, Any], trust_dir: Path, artifacts_dir: Path, schema: Path,
             current_state: dict[str, Any] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     if set(event) != {"key_id", "signature", "payload"} or not isinstance(event.get("payload"), dict):
         raise BumpRejected("event envelope has unknown or missing fields; publish release-event/v1")
@@ -89,6 +90,13 @@ def prepare(event: dict[str, Any], trust_dir: Path, artifacts_dir: Path,
                 )
     if payload["bundle_digest"] != result["manifest_digest"]:
         raise BumpRejected("bundle digest is wrong; regenerate and re-sign the canonical manifest")
+    generated_digest = hashlib.sha256(render(schema).encode()).hexdigest()
+    runtime = next(component for component in payload["manifest"]["components"]
+                   if component["name"] == "runtime")
+    if runtime.get("generated_client_digest") != generated_digest:
+        raise BumpRejected(
+            "runtime generated_client_digest does not match reproducible bindings; regenerate and re-sign"
+        )
     for component in payload["manifest"]["components"]:
         artifact = artifacts_dir / component["name"]
         if not artifact.is_file():
@@ -126,13 +134,15 @@ def main() -> int:
     parser.add_argument("--event", type=Path, required=True)
     parser.add_argument("--trust-dir", type=Path, required=True)
     parser.add_argument("--artifacts-dir", type=Path, required=True)
+    parser.add_argument("--schema", type=Path,
+                        default=Path("docs/contracts/component-release-v1.schema.json"))
     parser.add_argument("--manifest-out", type=Path, required=True)
     parser.add_argument("--state", type=Path, required=True)
     args = parser.parse_args()
     try:
         event = json.loads(args.event.read_text(encoding="utf-8"))
         state = json.loads(args.state.read_text(encoding="utf-8")) if args.state.exists() else None
-        manifest, next_state = prepare(event, args.trust_dir, args.artifacts_dir, state)
+        manifest, next_state = prepare(event, args.trust_dir, args.artifacts_dir, args.schema, state)
         _atomic_json(args.manifest_out, manifest)
         _atomic_json(args.state, next_state)
     except (OSError, json.JSONDecodeError, BumpRejected) as exc:
