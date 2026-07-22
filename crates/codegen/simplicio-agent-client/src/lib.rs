@@ -15,6 +15,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub mod operational_inbox;
+
 pub const HOST_PROTOCOL_SCHEMA: &str = "simplicio.agent-host/v1";
 pub const HOST_PROTOCOL_VERSION: u64 = 1;
 pub const AGENT_PROTOCOL_VERSION: &str = "agent/v1";
