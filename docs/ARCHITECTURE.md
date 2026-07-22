@@ -80,8 +80,11 @@ essa capacidade chamando seu `edit_workspace`, portanto approval/checkpoint/
 rollback/receipt continuam sob a autoridade do Runtime. Um erro do Runtime é
 terminal para o patch; não há fallback para `write_file`/`delete_file` locais.
 Backends locais usados apenas por fixtures e superfícies legadas continuam
-com o aplicador por arquivo já existente. `list`/`stat`/`exec` permanecem sem
-consumidor produtivo nesta fatia.
+com o aplicador por arquivo já existente. `list` é consumido pelos tools
+`list_dir` por `AsyncDirectoryListing`; `stat` sustenta `exists` e as operações
+de metadata do workspace; e o terminal produtivo usa
+`SimplicioRuntimeTerminalBackend`. Os três falham fechados quando Agent ou
+Runtime não está disponível.
 
 O Runtime é um processo acoplado ao binário na experiência do usuário, mas
 continua sendo um componente independente e testável. Isso evita duplicar mapa,
