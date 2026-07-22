@@ -9,6 +9,7 @@ call site must be classified in the manifest and violations fail closed.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import fnmatch
 import json
 import re
@@ -66,13 +67,39 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
 
     violations = [f for f in findings if f["classification"] == "violation"]
     unclassified = [f for f in findings if f["owner"] is None]
+    observed = Counter((f["path"], f["kind"], f["classification"]) for f in findings)
+    baseline = spec.get("baseline", [])
+    baseline_errors: list[dict[str, Any]] = []
+    if not isinstance(baseline, list):
+        raise ValueError("manifest baseline must be a list")
+    allowed: dict[tuple[str, str, str], int] = {}
+    for entry in baseline:
+        if not isinstance(entry, dict):
+            raise ValueError("manifest baseline entries must be objects")
+        try:
+            key = (str(entry["path"]), str(entry["kind"]), str(entry["classification"]))
+            count = int(entry["max_count"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("baseline entries require path, kind, classification, and non-negative max_count") from exc
+        if count < 0 or key in allowed:
+            raise ValueError("baseline entries must have unique keys and non-negative max_count")
+        allowed[key] = count
+    if baseline:
+        for key, count in sorted(observed.items()):
+            maximum = allowed.get(key)
+            if maximum is None or count > maximum:
+                baseline_errors.append({
+                    "path": key[0], "kind": key[1], "classification": key[2],
+                    "observed": count, "max_count": maximum,
+                })
     return {
         "schema": SCHEMA,
-        "status": "failed" if violations or unclassified else "passed",
+        "status": "failed" if violations or unclassified or baseline_errors else "passed",
         "findings": findings,
         "violations": violations,
         "unclassified": unclassified,
-        "summary": {"total": len(findings), "violations": len(violations), "unclassified": len(unclassified)},
+        "baseline_errors": baseline_errors,
+        "summary": {"total": len(findings), "violations": len(violations), "unclassified": len(unclassified), "baseline_errors": len(baseline_errors)},
     }
 
 

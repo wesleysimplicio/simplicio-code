@@ -1,6 +1,9 @@
 {
   "schema": "simplicio.workspace-access-manifest/v1",
-  "scopes": ["crates/codegen/simplicio-runtime-client", "crates/codegen/xai-grok-workspace/src/file_system"],
+  "scopes": [
+    "crates/codegen/simplicio-runtime-client",
+    "crates/codegen/xai-grok-workspace/src/file_system"
+  ],
   "rules": [
     {
       "path": "crates/codegen/simplicio-runtime-client/src/**",
@@ -36,6 +39,134 @@
       "classification": "test-fixture",
       "owner": "test-suite",
       "rationale": "Test fixture I/O is not a production workspace path."
+    }
+  ],
+  "baseline": [
+    {
+      "path": "crates/codegen/simplicio-runtime-client/src/lib.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 2
+    },
+    {
+      "path": "crates/codegen/simplicio-runtime-client/src/lib.rs",
+      "kind": "process",
+      "classification": "runtime-governed",
+      "max_count": 4
+    },
+    {
+      "path": "crates/codegen/simplicio-runtime-client/src/loop_hub_transport.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 2
+    },
+    {
+      "path": "crates/codegen/simplicio-runtime-client/src/map_cache.rs",
+      "kind": "process",
+      "classification": "runtime-governed",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/simplicio-runtime-client/tests/fake_server_search.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 7
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "process",
+      "classification": "violation",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 6
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 2
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/content.rs",
+      "kind": "process",
+      "classification": "violation",
+      "max_count": 3
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/content.rs",
+      "kind": "walk",
+      "classification": "violation",
+      "max_count": 5
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 6
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/file_tree.rs",
+      "kind": "walk",
+      "classification": "violation",
+      "max_count": 2
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/fuzzy.rs",
+      "kind": "walk",
+      "classification": "violation",
+      "max_count": 3
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/git_status.rs",
+      "kind": "process",
+      "classification": "bootstrap-allowlisted",
+      "max_count": 4
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 16
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
+      "kind": "walk",
+      "classification": "violation",
+      "max_count": 2
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/jj_status.rs",
+      "kind": "process",
+      "classification": "bootstrap-allowlisted",
+      "max_count": 5
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/local_fs.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/walk.rs",
+      "kind": "filesystem",
+      "classification": "violation",
+      "max_count": 5
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/walk.rs",
+      "kind": "walk",
+      "classification": "violation",
+      "max_count": 3
     }
   ]
 }
