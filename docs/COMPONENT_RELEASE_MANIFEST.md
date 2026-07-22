@@ -51,3 +51,10 @@ digest, regenerates the client, and updates a single deduplicated PR branch.
 resolve or download `latest`. Protocol-range changes are recorded as
 `migration_required` in the release receipt so promotion cannot silently mix
 contracts. Re-running the same event with `--check` proves byte reproducibility.
+
+The signed-event workflow additionally materializes the operator trust root and
+four immutable HTTPS artifacts, verifies their digests and compatibility before
+writing state, and uses an event-id branch/PR with durable replay protection.
+Missing or revoked keys, malformed events, stale sequences, incompatible
+protocols, and incorrect artifacts fail closed; the workflow only prepares a
+Code bump and never becomes a Runtime/map/queue authority.
