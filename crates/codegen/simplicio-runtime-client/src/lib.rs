@@ -7,9 +7,9 @@
 //! while rejecting newer operations with an actionable incompatibility error.
 
 pub mod component_release;
-pub mod map_cache;
 pub mod loop_hub;
 pub mod loop_hub_transport;
+pub mod map_cache;
 
 pub use loop_hub_transport::{
     HubAttachReceipt, HubAttachRequest, HubCursor, SocketPipeHubTransport,
@@ -19,8 +19,8 @@ pub use loop_hub_transport::{
 pub mod generated;
 
 pub use component_release::{
-    BundleManifest, BundleStore, CompatibilityContract, CompatibilityHandshake,
-    ComponentRelease, ReleaseError, ReleaseIdentity, CODE_VERSIONS_SCHEMA, REQUIRED_COMPONENTS,
+    BundleManifest, BundleStore, CODE_VERSIONS_SCHEMA, CompatibilityContract,
+    CompatibilityHandshake, ComponentRelease, REQUIRED_COMPONENTS, ReleaseError, ReleaseIdentity,
 };
 
 pub use map_cache::{
@@ -54,7 +54,8 @@ pub const EXEC_RESULT_SCHEMA_V1: &str = "simplicio.exec-result/v1";
 /// Runtime-owned namespace for Prototype-First receipts and candidate
 /// artifacts. Callers must use [`RuntimeClient::write_prototype_artifact`]
 /// instead of writing this directory directly.
-pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first";\n/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
+pub const PROTOTYPE_ARTIFACT_ROOT: &str = ".simplicio/artifacts/prototype-first";
+/// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
 /// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
 /// during connection negotiation instead of hanging for tens of seconds.
 pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
@@ -573,7 +574,9 @@ impl RuntimeClient {
         }
         let path = Path::new(PROTOTYPE_ARTIFACT_ROOT).join(format!("{artifact_id}.json"));
         self.write_file(repo, &path, data)
-    }\n\n    pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
+    }
+
+    pub fn delete_file(&mut self, repo: &Path, path: &Path) -> Result<Value, Error> {
         let repo = canonical_repo(repo)?;
         let path = secure_relative_path(&repo, path)?;
         self.call_tool(
@@ -622,14 +625,13 @@ impl RuntimeClient {
         if env.keys().any(|key| {
             key.is_empty()
                 || key.bytes().any(|byte| byte == 0)
-                || !key
-                    .bytes()
-                    .enumerate()
-                    .all(|(index, byte)| {
-                        (index == 0 && (byte == b'_' || byte.is_ascii_alphabetic()))
-                            || (index > 0 && (byte == b'_' || byte.is_ascii_alphanumeric()))
-                    })
-        }) || env.values().any(|value| value.bytes().any(|byte| byte == 0))
+                || !key.bytes().enumerate().all(|(index, byte)| {
+                    (index == 0 && (byte == b'_' || byte.is_ascii_alphabetic()))
+                        || (index > 0 && (byte == b'_' || byte.is_ascii_alphanumeric()))
+                })
+        }) || env
+            .values()
+            .any(|value| value.bytes().any(|byte| byte == 0))
         {
             return Err(Error::ExecRejected(
                 "environment keys/values must be NUL-free and keys must be POSIX identifiers"
@@ -916,7 +918,9 @@ fn safe_artifact_id(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
-}\n\n/// Force-kills a process by pid, cross-platform, best-effort. Used only to
+}
+
+/// Force-kills a process by pid, cross-platform, best-effort. Used only to
 /// unblock a hung handshake read after [`DEFAULT_HANDSHAKE_TIMEOUT_MS`]; a
 /// failure to kill is not itself fatal (the caller has already decided to
 /// report a timeout either way).

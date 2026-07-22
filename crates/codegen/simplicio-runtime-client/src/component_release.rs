@@ -831,7 +831,11 @@ fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>, serde_json::Erro
         serde_json::Value::Object(object) => {
             let sorted = object
                 .iter()
-                .map(|(key, value)| Ok((key.clone(), serde_json::from_slice(&canonical_json(value)?)?)))
+                .map(|(key, value)| {
+                    let value: serde_json::Value =
+                        serde_json::from_slice(&canonical_json(value)?)?;
+                    Ok((key.clone(), value))
+                })
                 .collect::<Result<BTreeMap<_, _>, serde_json::Error>>()?;
             serde_json::to_vec(&sorted)
         }

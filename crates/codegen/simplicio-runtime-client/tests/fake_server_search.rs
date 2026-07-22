@@ -14,9 +14,13 @@
 //! integration test *file* is still its own process, so this does not affect
 //! (or get affected by) tests in other files/crates.
 
-use std::path::Path;
+use std::{collections::BTreeMap, path::Path};
 
 use simplicio_runtime_client::{Error, RuntimeClient};
+
+fn tool_payload(result: &serde_json::Value) -> serde_json::Value {
+    serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
+}
 
 #[test]
 fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contract() {
@@ -49,6 +53,61 @@ fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contr
     assert_eq!(result.matches.len(), 1);
     assert_eq!(result.matches[0].path, "src/fake_match.rs");
     assert!(!result.truncated);
+
+    let list = client
+        .list(repo.path(), Path::new("."), serde_json::json!({"depth": 1}))
+        .unwrap();
+    assert_eq!(tool_payload(&list)["schema"], "simplicio.fs-list-result/v1");
+    let stat = client.stat(repo.path(), Path::new("existing.txt")).unwrap();
+    assert_eq!(tool_payload(&stat)["path"], "existing.txt");
+
+    let argv = vec!["printf".to_owned(), "hello".to_owned()];
+    let first = client
+        .exec(
+            repo.path(),
+            Path::new("."),
+            &argv,
+            &BTreeMap::new(),
+            1_000,
+            4096,
+            "issue-108-replay",
+        )
+        .unwrap();
+    let replay = client
+        .exec(
+            repo.path(),
+            Path::new("."),
+            &argv,
+            &BTreeMap::new(),
+            1_000,
+            4096,
+            "issue-108-replay",
+        )
+        .unwrap();
+    assert_eq!(first, replay);
+    assert_eq!(tool_payload(&first)["effect"], "committed");
+    let shell = client.exec(
+        repo.path(),
+        Path::new("."),
+        &["printf hello | cat".to_owned()],
+        &BTreeMap::new(),
+        1_000,
+        4096,
+        "unsafe-shell",
+    );
+    assert!(matches!(shell, Err(Error::ExecRejected(_))));
+    let failure = client.exec(
+        repo.path(),
+        Path::new("."),
+        &["__fail__".to_owned()],
+        &BTreeMap::new(),
+        1_000,
+        4096,
+        "injected-failure",
+    );
+    assert!(
+        matches!(failure, Err(Error::OperationRejected(message)) if message.contains("injected exec failure"))
+    );
 
     // --- search fails closed on a path-escape attempt, same as read/write/delete ---
     let escape = client.search(
@@ -109,6 +168,7 @@ fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contr
             }),
         )
         .expect("edit should round-trip through the fake Runtime");
+    let edit = tool_payload(&edit);
     assert_eq!(edit["schema"], "simplicio.edit-result/v1");
     assert_eq!(edit["plan"]["files"][0]["file"], "new.txt");
 
