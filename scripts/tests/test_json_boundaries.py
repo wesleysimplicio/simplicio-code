@@ -43,3 +43,33 @@ def test_scope_rejects_globs_and_parent_paths(tmp_path: pathlib.Path) -> None:
         assert "exact" in str(error)
     else:
         raise AssertionError("glob scope must be rejected")
+
+
+def test_scope_validation_rejects_missing_or_directory_entries(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "directory").mkdir()
+    for entry in ({"missing.rs"}, {"directory"}):
+        try:
+            MODULE.validate_scope(tmp_path, entry)
+        except ValueError as error:
+            assert "do not exist or are not files" in str(error)
+        else:
+            raise AssertionError("a stale strict scope must fail closed")
+
+
+def test_inventory_rejects_noncanonical_paths_and_unknown_status(tmp_path: pathlib.Path) -> None:
+    common = (
+        'owner="quality"\nreason="reviewed"\nexpires="2099-12-31"\n'
+        'category="test"\ntarget_format="HBI"\nproducer="test"\nconsumer="test"\n'
+        'lifecycle="test"\n'
+    )
+    for path, status in (("../escape.rs", "exception"), ("/absolute.rs", "exception"), ("ok.rs", "ignored")):
+        inventory = tmp_path / "inventory.toml"
+        inventory.write_text(
+            f'[[boundary]]\npath="{path}"\nstatus="{status}"\n{common}', encoding="utf-8"
+        )
+        try:
+            MODULE.load_inventory(inventory)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe inventory entry must be rejected")
