@@ -79,10 +79,12 @@ Each body must have headings covering context/problem, objective, out of scope, 
 
 ## Reproduction and required evidence
 
+Hash-guarded, append-only review drafts for every `needs-spec-rewrite` row are in `docs/audits/issue-139-rewrites.json`. They are proposals, not proof of remote edits: an owner must review each draft and verify its `expected_body_sha256` immediately before editing GitHub. The bundle's policy expressly forbids closing issues.
+
 Regenerate from the checked-in API export with:
 
 ```sh
-python3 scripts/issue_meta_audit.py --input docs/audits/issue-139-source.json --json docs/audits/issue-139-inventory.json --markdown docs/audits/issue-139-report.md
+python3 scripts/issue_meta_audit.py --input docs/audits/issue-139-source.json --json docs/audits/issue-139-inventory.json --markdown docs/audits/issue-139-report.md --rewrites docs/audits/issue-139-rewrites.json
 ```
 
 A closure decision additionally requires links to the implementation PR/commit, test logs, failure-injection logs, receipts/hashes and measured metrics in each affected issue. Missing evidence keeps the issue in `needs-spec-rewrite`; rollback is to revert body changes using the recorded SHA-256/export and reopen any issue closed without evidence.

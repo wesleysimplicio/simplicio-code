@@ -99,9 +99,11 @@ jobs:
           python3 scripts/issue_meta_audit.py \
             --input docs/audits/issue-139-source.json \
             --json /tmp/issue-139-inventory.json \
-            --markdown /tmp/issue-139-report.md
+            --markdown /tmp/issue-139-report.md \
+            --rewrites /tmp/issue-139-rewrites.json
           diff -u docs/audits/issue-139-inventory.json /tmp/issue-139-inventory.json
           diff -u docs/audits/issue-139-report.md /tmp/issue-139-report.md
+          diff -u docs/audits/issue-139-rewrites.json /tmp/issue-139-rewrites.json
       - name: Upload Simplicio reports
         uses: actions/upload-artifact@v4
         with:
