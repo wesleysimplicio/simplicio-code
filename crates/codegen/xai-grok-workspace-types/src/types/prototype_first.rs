@@ -290,6 +290,14 @@ impl DecisionReceipt {
                 errors.push(format!("artifacts[{index}] requires AC coverage"));
             }
         }
+        if let Some(comparison) = &self.comparison {
+            match self.compare(&comparison.left_artifact_id, &comparison.right_artifact_id) {
+                Ok(expected) if expected == *comparison => {}
+                Ok(_) => errors
+                    .push("comparison changed_fields does not match the selected artifacts".into()),
+                Err(error) => errors.push(error),
+            }
+        }
         if self.assumptions.iter().any(|v| !safe_text(v))
             || self.limitations.iter().any(|v| !safe_text(v))
             || self.provenance.iter().any(|v| !safe_uri(v))
@@ -349,6 +357,12 @@ impl DecisionReceipt {
     }
 
     pub fn compare(&self, left: &str, right: &str) -> Result<Comparison, String> {
+        if !safe_id(left) || !safe_id(right) {
+            return Err("comparison contains an unsafe artifact id".into());
+        }
+        if left == right {
+            return Err("comparison requires two distinct artifacts".into());
+        }
         let left_artifact = self.artifacts.iter().find(|item| item.id == left);
         let right_artifact = self.artifacts.iter().find(|item| item.id == right);
         let (Some(left_artifact), Some(right_artifact)) = (left_artifact, right_artifact) else {
@@ -470,7 +484,57 @@ fn safe_text(value: &str) -> bool { !value.chars().any(|ch| ch.is_control() && !
 fn safe_id(value: &str) -> bool { !value.is_empty() && value.len() <= 256 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')) }
 fn safe_digest(value: &str) -> bool { !value.is_empty() && value.len() <= 256 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':')) }
 fn safe_uri(value: &str) -> bool {
-    safe_text(value) && !value.is_empty() && !value.starts_with("file:") && !value.starts_with('/') && !value.starts_with('\\') && !value.split('/').any(|part| part == "..") && (value.starts_with("artifact://") || value.starts_with("runtime://") || !value.contains("://"))
+    if !safe_text(value)
+        || value.is_empty()
+        || value.starts_with("file:")
+        || value.starts_with('/')
+        || value.starts_with('\\')
+        || value.contains('\\')
+        || !(value.starts_with("artifact://")
+            || value.starts_with("runtime://")
+            || !value.contains("://"))
+    {
+        return false;
+    }
+
+    // Decode percent escapes before checking path segments. Otherwise values
+    // such as `artifact://%2e%2e/secret` pass the literal `..` check and can
+    // escape when a downstream URI implementation normalizes them.
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            if index + 2 >= bytes.len() {
+                return false;
+            }
+            let Some(high) = hex_value(bytes[index + 1]) else {
+                return false;
+            };
+            let Some(low) = hex_value(bytes[index + 2]) else {
+                return false;
+            };
+            decoded.push((high << 4) | low);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    if decoded.contains(&b'\\') || decoded.contains(&0) {
+        return false;
+    }
+    !decoded
+        .split(|byte| *byte == b'/')
+        .any(|part| part == b"..")
+}
+fn hex_value(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
+    }
 }
 fn safe_display(value: &str) -> String { value.chars().filter(|ch| !ch.is_control()).take(512).collect() }
 fn decision_name(value: &Decision) -> &'static str { match value { Decision::Accept => "accept", Decision::Revise { .. } => "revise", Decision::Reject { .. } => "reject" } }
@@ -520,6 +584,46 @@ mod tests {
         let report = value.validate("source-1", false);
         assert_eq!(report.status, "blocked");
         assert!(report.errors.iter().any(|error| error.contains("sandbox")));
+    }
+
+    #[test]
+    fn encoded_and_windows_artifact_traversal_are_blocked() {
+        for uri in [
+            "artifact://%2e%2e/secret",
+            "runtime://prototype-first/%2E%2E/secret",
+            "artifact://candidate\\..\\secret",
+            "artifact://candidate/%00secret",
+            "artifact://candidate/%zz",
+        ] {
+            let mut value = receipt(Decision::Accept);
+            value.artifacts[0].uri = uri.into();
+            assert!(
+                value
+                    .validate("source-1", false)
+                    .errors
+                    .iter()
+                    .any(|error| error.contains("sandbox"))
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_receipt_is_recomputed_and_fail_closed() {
+        let mut value = receipt(Decision::Accept);
+        value.artifacts[1].summary = "Alternate flow".into();
+        value.comparison = Some(value.compare("a1", "a2").unwrap());
+        assert!(value.validate("source-1", false).errors.is_empty());
+
+        value.comparison.as_mut().unwrap().changed_fields.clear();
+        assert!(
+            value
+                .validate("source-1", false)
+                .errors
+                .iter()
+                .any(|error| error.contains("changed_fields"))
+        );
+        assert!(value.compare("a1", "a1").is_err());
+        assert!(value.compare("../a1", "a2").is_err());
     }
 
     #[test]

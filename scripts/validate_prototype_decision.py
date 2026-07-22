@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 from typing import Any
+from urllib.parse import unquote_to_bytes
 
 SCHEMA = "simplicio.prototype-decision/v1"
 PREVIEW_SCHEMA = "simplicio.prototype-preview/v1"
@@ -42,9 +43,43 @@ def _safe_id(value: Any) -> bool:
 def _safe_uri(value: Any) -> bool:
     if not isinstance(value, str) or not _safe_text(value) or not value:
         return False
-    if value.startswith(("file:", "/", "\\")) or ".." in value.split("/"):
+    if value.startswith(("file:", "/", "\\")) or "\\" in value:
         return False
-    return value.startswith(("artifact://", "runtime://")) or "://" not in value
+    if not (value.startswith(("artifact://", "runtime://")) or "://" not in value):
+        return False
+    decoded = unquote_to_bytes(value)
+    # urllib deliberately leaves malformed escapes untouched; reject them so
+    # Python and the Rust gate have the same fail-closed contract.
+    if re.search(r"%(?![0-9A-Fa-f]{2})", value):
+        return False
+    return b"\\" not in decoded and b"\0" not in decoded and b".." not in decoded.split(b"/")
+
+
+def _expected_comparison(
+    comparison: Any, artifacts: list[dict[str, Any]]
+) -> tuple[dict[str, Any] | None, str | None]:
+    if not isinstance(comparison, dict):
+        return None, "comparison must be an object"
+    left_id = comparison.get("left_artifact_id")
+    right_id = comparison.get("right_artifact_id")
+    if not _safe_id(left_id) or not _safe_id(right_id):
+        return None, "comparison contains an unsafe artifact id"
+    if left_id == right_id:
+        return None, "comparison requires two distinct artifacts"
+    by_id = {item.get("id"): item for item in artifacts if isinstance(item, dict)}
+    if left_id not in by_id or right_id not in by_id:
+        return None, "comparison references an unknown artifact"
+    left, right = by_id[left_id], by_id[right_id]
+    fields = [
+        name
+        for name in ("type", "summary", "digest", "ac_coverage", "risk")
+        if left.get(name) != right.get(name)
+    ]
+    return {
+        "left_artifact_id": left_id,
+        "right_artifact_id": right_id,
+        "changed_fields": fields,
+    }, None
 
 
 def _decision_name(value: Any) -> str | None:
@@ -118,6 +153,13 @@ def validate(
         coverage = artifact.get("ac_coverage")
         if not isinstance(coverage, list) or not coverage:
             errors.append(f"artifacts[{index}] requires AC coverage")
+
+    if receipt.get("comparison") is not None:
+        expected, comparison_error = _expected_comparison(receipt["comparison"], artifacts)
+        if comparison_error:
+            errors.append(comparison_error)
+        elif receipt["comparison"] != expected:
+            errors.append("comparison changed_fields does not match the selected artifacts")
 
     for field in ("assumptions", "limitations", "provenance", "ac_coverage"):
         if not isinstance(receipt.get(field), list):

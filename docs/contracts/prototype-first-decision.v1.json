@@ -38,7 +38,21 @@
     "provenance": { "type": "array", "items": { "$ref": "#/$defs/safeUri" } },
     "risk": { "enum": ["low", "medium", "high", "critical"] },
     "cost": { "type": "object" },
-    "ac_coverage": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeText" } }
+    "ac_coverage": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/safeText" } },
+    "comparison": {
+      "type": ["object", "null"],
+      "required": ["left_artifact_id", "right_artifact_id", "changed_fields"],
+      "properties": {
+        "left_artifact_id": { "$ref": "#/$defs/safeId" },
+        "right_artifact_id": { "$ref": "#/$defs/safeId" },
+        "changed_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["type", "summary", "digest", "ac_coverage", "risk"] }
+        }
+      },
+      "additionalProperties": false
+    }
   },
   "$defs": {
     "safeId": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,256}$" },

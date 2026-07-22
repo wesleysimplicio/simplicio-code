@@ -44,6 +44,49 @@ def test_malicious_artifact_uri_is_blocked():
     assert any("sandbox" in error for error in result["errors"])
 
 
+def test_encoded_and_windows_artifact_traversal_is_blocked():
+    for uri in (
+        "artifact://%2e%2e/secret",
+        "runtime://prototype-first/%2E%2E/secret",
+        "artifact://candidate\\..\\secret",
+        "artifact://candidate/%00secret",
+        "artifact://candidate/%zz",
+        "https://example.invalid/artifact",
+    ):
+        artifact = _receipt()["artifacts"][0].copy()
+        artifact["uri"] = uri
+        result = validate(_receipt(artifacts=[artifact]))
+        assert any("sandbox" in error for error in result["errors"]), uri
+
+
+def test_comparison_is_recomputed_and_fail_closed():
+    left = _receipt()["artifacts"][0]
+    right = left.copy()
+    right.update(id="wire-2", summary="Alternate flow")
+    comparison = {
+        "left_artifact_id": "wire-1",
+        "right_artifact_id": "wire-2",
+        "changed_fields": ["summary"],
+    }
+    assert validate(_receipt(artifacts=[left, right], comparison=comparison))["status"] == "ready"
+
+    comparison["changed_fields"] = []
+    result = validate(_receipt(artifacts=[left, right], comparison=comparison))
+    assert any("changed_fields" in error for error in result["errors"])
+
+    comparison.update(left_artifact_id="../wire-1", right_artifact_id="wire-1")
+    result = validate(_receipt(artifacts=[left, right], comparison=comparison))
+    assert any("unsafe artifact id" in error for error in result["errors"])
+
+    for invalid, message in (
+        ("not-an-object", "must be an object"),
+        ({"left_artifact_id": "wire-1", "right_artifact_id": "wire-1"}, "distinct"),
+        ({"left_artifact_id": "wire-1", "right_artifact_id": "missing"}, "unknown"),
+    ):
+        result = validate(_receipt(artifacts=[left, right], comparison=invalid))
+        assert any(message in error for error in result["errors"])
+
+
 def test_source_revision_argument_invalidates_receipt():
     result = validate(_receipt(), current_source_revision="source-2", build_requested=True)
     assert result["state"] == "stale"
