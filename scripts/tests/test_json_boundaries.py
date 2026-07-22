@@ -45,6 +45,18 @@ def test_scope_rejects_globs_and_parent_paths(tmp_path: pathlib.Path) -> None:
         raise AssertionError("glob scope must be rejected")
 
 
+def test_every_repository_json_finding_has_an_exact_inventory_owner() -> None:
+    """Keep the reviewed baseline complete as the repository evolves.
+
+    Migration-pending entries remain visible to strict migration lanes, but a
+    new JSON occurrence may not bypass classification merely because the broad
+    repository audit runs in baseline mode.
+    """
+    inventory = MODULE.load_inventory(ROOT / "config" / "json-boundaries.toml")
+    unclassified = sorted({path for path, _, _ in MODULE.findings(ROOT) if path not in inventory})
+    assert unclassified == []
+
+
 def test_scope_validation_rejects_missing_or_directory_entries(tmp_path: pathlib.Path) -> None:
     (tmp_path / "directory").mkdir()
     for entry in ({"missing.rs"}, {"directory"}):
