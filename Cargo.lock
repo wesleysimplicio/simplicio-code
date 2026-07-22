@@ -10063,6 +10063,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "simplicio-agent-native"
+version = "0.1.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
 name = "simplicio-code-formats"
 version = "0.1.0"
 dependencies = [
