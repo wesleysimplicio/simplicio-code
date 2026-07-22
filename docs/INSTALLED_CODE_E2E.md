@@ -11,9 +11,12 @@ directory, starts an AgentHost Unix socket and a Runtime MCP stdio process,
 then removes the complete installation. It exercises `host.status`, stable
 causal identity, turns from the TUI, headless, ACP, and workspace entry-point
 profiles, cancellation/reconciliation, deterministic restart and advisory replay,
-Runtime atomic edit, and argv-safe execution. The JSON receipt includes the
-fixture SHA-256 and measured fixture throughput; unobservable production
-latency is explicitly `null`-equivalent with a reason.
+Runtime atomic edit, and argv-safe execution. Runtime compatibility is proven
+before the first Agent turn. Missing and incompatible AgentHost/Runtime cases
+are then exercised for every surface and recorded with `effect_attempted: false`,
+proving that dependency failure cannot silently become a productive turn. The
+JSON receipt includes the fixture SHA-256 and measured fixture throughput;
+unobservable production latency is explicitly `null`-equivalent with a reason.
 
 This fixture is external to Code's productive process, but it is **not** a
 replacement implementation of AgentHost or Runtime. It refuses to start

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 SCHEMA = "simplicio.issue-meta-audit/v1"
+REWRITE_SCHEMA = "simplicio.issue-meta-audit-rewrites/v1"
 REQUIRED_SECTIONS: dict[str, tuple[str, ...]] = {
     "context": ("context", "contexto", "problema", "problem", "summary", "resumo"),
     "objective": ("objective", "objetivo", "resultado esperado", "expected"),
@@ -188,10 +189,15 @@ def render_markdown(result: dict[str, Any]) -> str:
             "",
             "## Reproduction and required evidence",
             "",
+            "Hash-guarded, append-only review drafts for every `needs-spec-rewrite` row are in "
+            "`docs/audits/issue-139-rewrites.json`. They are proposals, not proof of remote edits: an "
+            "owner must review each draft and verify its `expected_body_sha256` immediately before "
+            "editing GitHub. The bundle's policy expressly forbids closing issues.",
+            "",
             "Regenerate from the checked-in API export with:",
             "",
             "```sh",
-            "python3 scripts/issue_meta_audit.py --input docs/audits/issue-139-source.json --json docs/audits/issue-139-inventory.json --markdown docs/audits/issue-139-report.md",
+            "python3 scripts/issue_meta_audit.py --input docs/audits/issue-139-source.json --json docs/audits/issue-139-inventory.json --markdown docs/audits/issue-139-report.md --rewrites docs/audits/issue-139-rewrites.json",
             "```",
             "",
             "A closure decision additionally requires links to the implementation PR/commit, test logs, "
@@ -204,12 +210,66 @@ def render_markdown(result: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _rewrite_supplement(issue: dict[str, Any]) -> str:
+    """Return an append-only review template without inventing implementation evidence."""
+    gaps = set(issue["gaps"])
+    sections: list[tuple[str, str, str]] = [
+        ("context", "Contexto e problema", "Revisar o contexto original acima e confirmar o comportamento reproduzível antes de encerrar."),
+        ("objective", "Objetivo", "Definir o resultado verificável desta issue sem ampliar o escopo original."),
+        ("out_of_scope", "Fora de escopo", "Mudanças não exigidas pelo objetivo original e claims sem evidência permanecem fora de escopo."),
+        ("contracts", "Entradas, saídas e contratos", "Identificar entradas, saídas, versões de contrato e owners afetados; usar `null` com motivo para métricas não observáveis."),
+        ("dependencies", "Dependências e ordem", "Confirmar dependências e referências cruzadas contra a `main` antes da implementação."),
+        ("steps", "Passo a passo implementável", "1. Reproduzir e registrar o baseline.\n2. Implementar a menor mudança compatível.\n3. Validar caminho feliz, falha e rollback."),
+        ("test_flow", "Fluxo de testes", "Executar testes unitários, integração, sistema/E2E, regressão, segurança e desempenho quando aplicáveis; registrar comandos e resultados."),
+        ("acceptance", "Critérios de aceite verificáveis", "- [ ] O comportamento obrigatório possui teste executável.\n- [ ] Falhas não são reportadas como sucesso.\n- [ ] Cada claim aponta para evidência reproduzível."),
+        ("evidence", "Evidências obrigatórias", "Anexar PR/commit, comandos, logs sanitizados, receipts/hashes, métricas medidas e limitações."),
+        ("risk_rollback_decision", "Riscos, rollback e decisão de encerramento", "Documentar risco residual e rollback. Não fechar sem implementação, testes e confirmação remota das evidências."),
+    ]
+    rendered = ["", "<!-- SIMPLICIO-ISSUE-AUDIT-DRAFT:v1 -->"]
+    for key, heading, content in sections:
+        if key in gaps:
+            rendered.extend((f"## {heading}", "", content, ""))
+    if "numbered_steps" in gaps and "steps" not in gaps:
+        rendered.extend(("## Passos adicionais da auditoria", "", "1. Registrar baseline.\n2. Executar validação aplicável.\n3. Anexar evidência e decisão.", ""))
+    if "measurement_evidence" in gaps:
+        rendered.extend(("## Medição", "", "Registrar baseline, comando, ambiente e valor observado; não estimar métricas ausentes.", ""))
+    return "\n".join(rendered).rstrip() + "\n"
+
+
+def build_rewrite_bundle(items: list[dict[str, Any]], result: dict[str, Any]) -> dict[str, Any]:
+    """Build hash-guarded drafts; callers must review before any remote mutation."""
+    bodies = {int(item["number"]): str(item.get("body") or "") for item in items if "pull_request" not in item}
+    drafts = []
+    for issue in result["issues"]:
+        if issue["decision"] == "reviewed-compliant":
+            continue
+        supplement = _rewrite_supplement(issue)
+        proposed = bodies[issue["number"]].rstrip() + "\n" + supplement
+        drafts.append({
+            "number": issue["number"],
+            "expected_body_sha256": issue["body_sha256"],
+            "proposed_body_sha256": hashlib.sha256(proposed.encode()).hexdigest(),
+            "gaps_addressed": issue["gaps"],
+            "append_markdown": supplement,
+            "status": "draft-needs-owner-review",
+        })
+    return {
+        "schema": REWRITE_SCHEMA,
+        "repository": result["repository"],
+        "source": result["source"],
+        "generated_at": result["generated_at"],
+        "mutation_policy": "append-only; verify expected_body_sha256 immediately before a reviewed remote edit; never close issues",
+        "drafts": drafts,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repository", default="wesleysimplicio/simplicio-code")
     parser.add_argument("--input", type=Path, help="GitHub /issues response exported as a JSON list")
     parser.add_argument("--json", type=Path, required=True)
     parser.add_argument("--markdown", type=Path, required=True)
+    parser.add_argument("--rewrites", type=Path, help="write hash-guarded draft body supplements")
     args = parser.parse_args(argv)
     try:
         if args.input:
@@ -225,6 +285,9 @@ def main(argv: list[str] | None = None) -> int:
         args.markdown.parent.mkdir(parents=True, exist_ok=True)
         args.json.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         args.markdown.write_text(render_markdown(result), encoding="utf-8")
+        if args.rewrites:
+            args.rewrites.parent.mkdir(parents=True, exist_ok=True)
+            args.rewrites.write_text(json.dumps(build_rewrite_bundle(items, result), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     except (OSError, ValueError, json.JSONDecodeError, urllib.error.URLError) as exc:
         parser.exit(2, f"issue meta-audit failed: {exc}\n")
     return 0

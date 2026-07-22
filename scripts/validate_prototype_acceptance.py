@@ -45,8 +45,21 @@ def _load(path: Path) -> dict[str, Any]:
 
 
 def _digest(value: Any) -> str:
-    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    encoded = json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False
+    ).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _string_set(receipt: dict[str, Any], field: str, owner: str, errors: list[str]) -> set[str]:
+    """Read a capability collection without letting malformed JSON crash the gate."""
+    value = receipt.get(field)
+    if not isinstance(value, list) or not all(_safe(item) for item in value):
+        errors.append(f"{owner} {field} must be an array of non-empty strings")
+        return set()
+    if len(value) != len(set(value)):
+        errors.append(f"{owner} {field} must not contain duplicates")
+    return set(value)
 
 
 def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any]) -> dict[str, Any]:
@@ -65,14 +78,14 @@ def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any])
     if not all(_safe(item) for item in plans) or len(set(plans)) != 1:
         errors.append("plan id must be present and identical in all receipts")
 
-    loop_states = set(loop.get("states", [])) if isinstance(loop.get("states"), list) else set()
+    loop_states = _string_set(loop, "states", "Loop", errors)
     missing_states = sorted(REQUIRED_LOOP_STATES - loop_states)
     if missing_states:
         errors.append("Loop capability handshake missing states: " + ", ".join(missing_states))
     if loop.get("accepted") is not True:
         errors.append("Loop did not accept the Code prototype contract")
 
-    tools = set(runtime.get("tools", [])) if isinstance(runtime.get("tools"), list) else set()
+    tools = _string_set(runtime, "tools", "Runtime", errors)
     missing_tools = sorted(REQUIRED_RUNTIME_TOOLS - tools)
     if missing_tools:
         errors.append("Runtime capability handshake missing tools: " + ", ".join(missing_tools))
@@ -81,14 +94,30 @@ def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any])
     if not HEX64.fullmatch(str(runtime.get("binary_sha256", ""))):
         errors.append("Runtime binary_sha256 must be a lowercase SHA-256 digest")
 
-    runs = e2e.get("runs") if isinstance(e2e.get("runs"), list) else []
+    runs_value = e2e.get("runs")
+    runs = runs_value if isinstance(runs_value, list) else []
+    if not isinstance(runs_value, list):
+        errors.append("E2E runs must be an array")
     passed_surfaces: set[str] = set()
-    for run in runs:
-        if not isinstance(run, dict) or run.get("status") != "passed":
+    seen_surfaces: set[str] = set()
+    for index, run in enumerate(runs):
+        if not isinstance(run, dict):
+            errors.append(f"E2E run {index} must be an object")
             continue
-        steps = set(run.get("steps", [])) if isinstance(run.get("steps"), list) else set()
+        surface = run.get("surface")
+        if surface not in REQUIRED_SURFACES:
+            errors.append(f"E2E run {index} has an unknown surface")
+            continue
+        if surface in seen_surfaces:
+            errors.append(f"E2E surface {surface} has contradictory or duplicate results")
+        seen_surfaces.add(surface)
+        steps = _string_set(run, "steps", f"E2E surface {surface}", errors)
+        if run.get("status") not in {"passed", "failed"}:
+            errors.append(f"E2E surface {surface} status must be passed or failed")
+        if run.get("status") != "passed":
+            continue
         if REQUIRED_STEPS <= steps:
-            passed_surfaces.add(str(run.get("surface")))
+            passed_surfaces.add(surface)
     missing_surfaces = sorted(REQUIRED_SURFACES - passed_surfaces)
     if missing_surfaces:
         errors.append("complete product E2E missing surfaces: " + ", ".join(missing_surfaces))
@@ -97,7 +126,13 @@ def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any])
     if e2e.get("replay_hash_match") is not True:
         errors.append("deterministic replay hashes did not match")
 
-    inputs = {"loop": _digest(loop), "runtime": _digest(runtime), "e2e": _digest(e2e)}
+    try:
+        inputs: dict[str, str | None] = {
+            "loop": _digest(loop), "runtime": _digest(runtime), "e2e": _digest(e2e)
+        }
+    except (TypeError, ValueError):
+        errors.append("input receipts must contain canonical JSON values")
+        inputs = {"loop": None, "runtime": None, "e2e": None}
     result: dict[str, Any] = {
         "schema": SCHEMA,
         "status": "ready" if not errors else "blocked",
@@ -140,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.benchmark < 1:
                 raise ValueError("benchmark iterations must be positive")
             result["benchmark"] = benchmark(loop, runtime, e2e, args.benchmark)
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
         result = {"schema": SCHEMA, "status": "blocked", "errors": [str(exc)]}
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0 if result["status"] == "ready" else 2

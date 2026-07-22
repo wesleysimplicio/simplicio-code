@@ -16,7 +16,7 @@
 
 use std::{collections::BTreeMap, path::Path};
 
-use simplicio_runtime_client::{Error, RuntimeClient};
+use simplicio_runtime_client::{Error, ExecEffectState, RuntimeClient, parse_exec_result};
 
 fn tool_payload(result: &serde_json::Value) -> serde_json::Value {
     serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap()
@@ -85,7 +85,29 @@ fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contr
         )
         .unwrap();
     assert_eq!(first, replay);
-    assert_eq!(tool_payload(&first)["effect"], "committed");
+    assert_eq!(
+        parse_exec_result(&first).unwrap().effect_state,
+        Some(ExecEffectState::Completed)
+    );
+
+    // A lost acknowledgement is not proof that an effect did not happen.
+    // Preserve the Runtime's terminal uncertainty so the productive adapter
+    // can refuse an automatic retry with the same or a new idempotency key.
+    let unknown = client
+        .exec(
+            repo.path(),
+            Path::new("."),
+            &["__unknown__".to_owned()],
+            &BTreeMap::new(),
+            1_000,
+            4096,
+            "issue-108-effect-unknown",
+        )
+        .unwrap();
+    assert_eq!(
+        parse_exec_result(&unknown).unwrap().effect_state,
+        Some(ExecEffectState::EffectUnknown)
+    );
     let shell = client.exec(
         repo.path(),
         Path::new("."),
