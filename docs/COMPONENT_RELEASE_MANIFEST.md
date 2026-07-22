@@ -42,3 +42,12 @@ does not fabricate events, fetch `latest`, publish artifacts, or claim installed
 Windows/Linux/macOS E2E. External ecosystem event delivery, signed provenance
 publication, generated bump PR automation, and installed cross-platform evidence
 remain dependencies of issue #110.
+
+Authenticated ecosystem producers deliver `simplicio.release-event/v1` through
+the `simplicio-component-release-v1` repository-dispatch event. The 15-minute
+workflow budget validates the canonical bundle digest and generated-client
+digest, regenerates the client, and updates a single deduplicated PR branch.
+`scripts/release/apply_component_release.py` is offline by design: it cannot
+resolve or download `latest`. Protocol-range changes are recorded as
+`migration_required` in the release receipt so promotion cannot silently mix
+contracts. Re-running the same event with `--check` proves byte reproducibility.
