@@ -56,8 +56,7 @@ pub struct AgentBuilder {
     /// `SearchBackend` (see `with_search`). `None` (the default) leaves
     /// search tools on their existing local (ripgrep/`tokio::fs`) behavior.
     search_backend: Option<Arc<dyn xai_grok_tools::computer::types::AsyncSearch>>,
-    directory_backend:
-        Option<Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>>,
+    directory_backend: Option<Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>>,
     notification_handle: ToolNotificationHandle,
     owner_session_id: Option<String>,
     parent_scheduler_handle:

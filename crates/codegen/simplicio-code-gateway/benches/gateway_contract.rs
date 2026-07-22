@@ -15,7 +15,9 @@ fn bench_contract_hot_paths(c: &mut Criterion) {
 data: [DONE]
 
 "#;
-    c.bench_function("redact_gateway_diagnostics", |b| b.iter(|| redact_diagnostics(&payload)));
+    c.bench_function("redact_gateway_diagnostics", |b| {
+        b.iter(|| redact_diagnostics(&payload))
+    });
     c.bench_function("parse_gateway_sse", |b| b.iter(|| parse_sse_events(sse)));
 }
 

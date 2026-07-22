@@ -7,8 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use crate::file_system::{AsyncFileSystem, FsError};
-use xai_grok_tools::computer::types::AsyncFileSystem as ToolAsyncFileSystem;
 use xai_grok_tools::computer::local::SimplicioRuntimeFs;
+use xai_grok_tools::computer::types::AsyncFileSystem as ToolAsyncFileSystem;
 
 /// Workspace filesystem whose project effects are delegated to Runtime.
 pub struct RuntimeFs {
@@ -25,7 +25,9 @@ impl RuntimeFs {
     }
 
     fn map_error(error: xai_grok_tools::computer::types::ComputerError) -> FsError {
-        FsError::Other(format!("Simplicio Runtime denied workspace operation: {error}"))
+        FsError::Other(format!(
+            "Simplicio Runtime denied workspace operation: {error}"
+        ))
     }
 
     fn is_not_found(error: &xai_grok_tools::computer::types::ComputerError) -> bool {
@@ -49,10 +51,7 @@ impl AsyncFileSystem for RuntimeFs {
     }
 
     async fn read_file(&self, path: &Path) -> Result<Vec<u8>, FsError> {
-        self.runtime
-            .read_file(path)
-            .await
-            .map_err(Self::map_error)
+        self.runtime.read_file(path).await.map_err(Self::map_error)
     }
 
     async fn try_read_file(&self, path: &Path) -> Result<Option<Vec<u8>>, FsError> {

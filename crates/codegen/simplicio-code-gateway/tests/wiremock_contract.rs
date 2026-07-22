@@ -18,8 +18,9 @@ use std::time::Duration;
 
 use chrono::Utc;
 use simplicio_code_gateway::{
-    AuthEndpoints, AuthError, AuthSession, ChatRequest, DeviceAuthorization, Entitlement, GatewayError, GatewayLimits,
-    IdentityClient, MemorySecretStore, PrivateGateway, SecretStore, SecretString, TokenResponse, paths,
+    AuthEndpoints, AuthError, AuthSession, ChatRequest, DeviceAuthorization, Entitlement,
+    GatewayError, GatewayLimits, IdentityClient, MemorySecretStore, PrivateGateway, SecretStore,
+    SecretString, TokenResponse, paths,
 };
 use tokio_util::sync::CancellationToken;
 use url::Url;
@@ -42,7 +43,12 @@ fn authorized_session() -> Arc<AuthSession<MemorySecretStore>> {
                 expires_in: 3600,
                 token_type: "Bearer".into(),
             },
-            Entitlement { plan: "pro".into(), expires_at: now + chrono::Duration::hours(1), max_request_tokens: 10_000, max_tool_calls: 8 },
+            Entitlement {
+                plan: "pro".into(),
+                expires_at: now + chrono::Duration::hours(1),
+                max_request_tokens: 10_000,
+                max_tool_calls: 8,
+            },
             now,
         )
         .unwrap();
@@ -100,10 +106,16 @@ async fn chat_stream_success_over_real_sse_http() {
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let request = ChatRequest::new(Vec::new(), 5);
-    let limits = GatewayLimits { max_request_tokens: 10_000, max_tool_calls: 8 };
+    let limits = GatewayLimits {
+        max_request_tokens: 10_000,
+        max_tool_calls: 8,
+    };
 
     use futures_util::StreamExt;
-    let mut stream = gateway.chat_stream(request, limits, CancellationToken::new()).await.unwrap();
+    let mut stream = gateway
+        .chat_stream(request, limits, CancellationToken::new())
+        .await
+        .unwrap();
     let first = stream.next().await.unwrap().unwrap();
     assert_eq!(first.text_delta.as_deref(), Some("He"));
     let second = stream.next().await.unwrap().unwrap();
@@ -146,13 +158,26 @@ async fn chat_stream_accepts_fragmented_crlf_frames_over_real_http() {
         socket.write_all(b"0\r\n\r\n").await.unwrap();
     });
 
-    let gateway = PrivateGateway::new(Url::parse(&endpoint).unwrap(), authorized_session()).unwrap();
+    let gateway =
+        PrivateGateway::new(Url::parse(&endpoint).unwrap(), authorized_session()).unwrap();
     let request = ChatRequest::new(Vec::new(), 5);
-    let limits = GatewayLimits { max_request_tokens: 10_000, max_tool_calls: 8 };
+    let limits = GatewayLimits {
+        max_request_tokens: 10_000,
+        max_tool_calls: 8,
+    };
     use futures_util::StreamExt;
-    let mut stream = gateway.chat_stream(request, limits, CancellationToken::new()).await.unwrap();
-    assert_eq!(stream.next().await.unwrap().unwrap().text_delta.as_deref(), Some("He"));
-    assert_eq!(stream.next().await.unwrap().unwrap().text_delta.as_deref(), Some("llo"));
+    let mut stream = gateway
+        .chat_stream(request, limits, CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        stream.next().await.unwrap().unwrap().text_delta.as_deref(),
+        Some("He")
+    );
+    assert_eq!(
+        stream.next().await.unwrap().unwrap().text_delta.as_deref(),
+        Some("llo")
+    );
     assert!(stream.next().await.unwrap().unwrap().done);
     assert!(stream.next().await.is_none());
     server.await.unwrap();
@@ -178,11 +203,17 @@ async fn chat_stream_is_cancellable_mid_stream() {
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let request = ChatRequest::new(Vec::new(), 5);
-    let limits = GatewayLimits { max_request_tokens: 10_000, max_tool_calls: 8 };
+    let limits = GatewayLimits {
+        max_request_tokens: 10_000,
+        max_tool_calls: 8,
+    };
     let cancel = CancellationToken::new();
 
     use futures_util::StreamExt;
-    let mut stream = gateway.chat_stream(request, limits, cancel.clone()).await.unwrap();
+    let mut stream = gateway
+        .chat_stream(request, limits, cancel.clone())
+        .await
+        .unwrap();
     let _first = stream.next().await.unwrap().unwrap();
     cancel.cancel();
     let mut saw_cancelled = false;
@@ -192,7 +223,10 @@ async fn chat_stream_is_cancellable_mid_stream() {
             break;
         }
     }
-    assert!(saw_cancelled, "expected a Cancelled error after cancel() during an in-flight stream");
+    assert!(
+        saw_cancelled,
+        "expected a Cancelled error after cancel() during an in-flight stream"
+    );
 }
 
 #[tokio::test]
@@ -200,17 +234,29 @@ async fn unauthorized_401_is_a_stable_server_error_without_leaking_the_body() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(paths::MODELS))
-        .respond_with(ResponseTemplate::new(401).set_body_string(r#"{"message":"token abc123 rejected by upstream provider host provider.internal"}"#))
+        .respond_with(ResponseTemplate::new(401).set_body_string(
+            r#"{"message":"token abc123 rejected by upstream provider host provider.internal"}"#,
+        ))
         .mount(&server)
         .await;
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let err = gateway.models().await.unwrap_err();
     match err {
-        GatewayError::Server { status, message, retry_after } => {
+        GatewayError::Server {
+            status,
+            message,
+            retry_after,
+        } => {
             assert_eq!(status, 401);
-            assert!(!message.to_lowercase().contains("token"), "redacted message must not echo the raw token field: {message}");
-            assert_eq!(retry_after, None, "401 response carried no Retry-After header");
+            assert!(
+                !message.to_lowercase().contains("token"),
+                "redacted message must not echo the raw token field: {message}"
+            );
+            assert_eq!(
+                retry_after, None,
+                "401 response carried no Retry-After header"
+            );
         }
         other => panic!("expected Server{{401}}, got {other:?}"),
     }
@@ -248,16 +294,28 @@ async fn rate_limited_429_is_a_stable_server_error() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(paths::USAGE))
-        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "12").set_body_string(r#"{"message":"rate limited"}"#))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "12")
+                .set_body_string(r#"{"message":"rate limited"}"#),
+        )
         .mount(&server)
         .await;
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let err = gateway.usage().await.unwrap_err();
     match err {
-        GatewayError::Server { status, retry_after, .. } => {
+        GatewayError::Server {
+            status,
+            retry_after,
+            ..
+        } => {
             assert_eq!(status, 429);
-            assert_eq!(retry_after, Some(std::time::Duration::from_secs(12)), "Retry-After: 12 must surface as a 12s backoff hint");
+            assert_eq!(
+                retry_after,
+                Some(std::time::Duration::from_secs(12)),
+                "Retry-After: 12 must surface as a 12s backoff hint"
+            );
         }
         other => panic!("expected Server{{429}}, got {other:?}"),
     }
@@ -275,9 +333,16 @@ async fn rate_limited_429_without_retry_after_header_yields_no_hint() {
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let err = gateway.models().await.unwrap_err();
     match err {
-        GatewayError::Server { status, retry_after, .. } => {
+        GatewayError::Server {
+            status,
+            retry_after,
+            ..
+        } => {
             assert_eq!(status, 429);
-            assert_eq!(retry_after, None, "missing header must yield None, not a fabricated default");
+            assert_eq!(
+                retry_after, None,
+                "missing header must yield None, not a fabricated default"
+            );
         }
         other => panic!("expected Server{{429}}, got {other:?}"),
     }
@@ -291,14 +356,22 @@ async fn rate_limited_429_with_unparseable_retry_after_yields_no_hint() {
         // HTTP-date form is legal HTTP but intentionally not parsed by this
         // client (see `parse_retry_after` doc comment) — must degrade to
         // `None`, never panic or misparse into a bogus duration.
-        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "Wed, 21 Oct 2099 07:28:00 GMT").set_body_string(r#"{"message":"rate limited"}"#))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "Wed, 21 Oct 2099 07:28:00 GMT")
+                .set_body_string(r#"{"message":"rate limited"}"#),
+        )
         .mount(&server)
         .await;
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let err = gateway.usage().await.unwrap_err();
     match err {
-        GatewayError::Server { status, retry_after, .. } => {
+        GatewayError::Server {
+            status,
+            retry_after,
+            ..
+        } => {
             assert_eq!(status, 429);
             assert_eq!(retry_after, None);
         }
@@ -311,15 +384,29 @@ async fn chat_stream_429_surfaces_retry_after_before_failing() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(paths::CHAT_COMPLETIONS))
-        .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "7").set_body_string(r#"{"message":"rate limited"}"#))
+        .respond_with(
+            ResponseTemplate::new(429)
+                .insert_header("retry-after", "7")
+                .set_body_string(r#"{"message":"rate limited"}"#),
+        )
         .mount(&server)
         .await;
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let request = ChatRequest::new(Vec::new(), 5);
-    let limits = GatewayLimits { max_request_tokens: 10_000, max_tool_calls: 8 };
-    match gateway.chat_stream(request, limits, CancellationToken::new()).await {
-        Err(GatewayError::Server { status, retry_after, .. }) => {
+    let limits = GatewayLimits {
+        max_request_tokens: 10_000,
+        max_tool_calls: 8,
+    };
+    match gateway
+        .chat_stream(request, limits, CancellationToken::new())
+        .await
+    {
+        Err(GatewayError::Server {
+            status,
+            retry_after,
+            ..
+        }) => {
             assert_eq!(status, 429);
             assert_eq!(retry_after, Some(std::time::Duration::from_secs(7)));
         }
@@ -333,14 +420,21 @@ async fn upstream_5xx_is_a_stable_server_error_without_naming_the_provider() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path(paths::CHAT_COMPLETIONS))
-        .respond_with(ResponseTemplate::new(502).set_body_string("upstream provider XYZ at host llm-backend.internal:443 returned a bad gateway"))
+        .respond_with(ResponseTemplate::new(502).set_body_string(
+            "upstream provider XYZ at host llm-backend.internal:443 returned a bad gateway",
+        ))
         .mount(&server)
         .await;
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
     let request = ChatRequest::new(Vec::new(), 5);
-    let limits = GatewayLimits { max_request_tokens: 10_000, max_tool_calls: 8 };
-    let result = gateway.chat_stream(request, limits, CancellationToken::new()).await;
+    let limits = GatewayLimits {
+        max_request_tokens: 10_000,
+        max_tool_calls: 8,
+    };
+    let result = gateway
+        .chat_stream(request, limits, CancellationToken::new())
+        .await;
     match result {
         Err(GatewayError::Server { status, .. }) => assert_eq!(status, 502),
         Err(other) => panic!("expected Server{{502}}, got {other:?}"),
@@ -353,15 +447,30 @@ async fn request_timeout_surfaces_as_a_transport_error() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path(paths::MODELS))
-        .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(500)).set_body_json(serde_json::json!([])))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_delay(Duration::from_millis(500))
+                .set_body_json(serde_json::json!([])),
+        )
         .mount(&server)
         .await;
 
-    let short_timeout_client = reqwest::Client::builder().timeout(Duration::from_millis(50)).build().unwrap();
-    let gateway = PrivateGateway::with_http_client(base_url(&server), authorized_session(), short_timeout_client).unwrap();
+    let short_timeout_client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(50))
+        .build()
+        .unwrap();
+    let gateway = PrivateGateway::with_http_client(
+        base_url(&server),
+        authorized_session(),
+        short_timeout_client,
+    )
+    .unwrap();
     let err = gateway.models().await.unwrap_err();
     match err {
-        GatewayError::Http(e) => assert!(e.is_timeout(), "expected a timeout reqwest error, got {e:?}"),
+        GatewayError::Http(e) => assert!(
+            e.is_timeout(),
+            "expected a timeout reqwest error, got {e:?}"
+        ),
         other => panic!("expected Http(timeout), got {other:?}"),
     }
 }
@@ -405,9 +514,21 @@ async fn device_login_flow_pending_then_granted_over_real_http() {
 
     client
         .session
-        .install(token, Entitlement { plan: "pro".into(), expires_at: Utc::now() + chrono::Duration::hours(1), max_request_tokens: 100, max_tool_calls: 1 }, Utc::now())
+        .install(
+            token,
+            Entitlement {
+                plan: "pro".into(),
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+                max_request_tokens: 100,
+                max_tool_calls: 1,
+            },
+            Utc::now(),
+        )
         .unwrap();
-    assert!(store.load_refresh_token().unwrap().is_some(), "a granted device flow must persist a refresh token");
+    assert!(
+        store.load_refresh_token().unwrap().is_some(),
+        "a granted device flow must persist a refresh token"
+    );
 }
 
 #[tokio::test]
@@ -429,7 +550,10 @@ async fn device_login_denied_maps_to_device_denied() {
         expires_in: 600,
         interval: 0,
     };
-    let err = client.poll_device_authorization(&device, CancellationToken::new(), Utc::now()).await.unwrap_err();
+    let err = client
+        .poll_device_authorization(&device, CancellationToken::new(), Utc::now())
+        .await
+        .unwrap_err();
     assert!(matches!(err, AuthError::DeviceDenied));
 }
 
@@ -457,12 +581,23 @@ async fn logout_revokes_remotely_and_clears_local_secret() {
                 expires_in: 3600,
                 token_type: "Bearer".into(),
             },
-            Entitlement { plan: "pro".into(), expires_at: now + chrono::Duration::hours(1), max_request_tokens: 10, max_tool_calls: 1 },
+            Entitlement {
+                plan: "pro".into(),
+                expires_at: now + chrono::Duration::hours(1),
+                max_request_tokens: 10,
+                max_tool_calls: 1,
+            },
             now,
         )
         .unwrap();
 
     client.logout().await.expect("logout should succeed");
-    assert!(store.load_refresh_token().unwrap().is_none(), "logout must clear the local secret");
-    assert!(matches!(client.session.access_token(Utc::now()), Err(AuthError::Revoked)));
+    assert!(
+        store.load_refresh_token().unwrap().is_none(),
+        "logout must clear the local secret"
+    );
+    assert!(matches!(
+        client.session.access_token(Utc::now()),
+        Err(AuthError::Revoked)
+    ));
 }

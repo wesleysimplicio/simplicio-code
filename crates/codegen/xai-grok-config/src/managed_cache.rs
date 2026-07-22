@@ -38,7 +38,9 @@ struct ManagedConfigCache {
 fn encode_marker(cache: &ManagedConfigCache) -> std::io::Result<Vec<u8>> {
     fn put_string(out: &mut Vec<u8>, value: Option<&str>) -> std::io::Result<()> {
         let bytes = value.unwrap_or_default().as_bytes();
-        let len = u32::try_from(bytes.len()).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string too large"))?;
+        let len = u32::try_from(bytes.len()).map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string too large")
+        })?;
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(bytes);
         Ok(())
@@ -53,41 +55,94 @@ fn encode_marker(cache: &ManagedConfigCache) -> std::io::Result<Vec<u8>> {
     payload.push(cache.had_requirements as u8);
     put_string(&mut payload, cache.key_fingerprint.as_deref())?;
     payload.push(cache.fail_closed as u8);
-    encode_hbi(MANAGED_CONFIG_CACHE_SCHEMA, &[HbiSection { kind: MANAGED_CONFIG_CACHE_SECTION, bytes: payload }])
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+    encode_hbi(
+        MANAGED_CONFIG_CACHE_SCHEMA,
+        &[HbiSection {
+            kind: MANAGED_CONFIG_CACHE_SECTION,
+            bytes: payload,
+        }],
+    )
+    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
 }
 
 fn decode_marker(bytes: &[u8]) -> std::io::Result<ManagedConfigCache> {
-    let reader = HbiReader::open(bytes).map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    let reader = HbiReader::open(bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     if reader.schema() != MANAGED_CONFIG_CACHE_SCHEMA || reader.section_count() != 1 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "managed config marker schema mismatch"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "managed config marker schema mismatch",
+        ));
     }
     let payload = reader.section(0).unwrap().1;
-    if payload.len() < 16 || &payload[..4] != b"MCMK" || u16::from_le_bytes(payload[4..6].try_into().unwrap()) != 1 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "managed config marker payload mismatch"));
+    if payload.len() < 16
+        || &payload[..4] != b"MCMK"
+        || u16::from_le_bytes(payload[4..6].try_into().unwrap()) != 1
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "managed config marker payload mismatch",
+        ));
     }
     let mut offset = 8;
     let synced_raw = u64::from_le_bytes(payload[offset..offset + 8].try_into().unwrap());
     offset += 8;
     fn take_string(payload: &[u8], offset: &mut usize) -> std::io::Result<Option<String>> {
-        if payload.len().saturating_sub(*offset) < 4 { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string length is truncated")); }
+        if payload.len().saturating_sub(*offset) < 4 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "marker string length is truncated",
+            ));
+        }
         let len = u32::from_le_bytes(payload[*offset..*offset + 4].try_into().unwrap()) as usize;
         *offset += 4;
-        let end = (*offset).checked_add(len).ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string length overflow"))?;
-        if end > payload.len() { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string is truncated")); }
-        let value = std::str::from_utf8(&payload[*offset..end]).map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidData, "marker string is not UTF-8"))?;
+        let end = (*offset).checked_add(len).ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "marker string length overflow",
+            )
+        })?;
+        if end > payload.len() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "marker string is truncated",
+            ));
+        }
+        let value = std::str::from_utf8(&payload[*offset..end]).map_err(|_| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "marker string is not UTF-8",
+            )
+        })?;
         *offset = end;
         Ok((!value.is_empty()).then(|| value.to_owned()))
     }
     let principal = take_string(payload, &mut offset)?;
-    if payload.len().saturating_sub(offset) < 2 { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker flags are truncated")); }
+    if payload.len().saturating_sub(offset) < 2 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "marker flags are truncated",
+        ));
+    }
     let had_managed_config = payload[offset] != 0;
     let had_requirements = payload[offset + 1] != 0;
     offset += 2;
     let key_fingerprint = take_string(payload, &mut offset)?;
-    if offset >= payload.len() { return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "marker fail-closed flag is truncated")); }
+    if offset >= payload.len() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "marker fail-closed flag is truncated",
+        ));
+    }
     let fail_closed = payload[offset] != 0;
-    Ok(ManagedConfigCache { synced_at: (synced_raw != u64::MAX).then_some(synced_raw), principal, had_managed_config, had_requirements, key_fingerprint, fail_closed })
+    Ok(ManagedConfigCache {
+        synced_at: (synced_raw != u64::MAX).then_some(synced_raw),
+        principal,
+        had_managed_config,
+        had_requirements,
+        key_fingerprint,
+        fail_closed,
+    })
 }
 
 /// What the cache is bound to (one value, so a (team, key) combo can't form). The

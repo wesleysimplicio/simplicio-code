@@ -102,8 +102,8 @@ fn runtime_payload(value: Value) -> WorkspaceResult<Value> {
 }
 
 fn runtime_list_response(value: Value, root: &Path) -> WorkspaceResult<FsListData> {
-    let response: RuntimeListResponse = serde_json::from_value(runtime_payload(value)?)
-        .map_err(|error| {
+    let response: RuntimeListResponse =
+        serde_json::from_value(runtime_payload(value)?).map_err(|error| {
             WorkspaceError::HubError(format!("invalid Runtime list response: {error}"))
         })?;
     let nodes = response
@@ -139,8 +139,8 @@ fn runtime_list_response(value: Value, root: &Path) -> WorkspaceResult<FsListDat
 }
 
 fn runtime_exists(value: Value) -> WorkspaceResult<bool> {
-    let response: RuntimeStatResponse = serde_json::from_value(runtime_payload(value)?)
-        .map_err(|error| {
+    let response: RuntimeStatResponse =
+        serde_json::from_value(runtime_payload(value)?).map_err(|error| {
             WorkspaceError::HubError(format!("invalid Runtime stat response: {error}"))
         })?;
     Ok(response
@@ -203,7 +203,7 @@ impl WorkspaceOp for FsExistsReq {
             Err(error) => {
                 return Err(WorkspaceError::HubError(format!(
                     "Simplicio Runtime stat denied: {error}"
-                )))
+                )));
             }
         };
         Ok(FsExistsData { exists })
@@ -589,5 +589,4 @@ mod tests {
             "write must not create the file outside root"
         );
     }
-
 }

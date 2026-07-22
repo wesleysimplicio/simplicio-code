@@ -93,7 +93,10 @@ fn main() {
                         { "name": "simplicio_fs_write" },
                         { "name": "simplicio_fs_delete" },
                         { "name": "simplicio_search" },
+                        { "name": "simplicio_fs_list" },
+                        { "name": "simplicio_fs_stat" },
                         { "name": "simplicio_edit" },
+                        { "name": "simplicio_exec" },
                     ]
                 }),
             ),
@@ -130,6 +133,8 @@ fn handle_tool_call(name: &str, arguments: &Value) -> Value {
             tool_ok(body.to_string())
         }
         "simplicio_fs_write" | "simplicio_fs_delete" => tool_ok("{}".to_owned()),
+        "simplicio_fs_list" => tool_ok(json!({"schema":"simplicio.fs-list-result/v1","entries":[{"path":"src","kind":"directory"}],"truncated":false}).to_string()),
+        "simplicio_fs_stat" => tool_ok(json!({"schema":"simplicio.fs-stat-result/v1","path":arguments.get("path").and_then(Value::as_str).unwrap_or(""),"kind":"file","size":12}).to_string()),
         "simplicio_edit" => {
             let plan = arguments
                 .get("plan")
@@ -154,6 +159,14 @@ fn handle_tool_call(name: &str, arguments: &Value) -> Value {
                 "truncated": false,
             });
             tool_ok(body.to_string())
+        }
+        "simplicio_exec" => {
+            let argv = arguments.get("argv").and_then(Value::as_array);
+            if argv.and_then(|values| values.first()).and_then(Value::as_str) == Some("__fail__") {
+                json!({"isError":true,"content":[{"type":"text","text":"injected exec failure"}]})
+            } else {
+                tool_ok(json!({"schema":"simplicio.exec-result/v1","exit_code":0,"stdout":"fake stdout","stderr":"","effect":"committed","idempotency_key":arguments.get("idempotency_key")}).to_string())
+            }
         }
         other => json!({
             "isError": true,

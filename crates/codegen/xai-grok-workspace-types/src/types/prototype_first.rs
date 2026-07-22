@@ -230,7 +230,11 @@ impl DecisionReceipt {
         next
     }
 
-    pub fn validate(&self, current_source_revision: &str, build_requested: bool) -> ValidationReport {
+    pub fn validate(
+        &self,
+        current_source_revision: &str,
+        build_requested: bool,
+    ) -> ValidationReport {
         let mut errors = Vec::new();
         if self.schema != PROTOTYPE_DECISION_SCHEMA_V1 {
             errors.push(format!("schema must be {PROTOTYPE_DECISION_SCHEMA_V1}"));
@@ -238,7 +242,10 @@ impl DecisionReceipt {
         for (name, value) in [
             ("plan_id", self.plan_id.as_str()),
             ("source_revision", self.source_revision.as_str()),
-            ("validated_source_revision", self.validated_source_revision.as_str()),
+            (
+                "validated_source_revision",
+                self.validated_source_revision.as_str(),
+            ),
             ("decision_id", self.decision_id.as_str()),
         ] {
             if value.trim().is_empty() || !safe_text(value) {
@@ -264,16 +271,23 @@ impl DecisionReceipt {
             if !safe_id(&artifact.id) {
                 errors.push(format!("artifacts[{index}] has an unsafe id"));
             }
-            for (name, value) in [("title", artifact.title.as_str()), ("summary", artifact.summary.as_str())] {
+            for (name, value) in [
+                ("title", artifact.title.as_str()),
+                ("summary", artifact.summary.as_str()),
+            ] {
                 if value.trim().is_empty() || !safe_text(value) {
                     errors.push(format!("artifacts[{index}] {name} is empty or unsafe"));
                 }
             }
             if !safe_uri(&artifact.uri) {
-                errors.push(format!("artifacts[{index}] uri escapes the artifact sandbox"));
+                errors.push(format!(
+                    "artifacts[{index}] uri escapes the artifact sandbox"
+                ));
             }
             if artifact.source_revision != self.source_revision {
-                errors.push(format!("artifacts[{index}] source revision differs from receipt"));
+                errors.push(format!(
+                    "artifacts[{index}] source revision differs from receipt"
+                ));
             }
             if artifact.digest.trim().is_empty() || !safe_digest(&artifact.digest) {
                 errors.push(format!("artifacts[{index}] digest is required"));
@@ -282,7 +296,8 @@ impl DecisionReceipt {
                 errors.push(format!("artifacts[{index}] requires evidence"));
             }
             for evidence in &artifact.evidence {
-                if !safe_id(&evidence.id) || !safe_text(&evidence.label) || !safe_uri(&evidence.uri) {
+                if !safe_id(&evidence.id) || !safe_text(&evidence.label) || !safe_uri(&evidence.uri)
+                {
                     errors.push(format!("artifact {} contains unsafe evidence", artifact.id));
                 }
             }
@@ -328,12 +343,18 @@ impl DecisionReceipt {
         } else {
             LoopState::Blocked
         };
-        let build_authorized = build_requested && errors.is_empty() && matches!(self.decision, Decision::Accept);
+        let build_authorized =
+            build_requested && errors.is_empty() && matches!(self.decision, Decision::Accept);
         if build_requested && !build_authorized {
             errors.push("Build requires a valid, current ACCEPT decision".into());
         }
         ValidationReport {
-            status: if errors.is_empty() { "ready" } else { "blocked" }.into(),
+            status: if errors.is_empty() {
+                "ready"
+            } else {
+                "blocked"
+            }
+            .into(),
             state,
             build_authorized,
             errors,
@@ -341,7 +362,10 @@ impl DecisionReceipt {
         }
     }
 
-    pub fn authorize_build(&self, current_source_revision: &str) -> Result<BuildAuthorization, ValidationReport> {
+    pub fn authorize_build(
+        &self,
+        current_source_revision: &str,
+    ) -> Result<BuildAuthorization, ValidationReport> {
         let report = self.validate(current_source_revision, true);
         if report.build_authorized {
             Ok(BuildAuthorization {
@@ -369,22 +393,44 @@ impl DecisionReceipt {
             return Err("comparison references an unknown artifact".into());
         };
         let mut changed = Vec::new();
-        if left_artifact.artifact_type != right_artifact.artifact_type { changed.push("type".into()); }
-        if left_artifact.summary != right_artifact.summary { changed.push("summary".into()); }
-        if left_artifact.digest != right_artifact.digest { changed.push("digest".into()); }
-        if left_artifact.ac_coverage != right_artifact.ac_coverage { changed.push("ac_coverage".into()); }
-        if left_artifact.risk != right_artifact.risk { changed.push("risk".into()); }
-        Ok(Comparison { left_artifact_id: left.into(), right_artifact_id: right.into(), changed_fields: changed })
+        if left_artifact.artifact_type != right_artifact.artifact_type {
+            changed.push("type".into());
+        }
+        if left_artifact.summary != right_artifact.summary {
+            changed.push("summary".into());
+        }
+        if left_artifact.digest != right_artifact.digest {
+            changed.push("digest".into());
+        }
+        if left_artifact.ac_coverage != right_artifact.ac_coverage {
+            changed.push("ac_coverage".into());
+        }
+        if left_artifact.risk != right_artifact.risk {
+            changed.push("risk".into());
+        }
+        Ok(Comparison {
+            left_artifact_id: left.into(),
+            right_artifact_id: right.into(),
+            changed_fields: changed,
+        })
     }
 
     pub fn telemetry(&self, current_source_revision: &str) -> TelemetryDecision {
         let report = self.validate(current_source_revision, false);
-        let decision = match &self.decision { Decision::Accept => "accept", Decision::Revise { .. } => "revise", Decision::Reject { .. } => "reject" };
+        let decision = match &self.decision {
+            Decision::Accept => "accept",
+            Decision::Revise { .. } => "revise",
+            Decision::Reject { .. } => "reject",
+        };
         TelemetryDecision {
             event: "prototype_decision",
             receipt_digest: report.receipt_digest,
             plan_id_digest: digest_text(&self.plan_id),
-            artifact_ids: self.artifacts.iter().map(|artifact| artifact.id.clone()).collect(),
+            artifact_ids: self
+                .artifacts
+                .iter()
+                .map(|artifact| artifact.id.clone())
+                .collect(),
             decision: decision.into(),
             state: report.state,
             risk: self.risk,
@@ -394,17 +440,28 @@ impl DecisionReceipt {
 
 impl PrototypeLoopState {
     pub fn new(plan_id: impl Into<String>, source_revision: impl Into<String>) -> Self {
-        Self { plan_id: plan_id.into(), source_revision: source_revision.into(), state: LoopState::PrototypeRequired, receipt_digest: None }
+        Self {
+            plan_id: plan_id.into(),
+            source_revision: source_revision.into(),
+            state: LoopState::PrototypeRequired,
+            receipt_digest: None,
+        }
     }
 
     pub fn publish(&mut self, receipt: &DecisionReceipt) -> ValidationReport {
         let mut report = receipt.validate(&self.source_revision, false);
         if receipt.plan_id != self.plan_id {
-            report.errors.push("receipt plan does not match Loop state".into());
+            report
+                .errors
+                .push("receipt plan does not match Loop state".into());
             report.status = "blocked".into();
             report.state = LoopState::Blocked;
         }
-        self.state = if report.errors.is_empty() { LoopState::DecisionPending } else { report.state };
+        self.state = if report.errors.is_empty() {
+            LoopState::DecisionPending
+        } else {
+            report.state
+        };
         self.receipt_digest = Some(report.receipt_digest.clone());
         report
     }
@@ -415,7 +472,10 @@ impl PrototypeLoopState {
         self.receipt_digest = None;
     }
 
-    pub fn authorize_build(&mut self, receipt: &DecisionReceipt) -> Result<BuildAuthorization, ValidationReport> {
+    pub fn authorize_build(
+        &mut self,
+        receipt: &DecisionReceipt,
+    ) -> Result<BuildAuthorization, ValidationReport> {
         let authorization = receipt.authorize_build(&self.source_revision);
         match &authorization {
             Ok(value) => {
@@ -428,7 +488,11 @@ impl PrototypeLoopState {
     }
 }
 
-pub fn render_surface(receipt: &DecisionReceipt, current_source_revision: &str, surface: Surface) -> Result<String, ValidationReport> {
+pub fn render_surface(
+    receipt: &DecisionReceipt,
+    current_source_revision: &str,
+    surface: Surface,
+) -> Result<String, ValidationReport> {
     let report = receipt.validate(current_source_revision, false);
     if surface == Surface::Tui {
         return Ok(render_tui(receipt, &report));
@@ -451,38 +515,101 @@ pub fn render_surface(receipt: &DecisionReceipt, current_source_revision: &str, 
         "build_authorized": report.build_authorized,
         "errors": report.errors,
     });
-    serde_json::to_string_pretty(&payload).map_err(|error| ValidationReport { status: "error".into(), state: LoopState::Blocked, build_authorized: false, errors: vec![error.to_string()], receipt_digest: report.receipt_digest })
+    serde_json::to_string_pretty(&payload).map_err(|error| ValidationReport {
+        status: "error".into(),
+        state: LoopState::Blocked,
+        build_authorized: false,
+        errors: vec![error.to_string()],
+        receipt_digest: report.receipt_digest,
+    })
 }
 
 pub fn render_tui(receipt: &DecisionReceipt, report: &ValidationReport) -> String {
     let mut lines = vec![
         "PROTOTYPE PREVIEW".to_string(),
-        format!("Plan: {} | State: {:?} | Build: {}", safe_display(&receipt.plan_id), report.state, if report.build_authorized { "AUTHORIZED" } else { "BLOCKED" }),
+        format!(
+            "Plan: {} | State: {:?} | Build: {}",
+            safe_display(&receipt.plan_id),
+            report.state,
+            if report.build_authorized {
+                "AUTHORIZED"
+            } else {
+                "BLOCKED"
+            }
+        ),
         format!("Decision: {}", decision_name(&receipt.decision)),
         "Candidates:".into(),
     ];
-    for artifact in receipt.artifacts.iter().take(MAX_PAGE_LINES.saturating_sub(8)) {
-        lines.push(format!("  [{}] {:?}: {} — {}", safe_display(&artifact.id), artifact.artifact_type, safe_display(&artifact.title), safe_display(&artifact.summary)));
-        lines.push(format!("      evidence: {} | AC: {} | risk: {:?}", artifact.evidence.len(), artifact.ac_coverage.len(), artifact.risk));
+    for artifact in receipt
+        .artifacts
+        .iter()
+        .take(MAX_PAGE_LINES.saturating_sub(8))
+    {
+        lines.push(format!(
+            "  [{}] {:?}: {} — {}",
+            safe_display(&artifact.id),
+            artifact.artifact_type,
+            safe_display(&artifact.title),
+            safe_display(&artifact.summary)
+        ));
+        lines.push(format!(
+            "      evidence: {} | AC: {} | risk: {:?}",
+            artifact.evidence.len(),
+            artifact.ac_coverage.len(),
+            artifact.risk
+        ));
     }
-    lines.push(format!("Assumptions: {} | Limitations: {} | Cost: {} tokens", receipt.assumptions.len(), receipt.limitations.len(), receipt.cost.tokens));
+    lines.push(format!(
+        "Assumptions: {} | Limitations: {} | Cost: {} tokens",
+        receipt.assumptions.len(),
+        receipt.limitations.len(),
+        receipt.cost.tokens
+    ));
     lines.push("Actions: [compare] [accept] [revise] [reject] [page]".into());
-    if !report.errors.is_empty() { lines.push(format!("Blocked: {}", report.errors.join("; "))); }
+    if !report.errors.is_empty() {
+        lines.push(format!("Blocked: {}", report.errors.join("; ")));
+    }
     lines.join("\n")
 }
 
 pub fn paginate(text: &str, page: usize, lines_per_page: usize) -> String {
     let lines_per_page = lines_per_page.clamp(1, MAX_PAGE_LINES);
-    text.lines().skip(page.saturating_mul(lines_per_page)).take(lines_per_page).map(safe_display).collect::<Vec<_>>().join("\n")
+    text.lines()
+        .skip(page.saturating_mul(lines_per_page))
+        .take(lines_per_page)
+        .map(safe_display)
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn accessibility_audit() -> AccessibilityAudit {
-    AccessibilityAudit { keyboard_actions: vec!["compare", "accept", "revise", "reject", "page"], has_text_labels: true, has_risk_and_limitations: true, contrast_ratio_x100: 450 }
+    AccessibilityAudit {
+        keyboard_actions: vec!["compare", "accept", "revise", "reject", "page"],
+        has_text_labels: true,
+        has_risk_and_limitations: true,
+        contrast_ratio_x100: 450,
+    }
 }
 
-fn safe_text(value: &str) -> bool { !value.chars().any(|ch| ch.is_control() && !matches!(ch, '\n' | '\r' | '\t')) }
-fn safe_id(value: &str) -> bool { !value.is_empty() && value.len() <= 256 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')) }
-fn safe_digest(value: &str) -> bool { !value.is_empty() && value.len() <= 256 && value.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':')) }
+fn safe_text(value: &str) -> bool {
+    !value
+        .chars()
+        .any(|ch| ch.is_control() && !matches!(ch, '\n' | '\r' | '\t'))
+}
+fn safe_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+fn safe_digest(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 256
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b':'))
+}
 fn safe_uri(value: &str) -> bool {
     if !safe_text(value)
         || value.is_empty()
@@ -536,30 +663,109 @@ fn hex_value(value: u8) -> Option<u8> {
         _ => None,
     }
 }
-fn safe_display(value: &str) -> String { value.chars().filter(|ch| !ch.is_control()).take(512).collect() }
-fn decision_name(value: &Decision) -> &'static str { match value { Decision::Accept => "accept", Decision::Revise { .. } => "revise", Decision::Reject { .. } => "reject" } }
-fn digest_text(value: &str) -> String { let mut hasher = Sha256::new(); hasher.update(value.as_bytes()); format!("sha256:{:x}", hasher.finalize()) }
-fn receipt_digest(receipt: &DecisionReceipt) -> String { serde_json::to_vec(receipt).map(|bytes| { let mut hasher = Sha256::new(); hasher.update(bytes); format!("sha256:{:x}", hasher.finalize()) }).unwrap_or_else(|_| "sha256:invalid".into()) }
+fn safe_display(value: &str) -> String {
+    value
+        .chars()
+        .filter(|ch| !ch.is_control())
+        .take(512)
+        .collect()
+}
+fn decision_name(value: &Decision) -> &'static str {
+    match value {
+        Decision::Accept => "accept",
+        Decision::Revise { .. } => "revise",
+        Decision::Reject { .. } => "reject",
+    }
+}
+fn digest_text(value: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(value.as_bytes());
+    format!("sha256:{:x}", hasher.finalize())
+}
+fn receipt_digest(receipt: &DecisionReceipt) -> String {
+    serde_json::to_vec(receipt)
+        .map(|bytes| {
+            let mut hasher = Sha256::new();
+            hasher.update(bytes);
+            format!("sha256:{:x}", hasher.finalize())
+        })
+        .unwrap_or_else(|_| "sha256:invalid".into())
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn artifact(id: &str) -> PreviewArtifact {
-        PreviewArtifact { id: id.into(), artifact_type: ArtifactType::Wireframe, title: "Home".into(), summary: "Main flow".into(), uri: format!("runtime://prototype-first/{id}"), source_revision: "source-1".into(), digest: "sha256:artifact".into(), evidence: vec![Evidence { id: "e1".into(), label: "Acceptance test".into(), uri: "runtime://evidence/e1".into(), digest: None }], assumptions: vec!["existing API".into()], limitations: vec!["preview only".into()], ac_coverage: vec!["AC-1".into()], risk: RiskLevel::Low, cost: CostEstimate { tokens: 12, ..Default::default() } }
+        PreviewArtifact {
+            id: id.into(),
+            artifact_type: ArtifactType::Wireframe,
+            title: "Home".into(),
+            summary: "Main flow".into(),
+            uri: format!("runtime://prototype-first/{id}"),
+            source_revision: "source-1".into(),
+            digest: "sha256:artifact".into(),
+            evidence: vec![Evidence {
+                id: "e1".into(),
+                label: "Acceptance test".into(),
+                uri: "runtime://evidence/e1".into(),
+                digest: None,
+            }],
+            assumptions: vec!["existing API".into()],
+            limitations: vec!["preview only".into()],
+            ac_coverage: vec!["AC-1".into()],
+            risk: RiskLevel::Low,
+            cost: CostEstimate {
+                tokens: 12,
+                ..Default::default()
+            },
+        }
     }
 
     fn receipt(decision: Decision) -> DecisionReceipt {
-        DecisionReceipt { schema: PROTOTYPE_DECISION_SCHEMA_V1.into(), plan_id: "plan-1".into(), source_revision: "source-1".into(), validated_source_revision: "source-1".into(), decision_id: "decision-1".into(), decision, artifacts: vec![artifact("a1"), artifact("a2")], assumptions: vec!["uses existing API".into()], limitations: vec!["not production code".into()], provenance: vec!["runtime://map/repo".into()], risk: RiskLevel::Low, cost: CostEstimate::default(), ac_coverage: vec!["AC-1".into()], comparison: None }
+        DecisionReceipt {
+            schema: PROTOTYPE_DECISION_SCHEMA_V1.into(),
+            plan_id: "plan-1".into(),
+            source_revision: "source-1".into(),
+            validated_source_revision: "source-1".into(),
+            decision_id: "decision-1".into(),
+            decision,
+            artifacts: vec![artifact("a1"), artifact("a2")],
+            assumptions: vec!["uses existing API".into()],
+            limitations: vec!["not production code".into()],
+            provenance: vec!["runtime://map/repo".into()],
+            risk: RiskLevel::Low,
+            cost: CostEstimate::default(),
+            ac_coverage: vec!["AC-1".into()],
+            comparison: None,
+        }
     }
 
     #[test]
-    fn current_accept_authorizes_build() { assert!(receipt(Decision::Accept).authorize_build("source-1").is_ok()); }
+    fn current_accept_authorizes_build() {
+        assert!(
+            receipt(Decision::Accept)
+                .authorize_build("source-1")
+                .is_ok()
+        );
+    }
 
     #[test]
     fn revise_reject_and_stale_block_build() {
-        assert!(receipt(Decision::Revise { feedback: "change layout".into() }).authorize_build("source-1").is_err());
-        assert!(receipt(Decision::Reject { reason: "wrong flow".into() }).authorize_build("source-1").is_err());
+        assert!(
+            receipt(Decision::Revise {
+                feedback: "change layout".into()
+            })
+            .authorize_build("source-1")
+            .is_err()
+        );
+        assert!(
+            receipt(Decision::Reject {
+                reason: "wrong flow".into()
+            })
+            .authorize_build("source-1")
+            .is_err()
+        );
         let report = receipt(Decision::Accept).validate("source-2", true);
         assert_eq!(report.state, LoopState::Stale);
         assert!(!report.build_authorized);
@@ -628,14 +834,19 @@ mod tests {
 
     #[test]
     fn pagination_and_accessibility_are_bounded() {
-        let text = (0..500).map(|line| format!("line {line}")).collect::<Vec<_>>().join("\n");
+        let text = (0..500)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         assert_eq!(paginate(&text, 4, 50).lines().count(), 50);
         assert!(accessibility_audit().passes());
     }
 
     #[test]
     fn telemetry_redacts_plan_content() {
-        let mut value = receipt(Decision::Revise { feedback: "secret prompt and code".into() });
+        let mut value = receipt(Decision::Revise {
+            feedback: "secret prompt and code".into(),
+        });
         value.plan_id = "plan with secret".into();
         let telemetry = value.telemetry("source-1");
         let json = serde_json::to_string(&telemetry).unwrap();
@@ -647,7 +858,10 @@ mod tests {
     fn loop_state_tracks_publish_drift_and_build_gate() {
         let accepted = receipt(Decision::Accept);
         let mut loop_state = PrototypeLoopState::new("plan-1", "source-1");
-        assert_eq!(loop_state.publish(&accepted).state, LoopState::DecisionPending);
+        assert_eq!(
+            loop_state.publish(&accepted).state,
+            LoopState::DecisionPending
+        );
         assert!(loop_state.authorize_build(&accepted).is_ok());
         loop_state.source_changed("source-2");
         assert_eq!(loop_state.state, LoopState::Stale);

@@ -3,6 +3,24 @@ generated = false
 policy = "Internal workspace/session/evidence state uses Runtime HBP/HBI/TOML; release/toolchain JSON is explicitly owned."
 
 [[boundary]]
+paths = [
+  'crates/codegen/simplicio-runtime-client/src/loop_hub_transport.rs',
+  'crates/codegen/xai-grok-tools/src/computer/local/runtime_directory.rs',
+  'crates/codegen/xai-grok-tools/src/implementations/codex/list_dir/tool.rs',
+  'crates/codegen/xai-grok-tools/src/implementations/grok_build/list_dir/mod.rs',
+  'docs/contracts/release-event-v1.schema.json',
+]
+category = "external_protocol_adapter"
+owner = "code-runtime"
+producer = "Loop Hub or Simplicio Runtime adapter and release contract tooling"
+consumer = "typed Code boundary adapter or external release-event validator"
+lifecycle = "ephemeral protocol envelope or published external schema; never Code-owned state"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "These exact paths were introduced after the prior inventory: Runtime/Loop Hub JSON terminates in typed adapters, while the release-event schema is an external validation contract."
+expires = "2099-12-31"
+
+[[boundary]]
 path = "install.sh"
 category = "toolchain"
 owner = "code-release"

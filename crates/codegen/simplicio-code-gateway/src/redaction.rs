@@ -20,7 +20,9 @@ pub fn redact_diagnostics(value: &Value) -> RedactedDiagnostics {
 }
 
 fn sanitize(value: &Value, fields: &mut Vec<(String, String)>) -> Value {
-    let Value::Object(object) = value else { return Value::Null };
+    let Value::Object(object) = value else {
+        return Value::Null;
+    };
     let mut output = Map::new();
     for (key, value) in object {
         let lower = key.to_ascii_lowercase();

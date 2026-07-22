@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -36,8 +35,7 @@ pub struct ProtocolRange {
 
 impl ProtocolRange {
     pub fn accepts(&self, protocol: &str) -> bool {
-        protocol_major(protocol)
-            .is_some_and(|major| self.min <= major && major <= self.max)
+        protocol_major(protocol).is_some_and(|major| self.min <= major && major <= self.max)
     }
 }
 
@@ -103,7 +101,9 @@ impl BundleManifest {
     }
 
     pub fn component(&self, name: &str) -> Option<&ComponentRelease> {
-        self.components.iter().find(|component| component.name == name)
+        self.components
+            .iter()
+            .find(|component| component.name == name)
     }
 
     /// SHA-256 over canonical JSON. BTreeMap fields and recursively sorted
@@ -136,8 +136,14 @@ impl ComponentRelease {
             )));
         }
         if self.artifact_digest.len() != 64
-            || !self.artifact_digest.bytes().all(|byte| byte.is_ascii_hexdigit())
-            || self.artifact_digest.bytes().any(|byte| byte.is_ascii_uppercase())
+            || !self
+                .artifact_digest
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+            || self
+                .artifact_digest
+                .bytes()
+                .any(|byte| byte.is_ascii_uppercase())
         {
             return Err(ReleaseError::InvalidManifest(format!(
                 "{}.artifact_digest must be a SHA-256 digest",
@@ -183,7 +189,10 @@ impl CompatibilityHandshake {
         }
     }
 
-    pub fn from_manifest(manifest: &BundleManifest, capabilities: BTreeSet<String>) -> Result<Self, ReleaseError> {
+    pub fn from_manifest(
+        manifest: &BundleManifest,
+        capabilities: BTreeSet<String>,
+    ) -> Result<Self, ReleaseError> {
         Ok(Self {
             schema: COMPATIBILITY_HANDSHAKE_SCHEMA.into(),
             component: manifest
@@ -198,11 +207,13 @@ impl CompatibilityHandshake {
     pub fn verify_against(&self, manifest: &BundleManifest) -> Result<(), ReleaseError> {
         manifest.validate()?;
         if self.schema != COMPATIBILITY_HANDSHAKE_SCHEMA {
-            return Err(ReleaseError::Incompatible("unsupported handshake schema".into()));
+            return Err(ReleaseError::Incompatible(
+                "unsupported handshake schema".into(),
+            ));
         }
-        let expected = manifest.component("runtime").ok_or_else(|| {
-            ReleaseError::InvalidManifest("runtime component is missing".into())
-        })?;
+        let expected = manifest
+            .component("runtime")
+            .ok_or_else(|| ReleaseError::InvalidManifest("runtime component is missing".into()))?;
         if self.component.name != expected.name
             || self.component.version != expected.version
             || self.component.commit != expected.commit
@@ -262,7 +273,9 @@ impl ReleaseEvent {
             )));
         }
         for (field, value) in [("event_id", &self.event_id), ("producer", &self.producer)] {
-            if value.trim().is_empty() || value.len() > 256 || value.chars().any(char::is_whitespace)
+            if value.trim().is_empty()
+                || value.len() > 256
+                || value.chars().any(char::is_whitespace)
             {
                 return Err(ReleaseError::InvalidEvent(format!(
                     "{field} must be a non-empty single token"
@@ -505,7 +518,11 @@ impl BundleStore {
                 "release event history is missing for the active bundle".into(),
             ));
         }
-        if let Some(previous) = state.events.iter().find(|record| record.event_id == payload.event_id) {
+        if let Some(previous) = state
+            .events
+            .iter()
+            .find(|record| record.event_id == payload.event_id)
+        {
             if previous.bundle_digest == payload.bundle_digest
                 && previous.producer == payload.producer
                 && previous.sequence == payload.sequence
@@ -607,7 +624,8 @@ impl BundleStore {
         let path = self.root.join("bundle-receipt.json");
         if path.is_file() {
             let receipt: BundleReceipt = serde_json::from_slice(&fs::read(path)?)?;
-            if receipt.schema != BUNDLE_RECEIPT_SCHEMA || !is_sha256_digest(&receipt.active_digest) {
+            if receipt.schema != BUNDLE_RECEIPT_SCHEMA || !is_sha256_digest(&receipt.active_digest)
+            {
                 return Err(ReleaseError::EventState("invalid bundle receipt".into()));
             }
             return Ok(receipt);
@@ -813,7 +831,9 @@ fn reject_floating(field: &str, value: &str) -> Result<(), ReleaseError> {
 }
 
 fn protocol_family(protocol: &str) -> &str {
-    protocol.rsplit_once("/v").map_or(protocol, |(family, _)| family)
+    protocol
+        .rsplit_once("/v")
+        .map_or(protocol, |(family, _)| family)
 }
 
 fn protocol_major(protocol: &str) -> Option<u32> {
@@ -831,7 +851,12 @@ fn canonical_json(value: &serde_json::Value) -> Result<Vec<u8>, serde_json::Erro
         serde_json::Value::Object(object) => {
             let sorted = object
                 .iter()
-                .map(|(key, value)| Ok((key.clone(), serde_json::from_slice::<serde_json::Value>(&canonical_json(value)?)?)))
+                .map(|(key, value)| {
+                    Ok((
+                        key.clone(),
+                        serde_json::from_slice::<serde_json::Value>(&canonical_json(value)?)?,
+                    ))
+                })
                 .collect::<Result<BTreeMap<_, _>, serde_json::Error>>()?;
             serde_json::to_vec(&sorted)
         }
@@ -867,7 +892,10 @@ fn read_manifest_file(path: &Path) -> Result<BundleManifest, ReleaseError> {
 fn component_summary(component: Option<&ComponentRelease>) -> serde_json::Value {
     component.map_or(serde_json::Value::Null, |component| {
         let mut summary = BTreeMap::<String, serde_json::Value>::new();
-        summary.insert("digest".into(), serde_json::json!(component.artifact_digest));
+        summary.insert(
+            "digest".into(),
+            serde_json::json!(component.artifact_digest),
+        );
         summary.insert("protocol".into(), serde_json::json!(component.protocol));
         summary.insert("version".into(), serde_json::json!(component.version));
         serde_json::Value::Object(summary.into_iter().collect())
@@ -880,7 +908,10 @@ fn manifest_summary(manifest: &BundleManifest) -> Result<serde_json::Value, Rele
         components.insert(name.to_owned(), component_summary(manifest.component(name)));
     }
     let mut summary = BTreeMap::<String, serde_json::Value>::new();
-    summary.insert("bundle_version".into(), serde_json::json!(manifest.bundle_version));
+    summary.insert(
+        "bundle_version".into(),
+        serde_json::json!(manifest.bundle_version),
+    );
     summary.insert("components".into(), serde_json::json!(components));
     summary.insert(
         "manifest_digest".into(),
@@ -919,10 +950,7 @@ fn version_report(
     let mut report = BTreeMap::<String, serde_json::Value>::new();
     report.insert("drift".into(), serde_json::json!(drift));
     report.insert("installed".into(), serde_json::to_value(installed)?);
-    report.insert(
-        "installed_summary".into(),
-        manifest_summary(installed)?,
-    );
+    report.insert("installed_summary".into(), manifest_summary(installed)?);
     report.insert(
         "manifest_digest".into(),
         serde_json::json!(installed.digest()?),
@@ -1060,7 +1088,8 @@ mod tests {
             .join("bundles/slots")
             .join(&digest)
             .join("component-release.json");
-        let mut json: serde_json::Value = serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
+        let mut json: serde_json::Value =
+            serde_json::from_slice(&fs::read(&manifest_path).unwrap()).unwrap();
         json["components"][0]["artifact_digest"] = serde_json::Value::String("d".repeat(64));
         fs::write(&manifest_path, serde_json::to_vec(&json).unwrap()).unwrap();
         assert!(matches!(
@@ -1074,7 +1103,7 @@ mod tests {
     fn canary_promotion_and_rollback_preserve_sessions() {
         let temp = tempfile::tempdir().unwrap();
         let store = BundleStore::new(temp.path().join("bundles"));
-        fs::create_dir_all(temp.path().join("bundles/sessions")) .unwrap();
+        fs::create_dir_all(temp.path().join("bundles/sessions")).unwrap();
         fs::write(temp.path().join("bundles/sessions/session.json"), "keep").unwrap();
         let source = temp.path().join("source");
         fs::create_dir(&source).unwrap();
@@ -1089,13 +1118,22 @@ mod tests {
         let second_digest = store.stage(&second, &source).unwrap();
         let rejected = store.promote(&second_digest, |_| Err("probe failed".into()));
         assert!(matches!(rejected, Err(ReleaseError::CanaryRejected(_))));
-        assert_eq!(store.active_manifest().unwrap().bundle_version, "0.3.0-beta.2");
+        assert_eq!(
+            store.active_manifest().unwrap().bundle_version,
+            "0.3.0-beta.2"
+        );
 
         store.promote(&second_digest, |_| Ok(())).unwrap();
         assert_eq!(store.active_manifest().unwrap().bundle_version, "0.3.1");
         store.rollback().unwrap();
-        assert_eq!(store.active_manifest().unwrap().bundle_version, "0.3.0-beta.2");
-        assert_eq!(fs::read_to_string(temp.path().join("bundles/sessions/session.json")).unwrap(), "keep");
+        assert_eq!(
+            store.active_manifest().unwrap().bundle_version,
+            "0.3.0-beta.2"
+        );
+        assert_eq!(
+            fs::read_to_string(temp.path().join("bundles/sessions/session.json")).unwrap(),
+            "keep"
+        );
     }
 
     #[test]
@@ -1135,21 +1173,30 @@ mod tests {
 
         let first = store.doctor_versions_json(&pinned_path).unwrap();
         let second = store.doctor_versions_json(&pinned_path).unwrap();
-        assert_eq!(serde_json::to_vec(&first).unwrap(), serde_json::to_vec(&second).unwrap());
+        assert_eq!(
+            serde_json::to_vec(&first).unwrap(),
+            serde_json::to_vec(&second).unwrap()
+        );
         assert_eq!(first["status"], "drift");
         assert_eq!(first["ready"], false);
-        assert!(first["drift"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("runtime.version")));
-        assert!(first["drift"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("runtime.digest")));
-        assert!(first["drift"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("runtime.protocol")));
+        assert!(
+            first["drift"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("runtime.version"))
+        );
+        assert!(
+            first["drift"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("runtime.digest"))
+        );
+        assert!(
+            first["drift"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("runtime.protocol"))
+        );
     }
 
     #[test]
@@ -1157,10 +1204,10 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let store = BundleStore::new(temp.path().join("bundles"));
         let mut pinned = manifest("RuntimeProtocol/v1");
-        pinned.compatibility.protocol_ranges.insert(
-            "RuntimeProtocol".into(),
-            ProtocolRange { min: 1, max: 1 },
-        );
+        pinned
+            .compatibility
+            .protocol_ranges
+            .insert("RuntimeProtocol".into(), ProtocolRange { min: 1, max: 1 });
         let pinned_path = temp.path().join("pinned.json");
         fs::write(&pinned_path, serde_json::to_vec(&pinned).unwrap()).unwrap();
 
@@ -1183,10 +1230,12 @@ mod tests {
         let report = store.doctor_versions_json(&pinned_path).unwrap();
         assert_eq!(report["status"], "blocked");
         assert_eq!(report["ready"], false);
-        assert!(report["drift"]
-            .as_array()
-            .unwrap()
-            .contains(&serde_json::json!("runtime.protocol.incompatible")));
+        assert!(
+            report["drift"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("runtime.protocol.incompatible"))
+        );
     }
 
     fn signed_event(
@@ -1264,8 +1313,16 @@ mod tests {
             })
             .unwrap();
         assert!(matches!(duplicate, ReleaseEventOutcome::Duplicate(_)));
-        assert_eq!(canary_calls.get(), 1, "duplicate events must not canary twice");
-        assert!(temp.path().join("bundles/release-event-state.json").is_file());
+        assert_eq!(
+            canary_calls.get(),
+            1,
+            "duplicate events must not canary twice"
+        );
+        assert!(
+            temp.path()
+                .join("bundles/release-event-state.json")
+                .is_file()
+        );
     }
 
     #[test]

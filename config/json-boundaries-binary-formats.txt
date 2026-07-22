@@ -1,0 +1,8 @@
+# Code-owned binary/TOML implementation and executable migration proof.
+crates/codegen/simplicio-code-formats/src/atomic.rs
+crates/codegen/simplicio-code-formats/src/hbi.rs
+crates/codegen/simplicio-code-formats/src/hbp.rs
+crates/codegen/simplicio-code-formats/src/lib.rs
+crates/codegen/simplicio-code-formats/src/migration.rs
+crates/codegen/simplicio-code-formats/src/toml_config.rs
+crates/codegen/simplicio-code-formats/tests/migration_e2e.rs

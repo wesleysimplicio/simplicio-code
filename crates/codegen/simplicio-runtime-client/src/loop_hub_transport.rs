@@ -8,9 +8,9 @@
 //! format policy.
 
 use crate::loop_hub::{
-    AdmissionReceipt, CancelRequest, HubError, HubHandshake, HubHandshakeRequest,
-    HubTransport, HubTransportFactory, LifecycleReceipt, ProgressRequest, ProgressSnapshot,
-    ResumeRequest, SubmitRequest, LOOP_HUB_CLIENT_SCHEMA, LOOP_HUB_PROTOCOL,
+    AdmissionReceipt, CancelRequest, HubError, HubHandshake, HubHandshakeRequest, HubTransport,
+    HubTransportFactory, LOOP_HUB_CLIENT_SCHEMA, LOOP_HUB_PROTOCOL, LifecycleReceipt,
+    ProgressRequest, ProgressSnapshot, ResumeRequest, SubmitRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -314,9 +314,10 @@ impl SocketPipeHubTransport {
         let value = Self::rpc_once(state, "attach", &payload).map_err(rpc_to_hub_error)?;
         let receipt: HubAttachReceipt = serde_json::from_value(value)
             .map_err(|error| HubError::Protocol(format!("invalid Hub attach receipt: {error}")))?;
-        let handshake = state.handshake.as_ref().ok_or_else(|| {
-            HubError::Protocol("Hub attach attempted before handshake".into())
-        })?;
+        let handshake = state
+            .handshake
+            .as_ref()
+            .ok_or_else(|| HubError::Protocol("Hub attach attempted before handshake".into()))?;
         receipt.validate(&handshake.hub_id, &request.session_id)
     }
 
@@ -336,12 +337,7 @@ impl SocketPipeHubTransport {
         self.attach_locked(state, &request, true)
     }
 
-    fn rpc(
-        &self,
-        method: &str,
-        payload: &Value,
-        replay_safe: bool,
-    ) -> Result<Value, HubError> {
+    fn rpc(&self, method: &str, payload: &Value, replay_safe: bool) -> Result<Value, HubError> {
         let mut state = self.state()?;
         match Self::rpc_once(&mut state, method, payload) {
             Ok(value) => Ok(value),
@@ -398,8 +394,8 @@ impl HubTransport for SocketPipeHubTransport {
                 .clone()
                 .ok_or_else(|| HubError::Protocol("missing completed Hub handshake".into()));
         }
-        let payload = serde_json::to_value(request)
-            .map_err(|error| HubError::Protocol(error.to_string()))?;
+        let payload =
+            serde_json::to_value(request).map_err(|error| HubError::Protocol(error.to_string()))?;
         let value = Self::rpc_once(&mut state, "handshake", &payload).map_err(rpc_to_hub_error)?;
         let handshake: HubHandshake = serde_json::from_value(value)
             .map_err(|error| HubError::Protocol(format!("invalid Hub handshake: {error}")))?;
@@ -418,7 +414,8 @@ impl HubTransport for SocketPipeHubTransport {
     fn submit(&self, request: &SubmitRequest) -> Result<AdmissionReceipt, HubError> {
         self.value(
             "submit",
-            &serde_json::to_value(request).map_err(|error| HubError::Protocol(error.to_string()))?,
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
             false,
         )
     }
@@ -426,10 +423,12 @@ impl HubTransport for SocketPipeHubTransport {
     fn progress(&self, request: &ProgressRequest) -> Result<ProgressSnapshot, HubError> {
         let snapshot: ProgressSnapshot = self.value(
             "progress",
-            &serde_json::to_value(request).map_err(|error| HubError::Protocol(error.to_string()))?,
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
             true,
         )?;
-        if snapshot.workflow_id != request.workflow_id || snapshot.next_sequence < request.after_sequence
+        if snapshot.workflow_id != request.workflow_id
+            || snapshot.next_sequence < request.after_sequence
         {
             return Err(HubError::Protocol(
                 "Hub returned a progress snapshot with an invalid cursor".into(),
@@ -445,7 +444,8 @@ impl HubTransport for SocketPipeHubTransport {
     fn cancel(&self, request: &CancelRequest) -> Result<LifecycleReceipt, HubError> {
         self.value(
             "cancel",
-            &serde_json::to_value(request).map_err(|error| HubError::Protocol(error.to_string()))?,
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
             false,
         )
     }
@@ -453,7 +453,8 @@ impl HubTransport for SocketPipeHubTransport {
     fn resume(&self, request: &ResumeRequest) -> Result<LifecycleReceipt, HubError> {
         self.value(
             "resume",
-            &serde_json::to_value(request).map_err(|error| HubError::Protocol(error.to_string()))?,
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
             false,
         )
     }
@@ -475,13 +476,13 @@ mod tests {
     use crate::loop_hub::{HubMode, LoopHubClient};
     use serde_json::json;
     #[cfg(unix)]
+    use std::os::unix::net::UnixStream;
+    #[cfg(unix)]
     use std::{
         io::{BufRead, BufReader, Write},
         thread,
         time::{SystemTime, UNIX_EPOCH},
     };
-    #[cfg(unix)]
-    use std::os::unix::net::UnixStream;
 
     #[test]
     fn attach_request_is_versioned_and_carries_reconnect_cursors() {
@@ -527,94 +528,128 @@ mod tests {
             let (stream, _) = listener.accept().unwrap();
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut writer = stream;
-            expect_method(&mut reader, &mut writer, "handshake", json!({
-                "schema": LOOP_HUB_CLIENT_SCHEMA,
-                "protocol": LOOP_HUB_PROTOCOL,
-                "hub_id": "hub-1",
-                "ready": true,
-                "services": [
-                    {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
-                    {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
-                    {"name":"scheduler","owner":"loop-hub","process_id":"scheduler"},
-                    {"name":"inference","owner":"loop-hub","process_id":"inference"}
-                ],
-                "resources": {
-                    "runtime":{"id":"runtime","capacity":1,"used":0},
-                    "mapper":{"id":"mapper","capacity":1,"used":0},
-                    "inference":{"id":"inference","capacity":1,"used":0},
-                    "max_active_inference":1,
-                    "interactive_reserved":1
-                },
-                "queue":{"interactive_capacity":1,"background_capacity":1,"max_pending_interactive":2},
-                "local_scheduler":false
-            }));
-            expect_method(&mut reader, &mut writer, "attach", json!({
-                "schema": LOOP_HUB_CLIENT_SCHEMA,
-                "protocol": LOOP_HUB_PROTOCOL,
-                "hub_id":"hub-1",
-                "session_id":"session",
-                "accepted":true,
-                "replay_from":[]
-            }));
-            expect_method(&mut reader, &mut writer, "submit", json!({
-                "schema": LOOP_HUB_CLIENT_SCHEMA,
-                "workflow_id":"workflow",
-                "state":"queued",
-                "queue_position":1,
-                "retry_after_ms":null,
-                "receipt_id":"receipt"
-            }));
-            expect_method(&mut reader, &mut writer, "progress", json!({
-                "workflow_id":"workflow",
-                "next_sequence":1,
-                "events":[{"type":"queued","sequence":0,"position":1}],
-                "terminal":false
-            }));
+            expect_method(
+                &mut reader,
+                &mut writer,
+                "handshake",
+                json!({
+                    "schema": LOOP_HUB_CLIENT_SCHEMA,
+                    "protocol": LOOP_HUB_PROTOCOL,
+                    "hub_id": "hub-1",
+                    "ready": true,
+                    "services": [
+                        {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
+                        {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
+                        {"name":"scheduler","owner":"loop-hub","process_id":"scheduler"},
+                        {"name":"inference","owner":"loop-hub","process_id":"inference"}
+                    ],
+                    "resources": {
+                        "runtime":{"id":"runtime","capacity":1,"used":0},
+                        "mapper":{"id":"mapper","capacity":1,"used":0},
+                        "inference":{"id":"inference","capacity":1,"used":0},
+                        "max_active_inference":1,
+                        "interactive_reserved":1
+                    },
+                    "queue":{"interactive_capacity":1,"background_capacity":1,"max_pending_interactive":2},
+                    "local_scheduler":false
+                }),
+            );
+            expect_method(
+                &mut reader,
+                &mut writer,
+                "attach",
+                json!({
+                    "schema": LOOP_HUB_CLIENT_SCHEMA,
+                    "protocol": LOOP_HUB_PROTOCOL,
+                    "hub_id":"hub-1",
+                    "session_id":"session",
+                    "accepted":true,
+                    "replay_from":[]
+                }),
+            );
+            expect_method(
+                &mut reader,
+                &mut writer,
+                "submit",
+                json!({
+                    "schema": LOOP_HUB_CLIENT_SCHEMA,
+                    "workflow_id":"workflow",
+                    "state":"queued",
+                    "queue_position":1,
+                    "retry_after_ms":null,
+                    "receipt_id":"receipt"
+                }),
+            );
+            expect_method(
+                &mut reader,
+                &mut writer,
+                "progress",
+                json!({
+                    "workflow_id":"workflow",
+                    "next_sequence":1,
+                    "events":[{"type":"queued","sequence":0,"position":1}],
+                    "terminal":false
+                }),
+            );
             drop(writer);
 
             let (stream, _) = listener.accept().unwrap();
             let mut reader = BufReader::new(stream.try_clone().unwrap());
             let mut writer = stream;
-            expect_method(&mut reader, &mut writer, "handshake", json!({
-                "schema": LOOP_HUB_CLIENT_SCHEMA,
-                "protocol": LOOP_HUB_PROTOCOL,
-                "hub_id": "hub-1",
-                "ready": true,
-                "services": [
-                    {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
-                    {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
-                    {"name":"scheduler","owner":"loop-hub","process_id":"scheduler"},
-                    {"name":"inference","owner":"loop-hub","process_id":"inference"}
-                ],
-                "resources": {
-                    "runtime":{"id":"runtime","capacity":1,"used":0},
-                    "mapper":{"id":"mapper","capacity":1,"used":0},
-                    "inference":{"id":"inference","capacity":1,"used":0},
-                    "max_active_inference":1,
-                    "interactive_reserved":1
-                },
-                "queue":{"interactive_capacity":1,"background_capacity":1,"max_pending_interactive":2},
-                "local_scheduler":false
-            }));
+            expect_method(
+                &mut reader,
+                &mut writer,
+                "handshake",
+                json!({
+                    "schema": LOOP_HUB_CLIENT_SCHEMA,
+                    "protocol": LOOP_HUB_PROTOCOL,
+                    "hub_id": "hub-1",
+                    "ready": true,
+                    "services": [
+                        {"name":"runtime","owner":"loop-hub","process_id":"runtime"},
+                        {"name":"mapper","owner":"loop-hub","process_id":"mapper"},
+                        {"name":"scheduler","owner":"loop-hub","process_id":"scheduler"},
+                        {"name":"inference","owner":"loop-hub","process_id":"inference"}
+                    ],
+                    "resources": {
+                        "runtime":{"id":"runtime","capacity":1,"used":0},
+                        "mapper":{"id":"mapper","capacity":1,"used":0},
+                        "inference":{"id":"inference","capacity":1,"used":0},
+                        "max_active_inference":1,
+                        "interactive_reserved":1
+                    },
+                    "queue":{"interactive_capacity":1,"background_capacity":1,"max_pending_interactive":2},
+                    "local_scheduler":false
+                }),
+            );
             let request = read_request(&mut reader);
             assert_eq!(request["method"], "attach");
             assert_eq!(request["payload"]["reconnect"], true);
             assert_eq!(request["payload"]["cursors"][0]["workflow_id"], "workflow");
             assert_eq!(request["payload"]["cursors"][0]["after_sequence"], 1);
-            write_response(&mut writer, request["id"].as_u64().unwrap(), json!({
-                "schema": LOOP_HUB_CLIENT_SCHEMA,
-                "protocol": LOOP_HUB_PROTOCOL,
-                "hub_id":"hub-1",
-                "session_id":"session",
-                "accepted":true,
-                "replay_from":[{"workflow_id":"workflow","after_sequence":1}]
-            }));
-            expect_method(&mut reader, &mut writer, "progress", json!({
-                "workflow_id":"workflow",
-                "next_sequence":2,
-                "events":[{"type":"output","sequence":1,"text":"replayed"}],
-                "terminal":false
-            }));
+            write_response(
+                &mut writer,
+                request["id"].as_u64().unwrap(),
+                json!({
+                    "schema": LOOP_HUB_CLIENT_SCHEMA,
+                    "protocol": LOOP_HUB_PROTOCOL,
+                    "hub_id":"hub-1",
+                    "session_id":"session",
+                    "accepted":true,
+                    "replay_from":[{"workflow_id":"workflow","after_sequence":1}]
+                }),
+            );
+            expect_method(
+                &mut reader,
+                &mut writer,
+                "progress",
+                json!({
+                    "workflow_id":"workflow",
+                    "next_sequence":2,
+                    "events":[{"type":"output","sequence":1,"text":"replayed"}],
+                    "terminal":false
+                }),
+            );
             std::fs::remove_file(server_path).ok();
         });
 
@@ -659,7 +694,12 @@ mod tests {
     }
 
     #[cfg(unix)]
-    fn expect_method(reader: &mut BufReader<UnixStream>, writer: &mut UnixStream, method: &str, result: Value) {
+    fn expect_method(
+        reader: &mut BufReader<UnixStream>,
+        writer: &mut UnixStream,
+        method: &str,
+        result: Value,
+    ) {
         let request = read_request(reader);
         assert_eq!(request["method"], method);
         write_response(writer, request["id"].as_u64().unwrap(), result);

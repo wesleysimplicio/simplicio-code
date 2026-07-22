@@ -43,9 +43,9 @@ pub use plan_mode::{PlanModeDecision, PlanModeTransition};
 pub use plugins::{HookInfo, PluginInfo};
 pub use prototype_first::{
     AccessibilityAudit, ArtifactType, BuildAuthorization, Comparison, CostEstimate, Decision,
-    DecisionAction, DecisionReceipt, Evidence, LoopState, PreviewArtifact, PrototypeLoopState, RiskLevel, Surface, TelemetryDecision,
-    ValidationReport, accessibility_audit, paginate, render_surface, render_tui,
-    PROTOTYPE_DECISION_SCHEMA_V1, PROTOTYPE_PREVIEW_SCHEMA_V1,
+    DecisionAction, DecisionReceipt, Evidence, LoopState, PROTOTYPE_DECISION_SCHEMA_V1,
+    PROTOTYPE_PREVIEW_SCHEMA_V1, PreviewArtifact, PrototypeLoopState, RiskLevel, Surface,
+    TelemetryDecision, ValidationReport, accessibility_audit, paginate, render_surface, render_tui,
 };
 pub use search::{ContentMatch, FuzzyMatch, FuzzySearchArgs, RipgrepArgs, RipgrepStats};
 pub use session::{

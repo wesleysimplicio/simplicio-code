@@ -26,17 +26,48 @@ where
 {
     let source = std::fs::read(legacy)?;
     if source.len() > MAX_LEGACY_BYTES {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "legacy artifact exceeds migration limit"));
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "legacy artifact exceeds migration limit",
+        ));
     }
     let converted = encode(&source)?;
     if dry_run {
-        return Ok(MigrationOutcome { dry_run: true, migrated: false, backup: None });
+        return Ok(MigrationOutcome {
+            dry_run: true,
+            migrated: false,
+            backup: None,
+        });
     }
-    if !backup.exists() {
-        std::fs::copy(legacy, backup)?;
+    if target.exists() {
+        if std::fs::read(target)? == converted {
+            return Ok(MigrationOutcome {
+                dry_run: false,
+                migrated: false,
+                backup: backup.exists().then(|| backup.to_path_buf()),
+            });
+        }
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "migration target exists with different content",
+        ));
+    }
+    if backup.exists() {
+        if std::fs::read(backup)? != source {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "migration backup exists with different content",
+            ));
+        }
+    } else {
+        write_atomically(backup, &source)?;
     }
     write_atomically(target, &converted)?;
-    Ok(MigrationOutcome { dry_run: false, migrated: true, backup: Some(backup.to_path_buf()) })
+    Ok(MigrationOutcome {
+        dry_run: false,
+        migrated: true,
+        backup: Some(backup.to_path_buf()),
+    })
 }
 
 #[cfg(test)]
@@ -50,7 +81,9 @@ mod tests {
         let target = dir.path().join("new.state");
         let backup = dir.path().join("old.state.bak");
         std::fs::write(&legacy, b"legacy").unwrap();
-        let outcome = migrate_bytes_atomically(&legacy, &target, &backup, true, |_| Ok(b"new".to_vec())).unwrap();
+        let outcome =
+            migrate_bytes_atomically(&legacy, &target, &backup, true, |_| Ok(b"new".to_vec()))
+                .unwrap();
         assert!(outcome.dry_run && !target.exists() && !backup.exists());
     }
 }

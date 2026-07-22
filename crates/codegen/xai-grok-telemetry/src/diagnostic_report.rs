@@ -142,8 +142,7 @@ pub fn build_diagnostic_report(mode: TelemetryMode, config: &TelemetryConfig) ->
         },
         DiagnosticDestination {
             id: "sentry",
-            host: "configured Sentry DSN (build-time; empty unless explicitly baked in)"
-                .to_owned(),
+            host: "configured Sentry DSN (build-time; empty unless explicitly baked in)".to_owned(),
             purpose: "crash and error reports, scrubbed of home dir/usernames/secrets",
             active: session_metrics_active,
             reason: reason_for(session_metrics_active, "telemetry mode"),
@@ -235,7 +234,11 @@ mod tests {
     #[test]
     fn session_metrics_mode_activates_sentry_but_not_mixpanel() {
         let report = build_diagnostic_report(TelemetryMode::SessionMetrics, &base_config());
-        let sentry = report.destinations.iter().find(|d| d.id == "sentry").unwrap();
+        let sentry = report
+            .destinations
+            .iter()
+            .find(|d| d.id == "sentry")
+            .unwrap();
         let mixpanel = report
             .destinations
             .iter()

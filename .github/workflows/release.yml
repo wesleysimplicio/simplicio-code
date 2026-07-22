@@ -41,6 +41,17 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  binary-format-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce zero JSON in Code-owned binary-format lane
+        run: >-
+          python3 scripts/check_json_boundaries.py --mode strict --max-findings 100
+          --scope-file config/json-boundaries-binary-formats.txt
+      - name: Block release while repository-wide migration evidence is incomplete
+        run: python3 scripts/check_json_boundaries.py --mode strict --max-findings 100
+
   build:
     strategy:
       fail-fast: false
@@ -112,7 +123,7 @@ jobs:
           if-no-files-found: error
 
   package:
-    needs: build
+    needs: [build, binary-format-quality]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

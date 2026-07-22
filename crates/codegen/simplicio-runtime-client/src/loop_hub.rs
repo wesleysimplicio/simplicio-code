@@ -493,6 +493,55 @@ pub struct LoopHubClient {
     config: HubClientConfig,
 }
 
+/// A capability limited to interactive Loop Hub submission.
+///
+/// UI integrations can retain this handle without gaining access to the raw
+/// [`HubTransport`] (and therefore cannot bypass request validation or submit
+/// a different priority class). Clones retain the negotiated Hub session; they
+/// do not open another socket or create local scheduling state.
+#[derive(Clone)]
+pub struct InteractiveHubTransport {
+    session: Arc<HubSession>,
+    session_id: String,
+}
+
+/// A cloneable reference to a Hub-owned shared service.
+///
+/// This is an identity/capacity handle, not a local service client. Keeping it
+/// alive also keeps the negotiated Hub session alive, which makes it safe for
+/// independently constructed Code surfaces to share Map and Runtime without
+/// spawning either service in the Code process.
+#[derive(Clone)]
+pub struct SharedHubServiceHandle {
+    session: Arc<HubSession>,
+    service: SharedService,
+    resource: ResourceHandle,
+}
+
+impl SharedHubServiceHandle {
+    pub fn service(&self) -> SharedService {
+        self.service
+    }
+
+    pub fn resource(&self) -> &ResourceHandle {
+        &self.resource
+    }
+
+    pub fn hub_id(&self) -> &str {
+        &self.session.handshake.hub_id
+    }
+
+    pub fn endpoint(&self) -> &str {
+        &self.session.endpoint
+    }
+
+    /// Returns true when two service handles use the same negotiated Hub
+    /// session, rather than merely advertising equal string identifiers.
+    pub fn shares_session_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.session, &other.session)
+    }
+}
+
 impl LoopHubClient {
     /// Connect using the environment-backed endpoint discovery contract.
     pub fn connect<F: HubTransportFactory>(
@@ -568,17 +617,59 @@ impl LoopHubClient {
         &self.config
     }
 
+    /// Exposes the interactive-only transport capability for UI adapters.
+    pub fn interactive_transport(&self) -> InteractiveHubTransport {
+        InteractiveHubTransport {
+            session: Arc::clone(&self.session),
+            session_id: self.config.session_id.clone(),
+        }
+    }
+
+    /// Returns the Runtime handle negotiated from the Hub handshake.
+    pub fn shared_runtime_handle(&self) -> SharedHubServiceHandle {
+        self.shared_service_handle(
+            SharedService::Runtime,
+            self.session.handshake.resources.runtime.clone(),
+        )
+    }
+
+    /// Returns the Map/Mapper handle negotiated from the Hub handshake.
+    pub fn shared_map_handle(&self) -> SharedHubServiceHandle {
+        self.shared_service_handle(
+            SharedService::Mapper,
+            self.session.handshake.resources.mapper.clone(),
+        )
+    }
+
+    fn shared_service_handle(
+        &self,
+        service: SharedService,
+        resource: ResourceHandle,
+    ) -> SharedHubServiceHandle {
+        SharedHubServiceHandle {
+            session: Arc::clone(&self.session),
+            service,
+            resource,
+        }
+    }
+
     pub fn submit_interactive(&self, goal: InteractiveGoal) -> Result<HubJob, HubError> {
+        self.interactive_transport().submit(goal)
+    }
+}
+
+impl InteractiveHubTransport {
+    /// Submit one interactive turn through the already negotiated Hub queue.
+    pub fn submit(&self, goal: InteractiveGoal) -> Result<HubJob, HubError> {
         goal.validate()?;
         // Length-prefix every component. Delimiter joining is ambiguous (for
         // example `a:b,c` and `a,b:c`) and can alias two user turns to the
         // same effect receipt. The Hub treats this opaque value as the stable
         // replay key, so it must be injective without restricting valid IDs.
-        let idempotency_key =
-            idempotency_key(&[&self.config.session_id, &goal.turn_id, &goal.goal_id]);
+        let idempotency_key = idempotency_key(&[&self.session_id, &goal.turn_id, &goal.goal_id]);
         let receipt = self.session.transport.submit(&SubmitRequest {
             schema: LOOP_HUB_CLIENT_SCHEMA.into(),
-            session_id: self.config.session_id.clone(),
+            session_id: self.session_id.clone(),
             goal_id: goal.goal_id,
             turn_id: goal.turn_id,
             idempotency_key,
@@ -887,6 +978,83 @@ mod tests {
         assert_eq!(submit.priority, PriorityClass::Interactive);
         assert_eq!(submit.session_id, "session-2");
         assert_eq!(client.endpoint(), "local://hub");
+    }
+
+    #[test]
+    fn exposed_capabilities_share_the_negotiated_session() {
+        HUB_SESSIONS.lock().unwrap().clear();
+        let hub = Arc::new(FakeHub::default());
+        let factory_hub = Arc::clone(&hub);
+        let factory = move |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone());
+        let client = LoopHubClient::connect(config("surface-1"), &factory)
+            .unwrap()
+            .unwrap();
+
+        let runtime = client.shared_runtime_handle();
+        let map = client.shared_map_handle();
+        assert_eq!(runtime.service(), SharedService::Runtime);
+        assert_eq!(runtime.resource().id, "r");
+        assert_eq!(map.service(), SharedService::Mapper);
+        assert_eq!(map.resource().id, "m");
+        assert_eq!(runtime.hub_id(), "hub-1");
+        assert_eq!(map.endpoint(), "local://hub");
+        assert!(runtime.shares_session_with(&map));
+
+        client
+            .interactive_transport()
+            .clone()
+            .submit(InteractiveGoal::new("goal", "turn", Value::Null))
+            .unwrap();
+        let submit = hub.submits.lock().unwrap().pop().unwrap();
+        assert_eq!(submit.session_id, "surface-1");
+        assert_eq!(submit.priority, PriorityClass::Interactive);
+        assert_eq!(hub.handshakes.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn service_handles_from_different_hubs_do_not_claim_shared_sessions() {
+        HUB_SESSIONS.lock().unwrap().clear();
+        let factory = |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(Arc::new(FakeHub::default()));
+        let first = LoopHubClient::connect(config("first"), &factory)
+            .unwrap()
+            .unwrap();
+        let mut second_config = config("second");
+        second_config.endpoint = Some("local://another-hub".into());
+        let second = LoopHubClient::connect(second_config, &factory)
+            .unwrap()
+            .unwrap();
+
+        assert!(
+            !first
+                .shared_runtime_handle()
+                .shares_session_with(&second.shared_runtime_handle())
+        );
+    }
+
+    /// Manual hot-path benchmark. Run with `--release --ignored --nocapture`;
+    /// the normal suite ignores it so timing does not make CI flaky.
+    #[test]
+    #[ignore = "manual Loop Hub capability-clone benchmark"]
+    fn benchmark_interactive_transport_clone() {
+        use std::hint::black_box;
+        use std::time::Instant;
+
+        HUB_SESSIONS.lock().unwrap().clear();
+        let factory = |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(Arc::new(FakeHub::default()));
+        let client = LoopHubClient::connect(config("benchmark"), &factory)
+            .unwrap()
+            .unwrap();
+        let transport = client.interactive_transport();
+        const ITERATIONS: u32 = 1_000_000;
+        let started = Instant::now();
+        for _ in 0..ITERATIONS {
+            black_box(transport.clone());
+        }
+        let elapsed = started.elapsed();
+        eprintln!(
+            "interactive transport clone: {ITERATIONS} iterations in {elapsed:?} ({:.1} ns/op)",
+            elapsed.as_nanos() as f64 / f64::from(ITERATIONS)
+        );
     }
 
     #[test]

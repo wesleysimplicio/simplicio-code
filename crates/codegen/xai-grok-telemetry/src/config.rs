@@ -271,7 +271,10 @@ mod tests {
     fn do_not_track_ignores_falsy_or_unset_values() {
         let _guard = DO_NOT_TRACK_TEST_LOCK.lock().unwrap();
         unsafe { std::env::remove_var("DO_NOT_TRACK") };
-        assert!(!do_not_track_requested(), "unset DO_NOT_TRACK must not opt out");
+        assert!(
+            !do_not_track_requested(),
+            "unset DO_NOT_TRACK must not opt out"
+        );
         for value in ["0", "false", "no", "off", "", "  "] {
             unsafe { std::env::set_var("DO_NOT_TRACK", value) };
             assert!(

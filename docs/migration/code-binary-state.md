@@ -50,6 +50,29 @@ than estimated.
 | MapCache representative result | `null` — Rust toolchain unavailable in this checkout | `null` — Rust toolchain unavailable in this checkout | `null` — Runtime unavailable | `null` — Runtime unavailable | `null` — no profiler available |
 | Managed marker | `null` — no captured baseline artifact | `null` — no captured migrated artifact | `null` — no profiler available | `null` — no profiler available | `null` — no profiler available |
 
+The Code-owned codec hot paths can be measured without Runtime or network access:
+
+```sh
+cargo run --release -p simplicio-code-formats --example format_benchmark -- 10000
+```
+
+The benchmark prints iteration count, actual encoded size, and measured mean
+microseconds per operation. Peak RSS remains an external observation and must
+be captured with the platform tool (for example `/usr/bin/time -v` on Linux),
+not inferred by the benchmark.
+
+Observed on 2026-07-22 in the native Cloud container (Linux x86_64, three
+virtual CPUs, Intel Xeon Platinum 8370C, Rust 1.92.0, release profile):
+
+| Operation | Iterations | Artifact bytes | Mean µs/op | Peak RSS |
+| --- | ---: | ---: | ---: | --- |
+| HBI warm validate/read, 64 KiB payload | 10,000 | 65,678 | 13.266 | `null` — `/usr/bin/time` is unavailable in the container |
+| HBP decode, 32 records | 10,000 | 6,912 | 9.950 | `null` — `/usr/bin/time` is unavailable in the container |
+
+`cargo llvm-cov -p simplicio-code-formats --all-targets --summary-only`
+measured 85.30% line coverage and 88.27% region coverage. This toolchain did
+not expose branch coverage (`-`), so no branch percentage is inferred.
+
 The local Python scanner and package smoke tests are reproducible offline; the
 Runtime MCP and Rust test lanes remain blocked by missing executables in this
 environment.
