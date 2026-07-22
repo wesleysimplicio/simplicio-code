@@ -7,6 +7,22 @@ policy = "Internal workspace/session/evidence state uses Runtime HBP/HBI/TOML; r
 # release tooling; none is a Code-owned workspace/session persistence fallback.
 [[boundary]]
 paths = [
+  'config/onboarding-bundle-v1.json',
+  'scripts/onboarding_doctor.py',
+  'scripts/tests/test_onboarding_doctor.py',
+]
+category = "external_onboarding_protocol"
+owner = "code-onboarding"
+producer = "pinned source-controlled bundle manifest and read-only doctor"
+consumer = "human operator or external agent-native harness"
+lifecycle = "versioned installation contract and ephemeral stdout report; never session state"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "Onboarding JSON crosses the operator boundary and reports independent component health without persisting Code-owned workspace, session, or execution state."
+expires = "2027-07-22"
+
+[[boundary]]
+paths = [
   'scripts/installed_code_e2e.py',
   'scripts/fixtures/simplicio_installed_fixture.py',
   'scripts/tests/test_installed_code_e2e.py',

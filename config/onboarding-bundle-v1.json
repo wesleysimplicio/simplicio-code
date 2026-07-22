@@ -1,0 +1,14 @@
+{
+  "schema": "simplicio.onboarding-bundle/v1",
+  "bundle_version": "2026.07.22",
+  "compatibility": { "current_major": 1, "accepted_majors": [1, 0] },
+  "components": [
+    {"name":"code","version":"0.3.0-beta.1","capabilities":["tui","headless","acp","workspace"],"origin":"repository","probe":"simplicio-code"},
+    {"name":"agent-host","version":"1.0.0","capabilities":["turn","cancel","reconnect"],"origin":"external","probe":"simplicio-agent"},
+    {"name":"runtime","version":"1.0.0","capabilities":["governed-effects","persistent-transport"],"origin":"external","probe":"simplicio-runtime"},
+    {"name":"loop-hub","version":"3.38.1","capabilities":["plan","resume","receipts"],"origin":"pypi:simplicio-loop","probe":"simplicio-loop"},
+    {"name":"mapper","version":"0.24.1","capabilities":["map","context"],"origin":"pypi:simplicio-mapper","probe":"simplicio-mapper"},
+    {"name":"dev-cli","version":"0.16.2","capabilities":["external-harness"],"origin":"pypi:simplicio-cli","probe":"simplicio-dev-cli"},
+    {"name":"fixtures","version":"1.0.0","capabilities":["protocol-only"],"origin":"repository","path":"scripts/fixtures/simplicio_installed_fixture.py"}
+  ]
+}
