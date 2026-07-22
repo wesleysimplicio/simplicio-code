@@ -160,11 +160,17 @@ Não haverá BYOK nem seleção pública de assinatura upstream no Simplicio Cod
   também não oferece uma capability versionada de start/status/cancel para
   processos em background; `run_background`, kill e wait permanecem
   explicitamente bloqueados até essa API existir.
-- Próximo: renderizar/pollear a lateral e ligar
-  `grep`/`hashline_grep`/`list_dir` (que hoje chamam
-  `ripgrep`/`tokio::fs`/`ignore::WalkBuilder` diretamente, fora de
-  `AsyncSearch`/`AsyncFileSystem`) ao mesmo `SearchBackend`/contrato de
-  `list`.
+- Concluído: `grep`, `hashline_grep` e `grep_files` recebem o mesmo
+  `SearchBackend` baseado em `SimplicioRuntimeFs`; `list_dir` recebe o backend
+  compartilhado de diretórios e chama `simplicio_fs_list`. As sessões
+  produtivas injetam uma única instância do adaptador Runtime para filesystem,
+  busca e listagem, sem escolher `ripgrep`, `tokio::fs` ou `WalkBuilder` após
+  uma falha do Runtime.
+- Pendente: eliminar os acessos diretos legados ainda enumerados como
+  `violation` por `scripts/audit_workspace_access.py` nos fluxos auxiliares de
+  anexos, indexação, árvore e status do workspace. Enquanto qualquer um deles
+  existir, o gate retorna código diferente de zero e esta documentação não
+  constitui prova de conclusão da issue #49.
 - Depois: identidade/entitlement Simplicio e gateway único de inferência.
 - Por último: instaladores assinados, atualização automática e release privada.
 
