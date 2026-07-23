@@ -26,6 +26,8 @@ paths = [
   'scripts/installed_code_e2e.py',
   'scripts/fixtures/simplicio_installed_fixture.py',
   'scripts/tests/test_installed_code_e2e.py',
+  'scripts/release/installed_lifecycle_e2e.py',
+  'scripts/tests/test_installed_lifecycle_e2e.py',
 ]
 category = "external_protocol_system_fixture"
 owner = "code-runtime"
