@@ -3,6 +3,28 @@
 use serde_json::json;
 use simplicio_runtime_client::SocketPipeHubTransportFactory;
 use simplicio_runtime_client::loop_hub::{HubMode, InteractiveGoal, LoopHubClient};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+fn exercise_external_restart(job: &mut simplicio_runtime_client::loop_hub::HubJob) -> Option<u128> {
+    let ready = std::env::var_os("SIMPLICIO_LOOP_HUB_RESTART_READY").map(PathBuf::from)?;
+    let complete = std::env::var_os("SIMPLICIO_LOOP_HUB_RESTART_COMPLETE").map(PathBuf::from)?;
+    std::fs::write(&ready, job.workflow_id()).expect("write restart rendezvous marker");
+    let started = Instant::now();
+    while !complete.exists() {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "external harness did not restart Loop Hub"
+        );
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let reconnect_started = Instant::now();
+    let snapshot = job
+        .poll()
+        .expect("safe progress read should reconnect and replay after Hub restart");
+    assert_eq!(snapshot.workflow_id, job.workflow_id());
+    Some(reconnect_started.elapsed().as_millis())
+}
 
 #[test]
 fn code_attaches_to_real_loop_hub_and_reuses_shared_services() {
@@ -116,9 +138,29 @@ fn code_attaches_to_real_loop_hub_and_reuses_shared_services() {
             "cancelled"
         );
     }
+    let mut restart_job = clients[0]
+        .1
+        .submit_interactive(InteractiveGoal::new(
+            "restart-goal",
+            "restart-turn",
+            json!({"provider": "none", "llm": "disabled"}),
+        ))
+        .expect("restart probe submit should succeed");
+    assert!(
+        !restart_job
+            .poll()
+            .expect("restart probe progress should succeed")
+            .events
+            .is_empty()
+    );
+    let reconnect_ms = exercise_external_restart(&mut restart_job);
 
     println!(
-        "hub_id={} runtime_id={} mapper_id={} surfaces=4 tui_sessions=2 headless=1 acp=1 replay=true resume=true cancelled=true single_hub_identity=true",
-        hub_id, runtime_id, mapper_id
+        "hub_id={} runtime_id={} mapper_id={} surfaces=4 tui_sessions=2 headless=1 acp=1 replay=true resume=true cancelled=true restart_reconnected={} reconnect_ms={} single_hub_identity=true",
+        hub_id,
+        runtime_id,
+        mapper_id,
+        reconnect_ms.is_some(),
+        reconnect_ms.map_or_else(|| "null".into(), |value| value.to_string())
     );
 }

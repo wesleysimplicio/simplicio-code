@@ -76,13 +76,15 @@ Runtime, Mapper, scheduler, and inference, exposes bounded
 interactive/background capacity, and declares one active inference slot. A
 handshake or attach mismatch blocks the client.
 
-This completes the Code-side transport boundary for #55/#106. The external
-Loop Hub daemon/endpoint provider, Mapper service, queue/fairness enforcement,
-and real multi-surface evidence remain outside this repository. The acceptance
-issues must stay open until two TUIs plus headless and ACP attach to the same
-running Hub and receipts/process counts prove the no-duplication invariant.
-The contract tests use an in-process Unix socket fixture only; they do not
-pretend to be external Loop Hub evidence.
+This completes the Code-side transport boundary for #55/#106. The opt-in
+`scripts/code_loop_hub_e2e.py` proof uses a separately checked-out, external
+Loop daemon, rotates its PID after the first progress cursor, and requires the
+Code client to handshake, reattach, and replay that cursor. Its JSON receipt
+records observed restart downtime and process identity; no provider or local
+LLM is used. Hermetic contract tests still use an in-process Unix socket
+fixture and do not pretend to be external evidence. Queue/fairness enforcement,
+Runtime/Mapper restart, installed surfaces, and goal-to-remotely-confirmed-PR
+proof remain ecosystem acceptance work outside this client-only slice.
 
 Coordinated goals (waves, multiple issues, global queues, or parallel work)
 must use a ready Hub. The admission validator rejects `coordinated` scope when
