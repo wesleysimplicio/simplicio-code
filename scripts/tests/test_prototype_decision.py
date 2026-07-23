@@ -101,6 +101,18 @@ def test_all_text_surfaces_share_decision_state():
         assert "build_authorized" in output or "Build: AUTHORIZED" in output
 
 
+def test_all_text_surfaces_expose_explicit_build_authorization():
+    receipt = _receipt()
+    for surface in ("tui", "ui", "headless", "acp"):
+        output = render(
+            receipt,
+            surface=surface,
+            current_source_revision="source-1",
+            build_requested=True,
+        )
+        assert "AUTHORIZED" in output or '"build_authorized": true' in output
+
+
 def test_missing_evidence_and_coverage_block_accept():
     artifact = _receipt()["artifacts"][0]
     artifact.pop("evidence")

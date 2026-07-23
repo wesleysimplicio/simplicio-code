@@ -54,6 +54,20 @@ expires = "2027-07-22"
 
 [[boundary]]
 paths = [
+  'scripts/prototype_product_e2e.py',
+]
+category = "external_protocol_system_fixture"
+owner = "code-runtime"
+producer = "provider-free installed Loop, Code, and Runtime product harness"
+consumer = "prototype-first acceptance review"
+lifecycle = "ephemeral MCP JSON-RPC messages and redacted acceptance receipt; never production state"
+target_format = "versioned external JSON and JSON-RPC contracts"
+status = "exception"
+reason = "The harness proves the cross-repository Prototype-First path against an installed Runtime binary and real Loop gate while keeping all artifacts in a temporary Runtime-owned sandbox."
+expires = "2027-07-23"
+
+[[boundary]]
+paths = [
   '.github/workflows/component-release-event.yml',
   'scripts/release/apply_component_release.py',
   'scripts/release/prepare_component_bump.py',
