@@ -10,7 +10,8 @@
 use crate::loop_hub::{
     AdmissionReceipt, CancelRequest, HubError, HubHandshake, HubHandshakeRequest, HubTransport,
     HubTransportFactory, LOOP_HUB_CLIENT_SCHEMA, LOOP_HUB_PROTOCOL, LifecycleReceipt,
-    ProgressRequest, ProgressSnapshot, ResumeRequest, SubmitRequest,
+    ProgressRequest, ProgressSnapshot, ResumeRequest, RuntimeExecuteReceipt, RuntimeExecuteRequest,
+    SubmitRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -462,6 +463,26 @@ impl HubTransport for SocketPipeHubTransport {
                 .map_err(|error| HubError::Protocol(error.to_string()))?,
             false,
         )
+    }
+
+    fn runtime_execute(
+        &self,
+        request: &RuntimeExecuteRequest,
+    ) -> Result<RuntimeExecuteReceipt, HubError> {
+        let receipt: RuntimeExecuteReceipt = self.value(
+            "runtime_execute",
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
+            false,
+        )?;
+        if receipt.schema != "simplicio.loop-runtime-execution/v1"
+            || receipt.workspace != request.workspace
+        {
+            return Err(HubError::Protocol(
+                "Hub returned an invalid Runtime execution receipt".into(),
+            ));
+        }
+        Ok(receipt)
     }
 }
 
