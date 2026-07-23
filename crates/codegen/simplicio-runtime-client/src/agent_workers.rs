@@ -648,16 +648,14 @@ mod tests {
 
     #[test]
     fn dag_rejects_cycles_and_unknown_dependencies() {
-        assert!(
-            request(vec![
-                task("a", WorkerRole::Implementer, &["b"]),
-                task("b", WorkerRole::Reviewer, &["a"])
-            ])
-            .validate()
-            .unwrap_err()
-            .to_string()
-            .contains("cycle")
-        );
+        assert!(request(vec![
+            task("a", WorkerRole::Implementer, &["b"]),
+            task("b", WorkerRole::Reviewer, &["a"])
+        ])
+        .validate()
+        .unwrap_err()
+        .to_string()
+        .contains("cycle"));
         assert!(
             request(vec![task("a", WorkerRole::Implementer, &["missing"])])
                 .validate()
