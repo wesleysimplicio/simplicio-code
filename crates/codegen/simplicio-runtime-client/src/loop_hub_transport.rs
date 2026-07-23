@@ -101,7 +101,7 @@ struct WireResponse {
     error: Option<String>,
 }
 
-enum RpcFailure {
+pub(crate) enum RpcFailure {
     Io(String),
     Protocol(HubError),
 }
@@ -115,13 +115,13 @@ impl From<HubError> for RpcFailure {
 trait HubReadWrite: Read + Write + Send {}
 impl<T: Read + Write + Send> HubReadWrite for T {}
 
-struct Channel {
+pub(crate) struct Channel {
     reader: BufReader<Box<dyn HubReadWrite>>,
     writer: Box<dyn HubReadWrite>,
 }
 
 impl Channel {
-    fn connect(endpoint: &str) -> Result<Self, HubError> {
+    pub(crate) fn connect(endpoint: &str) -> Result<Self, HubError> {
         let endpoint = endpoint.trim();
         if let Some(path) = endpoint.strip_prefix("unix://") {
             #[cfg(unix)]
@@ -173,7 +173,12 @@ impl Channel {
         ))
     }
 
-    fn request(&mut self, id: u64, method: &str, payload: &Value) -> Result<Value, RpcFailure> {
+    pub(crate) fn request(
+        &mut self,
+        id: u64,
+        method: &str,
+        payload: &Value,
+    ) -> Result<Value, RpcFailure> {
         let request = WireRequest {
             schema: LOOP_HUB_CLIENT_SCHEMA,
             id,

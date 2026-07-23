@@ -7,8 +7,11 @@
 //! Runtime remains the only workspace/process authority.
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+
+use crate::loop_hub_transport::{Channel, RpcFailure};
 
 pub const WORKER_ADAPTER_SCHEMA: &str = "simplicio.code-worker-adapter/v1";
 pub const WORKER_PROTOCOL: &str = "simplicio.loop-worker/v1";
@@ -280,6 +283,129 @@ pub trait WorkerHubTransport: Send + Sync {
     fn deliver(&self, request: &DeliveryRequest) -> Result<DeliveryReceipt, WorkerError>;
 }
 
+struct WorkerTransportState {
+    channel: Channel,
+    next_id: u64,
+}
+
+/// Concrete transport for an already-running Loop Hub worker endpoint.
+///
+/// Status is replay-safe after an I/O break: the caller's cursor is sent again
+/// on a freshly connected channel. Delegate/cancel/deliver are never retried,
+/// because their outcome may be unknown after a broken connection.
+pub struct SocketWorkerHubTransport {
+    endpoint: String,
+    state: Mutex<WorkerTransportState>,
+}
+
+impl SocketWorkerHubTransport {
+    pub fn connect(endpoint: &str) -> Result<Self, WorkerError> {
+        let endpoint = endpoint.trim().to_owned();
+        if endpoint.is_empty() {
+            return Err(WorkerError::Transport(
+                "worker Hub endpoint is empty".into(),
+            ));
+        }
+        let channel = Channel::connect(&endpoint)
+            .map_err(|error| WorkerError::Transport(error.to_string()))?;
+        Ok(Self {
+            endpoint,
+            state: Mutex::new(WorkerTransportState {
+                channel,
+                next_id: 1,
+            }),
+        })
+    }
+
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    fn rpc(&self, method: &str, payload: &Value, replay_safe: bool) -> Result<Value, WorkerError> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| WorkerError::Transport("worker transport lock poisoned".into()))?;
+        let id = state.next_id;
+        state.next_id = state.next_id.saturating_add(1);
+        match state.channel.request(id, method, payload) {
+            Ok(value) => Ok(value),
+            Err(RpcFailure::Protocol(error)) => Err(WorkerError::Protocol(error.to_string())),
+            Err(RpcFailure::Io(first_error)) => {
+                let reconnected = Channel::connect(&self.endpoint).map_err(|error| {
+                    WorkerError::Transport(format!(
+                        "worker request failed and reconnect failed: {first_error}; {error}"
+                    ))
+                })?;
+                state.channel = reconnected;
+                if !replay_safe {
+                    return Err(WorkerError::Transport(format!(
+                        "worker request outcome is unknown after reconnect: {first_error}"
+                    )));
+                }
+                let retry_id = state.next_id;
+                state.next_id = state.next_id.saturating_add(1);
+                state
+                    .channel
+                    .request(retry_id, method, payload)
+                    .map_err(|failure| match failure {
+                        RpcFailure::Io(error) => WorkerError::Transport(error),
+                        RpcFailure::Protocol(error) => WorkerError::Protocol(error.to_string()),
+                    })
+            }
+        }
+    }
+
+    fn call<T: serde::de::DeserializeOwned>(
+        &self,
+        method: &str,
+        payload: &Value,
+        replay_safe: bool,
+    ) -> Result<T, WorkerError> {
+        let value = self.rpc(method, payload, replay_safe)?;
+        serde_json::from_value(value)
+            .map_err(|error| WorkerError::Protocol(format!("invalid {method} receipt: {error}")))
+    }
+}
+
+impl WorkerHubTransport for SocketWorkerHubTransport {
+    fn delegate(&self, request: &DelegateRequest) -> Result<DelegateReceipt, WorkerError> {
+        self.call(
+            "worker_delegate",
+            &serde_json::to_value(request)
+                .map_err(|error| WorkerError::Invalid(error.to_string()))?,
+            false,
+        )
+    }
+
+    fn status(&self, request: &WorkerStatusRequest) -> Result<WorkerStatusReceipt, WorkerError> {
+        self.call(
+            "worker_status",
+            &serde_json::to_value(request)
+                .map_err(|error| WorkerError::Invalid(error.to_string()))?,
+            true,
+        )
+    }
+
+    fn cancel(&self, request: &CancelWorkersRequest) -> Result<DelegateReceipt, WorkerError> {
+        self.call(
+            "worker_cancel",
+            &serde_json::to_value(request)
+                .map_err(|error| WorkerError::Invalid(error.to_string()))?,
+            false,
+        )
+    }
+
+    fn deliver(&self, request: &DeliveryRequest) -> Result<DeliveryReceipt, WorkerError> {
+        self.call(
+            "worker_deliver",
+            &serde_json::to_value(request)
+                .map_err(|error| WorkerError::Invalid(error.to_string()))?,
+            false,
+        )
+    }
+}
+
 /// A view of an external Hub workflow. It contains only replay cursors and
 /// reduced status; it is not a scheduler and cannot execute a task locally.
 pub struct ExternalWorkerRun {
@@ -530,6 +656,13 @@ fn framed_key(parts: &[&str]) -> String {
 mod tests {
     use super::*;
     use std::sync::Mutex;
+    #[cfg(unix)]
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::net::UnixListener,
+        thread,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[derive(Default)]
     struct FakeHub {
@@ -830,5 +963,68 @@ mod tests {
     #[test]
     fn idempotency_key_is_unambiguous() {
         assert_ne!(framed_key(&["a:b", "c"]), framed_key(&["a", "b:c"]));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn socket_worker_transport_round_trips_external_wire_receipts() {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("simplicio-worker-{suffix}.sock"));
+        let listener = UnixListener::bind(&path).unwrap();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut writer = stream;
+            for (expected_method, result) in [
+                (
+                    "worker_delegate",
+                    serde_json::json!({
+                        "schema": WORKER_ADAPTER_SCHEMA,
+                        "workflow_id": "worker:1",
+                        "receipt_id": "delegate:1",
+                        "accepted_task_ids": ["a"]
+                    }),
+                ),
+                (
+                    "worker_status",
+                    serde_json::json!({
+                        "schema": WORKER_ADAPTER_SCHEMA,
+                        "workflow_id": "worker:1",
+                        "next_sequence": 0,
+                        "events": []
+                    }),
+                ),
+            ] {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let request: Value = serde_json::from_str(&line).unwrap();
+                assert_eq!(request["method"], expected_method);
+                let response = serde_json::json!({
+                    "schema": "simplicio.loop-hub-client/v1",
+                    "id": request["id"],
+                    "ok": true,
+                    "result": result,
+                });
+                writeln!(writer, "{}", response).unwrap();
+                writer.flush().unwrap();
+            }
+        });
+        let transport =
+            SocketWorkerHubTransport::connect(&format!("unix://{}", path.display())).unwrap();
+        let request = request(vec![task("a", WorkerRole::Implementer, &[])]);
+        let receipt = transport.delegate(&request).unwrap();
+        assert_eq!(receipt.workflow_id, "worker:1");
+        let status = transport
+            .status(&WorkerStatusRequest {
+                workflow_id: "worker:1".into(),
+                after_sequence: 0,
+            })
+            .unwrap();
+        assert_eq!(status.next_sequence, 0);
+        server.join().unwrap();
+        std::fs::remove_file(path).unwrap();
     }
 }
