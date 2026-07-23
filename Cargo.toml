@@ -8,6 +8,7 @@ members = [
     "crates/codegen/ptyctl-cli",
     "crates/codegen/simplicio-account-client",
     "crates/codegen/simplicio-agent-client",
+    "crates/codegen/simplicio-agent-native",
     "crates/codegen/simplicio-code-gateway",
     "crates/codegen/simplicio-code-formats",
     "crates/codegen/simplicio-perf-bench",
