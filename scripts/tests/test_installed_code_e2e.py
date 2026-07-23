@@ -1,16 +1,159 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíß_|N‹Z–‹­¦ëeŠw¬Õf«)à¶»§q«^v‹­¦ëh®("©m¢G§r‹§·m6Ñ:-jZ.¶›­–)Ş³Uš®x§‚ÚîÆ­yÚ.¶›­¢¸ Šv¥¶‰Ê.İ½Ó„èµ©hºÚn¶X§zÍZ[\Ü[\ÜX‹][š[\ÜœÛÛ‚™œ›ÛH]Xˆ[\Ü]š[\Ü[\š[Bš[\Ü[š]\İ‚”“ÓÕH]
-×Ùš[W×ÊKœ™\ÛÛ™J
-Kœ\™[ÖÌ—B”ÔPÈH[\ÜX‹][œÜX×Ùœ›ÛWÙš[WÛØØ][ÛŠˆš[œİ[YØÛÙWÙL™H‹“ÓÕÈœØÜš\ËÚ[œİ[YØÛÙWÙL™KœH‚ŠB“SÑSHH[\ÜX‹][›[Ù[WÙœ›ÛWÜÜXÊÔPÊB”ÔPË›ØY\‹™^X×Û[Ù[JSÑSJB‘’VT‘WÔÔPÈH[\ÜX‹][œÜX×Ùœ›ÛWÙš[WÛØØ][ÛŠˆœÚ[\XÚ[×Ú[œİ[YÙš^\™H‹ˆ“ÓÕÈœØÜš\ËÙš^\™\ËÜÚ[\XÚ[×Ú[œİ[YÙš^\™KœH‹ŠB‘’VT‘HH[\ÜX‹][›[Ù[WÙœ›ÛWÜÜXÊ’VT‘WÔÔPÊB‘’VT‘WÔÔPË›ØY\‹™^X×Û[Ù[J’VT‘JB‚‚˜Û\ÜÈ[œİ[YÛÙQL‘U\İ
-[š]\İ•\İØ\ÙJN‚ˆYˆ\İÚ[œİ[YÙš^\™WØÛİ™\œ×Ù]™\WÜ›ÙXİ]™WÜİ\™˜XÙWØ[™ÙY™™Xİ
-Ù[ŠN‚ˆ™XÙZ\HSÑSKœ[Š“ÓÕš^\™WÛ[ÙOUYJBˆÙ[‹˜\ÜÙ\\]X[
-™XÙZ\ÈœØÚ[XH—KœÚ[\XÚ[Ë˜ÛÙKZ[œİ[YYL™K\™XÙZ\İŒHŠBˆÙ[‹˜\ÜÙ\\]X[
-™XÙZ\Èœ›ÛÙ—ÚÚ[™—Kš\›Y]X×Ùš^\™WÛ›Û—Ü›ÛÙˆŠBˆÙ[‹˜\ÜÙ\\]X[
-ˆÚ][VÈœİ\™˜XÙH—H›Üˆ][H[ˆ™XÙZ\Èœİ\™˜XÙ\È—WK\İ
-SÑSK”ÕT‘PÑTÊBˆ
-BˆÙ[‹˜\ÜÙ\\]X[
-™XÙZ\È˜YÙ[ÚÜİ—VÈ˜Ø[˜Ù[—K˜Ø[˜Ù[YŠBˆÙ[‹˜\ÜÙ\\]X[
-™XÙZ\È˜YÙ[ÚÜİ—VÈœ™XÛÛ˜Ú[H—K\›Z[˜[ŠBˆÙ[‹˜\ÜÙ\YJ™XÙZ\È˜YÙ[ÚÜİ—VÈ˜Yš\ÛÜWÜ™\^WÙ\]X[—JBˆÙ[‹˜\ÜÙ\YJ™XÙZ\È˜YÙ[ÚÜİ—VÈœ™\İ\Ü™XÛÛ›™XİY—JBˆÙ[‹˜\ÜÙ\\]X[
-™XÙZ\È›[ÙH—K™š^\™HŠBˆÙ[‹˜\ÜÙ\_m}òÚ$z{-®éÜj×     "advisories"
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[2]
+SPEC = importlib.util.spec_from_file_location(
+    "installed_code_e2e", ROOT / "scripts/installed_code_e2e.py"
+)
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+FIXTURE_SPEC = importlib.util.spec_from_file_location(
+    "simplicio_installed_fixture",
+    ROOT / "scripts/fixtures/simplicio_installed_fixture.py",
+)
+FIXTURE = importlib.util.module_from_spec(FIXTURE_SPEC)
+FIXTURE_SPEC.loader.exec_module(FIXTURE)
+
+
+class InstalledCodeE2ETest(unittest.TestCase):
+    def test_installed_fixture_covers_every_productive_surface_and_effect(self):
+        receipt = MODULE.run(ROOT, fixture_mode=True)
+        self.assertEqual(receipt["schema"], "simplicio.code-installed-e2e-receipt/v1")
+        self.assertEqual(receipt["proof_kind"], "hermetic_fixture_non_proof")
+        self.assertEqual(
+            [item["surface"] for item in receipt["surfaces"]], list(MODULE.SURFACES)
+        )
+        self.assertEqual(receipt["agent_host"]["cancel"], "cancelled")
+        self.assertEqual(receipt["agent_host"]["reconcile"], "terminal")
+        self.assertTrue(receipt["agent_host"]["advisory_replay_equal"])
+        self.assertTrue(receipt["agent_host"]["restart_reconnected"])
+        self.assertEqual(receipt["mode"], "fixture")
+        self.assertEqual(receipt["runtime"]["list"], "simplicio.fs-list-result/v1")
+        self.assertEqual(receipt["runtime"]["stat"], "simplicio.fs-stat-result/v1")
+        self.assertEqual(receipt["runtime"]["edit"], "simplicio.edit-result/v1")
+        self.assertEqual(receipt["runtime"]["exec"], "simplicio.exec-result/v1")
+        self.assertEqual(receipt["runtime"]["effect_state"], "completed")
+        gates = receipt["negative_dependency_gates"]
+        self.assertEqual(len(gates), len(MODULE.SURFACES) * 4)
+        self.assertTrue(all(gate["blocked"] for gate in gates))
+        self.assertTrue(all(not gate["effect_attempted"] for gate in gates))
+        self.assertEqual({gate["surface"] for gate in gates}, set(MODULE.SURFACES))
+        self.assertGreater(receipt["benchmark"]["operations_per_second"], 0)
+        self.assertTrue(receipt["profile_isolation"])
+
+    def test_dependency_contract_fails_closed_before_productive_turns(self):
+        cases = (
+            (lambda: MODULE.validate_agent_status(None), "agent_host_missing"),
+            (
+                lambda: MODULE.validate_agent_status(
+                    {"protocol_schema": "simplicio.agent-host/v1"}
+                ),
+                "agent_host_incompatible",
+            ),
+            (lambda: MODULE.validate_runtime_contract(None, None), "runtime_missing"),
+            (
+                lambda: MODULE.validate_runtime_contract(
+                    {"protocolVersion": "2024-11-05"}, {"tools": []}
+                ),
+                "runtime_incompatible",
+            ),
+        )
+        for probe, reason in cases:
+            with self.subTest(reason=reason), self.assertRaisesRegex(
+                RuntimeError, reason
+            ):
+                probe()
+
+    def test_explicit_installed_mode_never_falls_back_to_fixture(self):
+        with tempfile.TemporaryDirectory() as directory:
+            missing = Path(directory) / "missing-simplicio"
+            with self.assertRaisesRegex(RuntimeError, "installed_binary_unavailable"):
+                MODULE.run(ROOT, missing)
+
+    def test_receipt_is_serializable_and_has_no_environment(self):
+        receipt = MODULE.run(ROOT, fixture_mode=True)
+        encoded = json.dumps(receipt)
+        self.assertNotIn("HOME", encoded)
+        self.assertNotIn("TOKEN", encoded)
+        metric = receipt["metrics_unavailable"]["production_latency_ns"]
+        self.assertIsNone(metric["value"])
+        self.assertEqual(
+            metric["reason"], "fixture is hermetic; production metric is not observed"
+        )
+
+    def test_external_mode_fails_closed_without_installed_dependencies(self):
+        import os
+        from unittest.mock import patch
+
+        with patch.dict(
+            os.environ,
+            {
+                "PATH": "",
+                "SIMPLICIO_AGENT_HOST_E2E_COMMAND": "",
+                "SIMPLICIO_RUNTIME_BIN": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "agent_host_missing"):
+                MODULE.run(ROOT)
+
+    def test_fixture_rejects_invalid_identity_and_path_escape(self):
+        rejected = FIXTURE.agent_response({"op": "turn.start", "turn_id": "one"}, {})
+        self.assertFalse(rejected["ok"])
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "escapes repository"):
+                FIXTURE._safe_path(Path(directory).resolve(), "../outside")
+
+    def test_fixture_unit_contract_supports_status_cancel_and_runtime_effects(self):
+        state = {}
+        status = FIXTURE.agent_response({"op": "host.status"}, state)
+        self.assertTrue(status["host"]["ready"])
+        self.assertEqual(
+            FIXTURE.agent_response({"op": "turn.cancel", "turn_id": "missing"}, state)[
+                "status"
+            ],
+            "not_found",
+        )
+        identity = {
+            "workspace_id": "w",
+            "session_id": "s",
+            "turn_id": "t",
+            "attempt_id": "0",
+            "idempotency_key": "t",
+            "run_id": "r",
+            "stage_id": "stage",
+            "fence": "0",
+            "revision": 1,
+        }
+        turn = FIXTURE.agent_response(
+            {"op": "turn.start", "profile": "tui", **identity}, state
+        )
+        self.assertTrue(turn["result"]["completed"])
+        self.assertEqual(
+            FIXTURE.agent_response({"op": "turn.cancel", "turn_id": "t"}, state)[
+                "status"
+            ],
+            "cancelled",
+        )
+        self.assertEqual(
+            FIXTURE.agent_response({"op": "turn.reconcile", "turn_id": "t"}, state)[
+                "status"
+            ],
+            "terminal",
+        )
+        self.assertEqual(
+            FIXTURE.agent_response(
+                {"op": "turn.reconcile", "turn_id": "absent"}, state
+            )["status"],
+            "not_found",
+        )
+        self.assertEqual(
+            len(
+                FIXTURE.agent_response({"op": "host.advisories", "cursor": 0}, state)[
+                    "advisories"
                 ]["events"]
             ),
             1,
