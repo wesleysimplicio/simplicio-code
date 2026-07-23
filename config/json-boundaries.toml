@@ -1207,7 +1207,6 @@ paths = [
   'scripts/validate_component_release.py',
   'scripts/validate_loop_contract.py',
   'scripts/validate_loop_hub_client.py',
-  'scripts/validate_prototype_decision.py',
 ]
 category = "internal_fixture_or_evidence"
 owner = "code-runtime"
@@ -1218,6 +1217,18 @@ target_format = "HBP/HBI/TOML"
 status = "migration_pending"
 reason = "Exact internal occurrence reviewed for issue #99; migration uses the typed producer/consumer and Runtime HBI v1 contract, with legacy JSON retained only at the explicit upgrade boundary."
 expires = "2026-12-31"
+
+[[boundary]]
+path = "scripts/validate_prototype_decision.py"
+category = "external_protocol_acceptance_adapter"
+owner = "code-runtime"
+producer = "Runtime Prototype-First decision receipt"
+consumer = "Code preview and Build authorization gate"
+lifecycle = "explicit external receipt validation and human-readable preview; never workspace/session persistence"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "This validator terminates the external Prototype-First receipt at a fail-closed typed decision boundary; it does not write or restore Code-owned session state."
+expires = "2099-12-31"
 
 [[boundary]]
 path = "config/json-boundaries.toml"
