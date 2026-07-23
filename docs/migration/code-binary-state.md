@@ -88,3 +88,7 @@ Only exact `[[package_output]]` entries in `config/json-boundaries.toml` may
 pass, and each exception must have an owner, producer, consumer, lifecycle,
 reason, target format and unexpired date. A newly emitted JSON artifact fails
 the package job unless it is reviewed and added as its own exact exception.
+Repository and package exception paths must also be canonical, relative paths:
+absolute paths, parent traversal, globs and platform-specific separators are
+rejected. Pinned strict-lane scope entries must continue to name existing files,
+so deleting or renaming an audited producer cannot silently turn the lane green.
