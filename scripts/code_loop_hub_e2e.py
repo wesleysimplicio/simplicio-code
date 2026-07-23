@@ -81,7 +81,9 @@ def run(args: argparse.Namespace) -> dict[str, object]:
                 "runtime_started_by_code": False,
                 "mapper_started_by_code": False,
                 "scheduler_started_by_code": False,
-                "lifecycle": ["handshake", "attach", "submit", "progress", "cancel"],
+                "lifecycle": ["handshake", "attach", "submit", "progress", "cancel", "resume", "replay"],
+                "surfaces": ["tui-1", "tui-2", "headless", "acp"],
+                "single_hub_identity": True,
             }
         finally:
             hub.terminate()
