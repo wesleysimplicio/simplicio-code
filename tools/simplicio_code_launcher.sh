@@ -20,6 +20,10 @@ elif [[ -x "$REPO_ROOT/target/release/simplicio-code" ]]; then
   BIN="$REPO_ROOT/target/release/simplicio-code"
 elif [[ -x "$REPO_ROOT/target/debug/simplicio-code" ]]; then
   BIN="$REPO_ROOT/target/debug/simplicio-code"
+elif [[ -x "${HOME:-}/.local/lib/simplicio-code/simplicio-code" ]]; then
+  # Reuse the per-user installation when this checkout has no Cargo target.
+  # This keeps the launcher useful after an installer/package deployment.
+  BIN="${HOME}/.local/lib/simplicio-code/simplicio-code"
 else
   echo "simplicio_code: binary not found; build with:" >&2
   echo "  cargo build -p xai-grok-pager-bin --bin simplicio-code" >&2
