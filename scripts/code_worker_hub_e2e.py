@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Real-process Code worker-protocol E2E against an external Loop Hub daemon.
 
-This harness exercises the newline JSON boundary over a real AF_UNIX socket and
-keeps the remote-delivery assertion fail-closed: a Hub-generated placeholder is
-not treated as a remote PR confirmation.
+This harness owns only external Hub process lifecycle. Worker requests are
+issued by the Rust `SocketWorkerHubTransport` integration test, so the E2E
+does not duplicate Code's wire client in Python. Remote delivery remains
+fail-closed: a Hub-generated placeholder is not treated as a remote PR
+confirmation.
 """
 
 from __future__ import annotations
@@ -19,20 +21,6 @@ import sys
 import tempfile
 import time
 from typing import Any, Dict
-
-
-SCHEMA = "simplicio.loop-hub-client/v1"
-
-
-def request(stream: socket.socket, reader, request_id: int, method: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    stream.sendall((json.dumps({"schema": SCHEMA, "id": request_id, "method": method, "payload": payload}) + "\n").encode())
-    line = reader.readline()
-    if not line:
-        raise RuntimeError(f"Hub closed the worker transport during {method}")
-    value = json.loads(line)
-    if value.get("schema") != SCHEMA or value.get("id") != request_id:
-        raise RuntimeError(f"invalid Hub response envelope for {method}: {value}")
-    return value
 
 
 def launch(loop_root: Path, lock: Path, endpoint: Path) -> subprocess.Popen[str]:
@@ -80,16 +68,65 @@ def stop(process: subprocess.Popen[str]) -> None:
         process.wait(timeout=5)
 
 
+def run_adapter_test(
+    code_root: Path,
+    endpoint: Path,
+    phase: str,
+    output: Path,
+    workflow: str | None = None,
+) -> Dict[str, Any]:
+    """Run the real Rust Code adapter against the already-running Hub."""
+    env = os.environ.copy()
+    env.update(
+        {
+            "SIMPLICIO_WORKER_E2E_PHASE": phase,
+            "SIMPLICIO_WORKER_E2E_ENDPOINT": f"unix://{endpoint}",
+            "SIMPLICIO_WORKER_E2E_OUTPUT": str(output),
+        }
+    )
+    if workflow is not None:
+        env["SIMPLICIO_WORKER_E2E_WORKFLOW"] = workflow
+    command = [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "simplicio-runtime-client",
+        "--test",
+        "external_worker_hub",
+        "--",
+        "--nocapture",
+    ]
+    completed = subprocess.run(
+        command,
+        cwd=code_root,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout)[-4000:]
+        raise RuntimeError(f"Rust worker adapter E2E failed in {phase}: {detail}")
+    receipt = json.loads(output.read_text(encoding="utf-8"))
+    receipt["command"] = command
+    receipt["stdout_tail"] = completed.stdout[-1000:]
+    return receipt
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--code-root", required=True)
     parser.add_argument("--loop-root", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
     started_at = time.perf_counter()
     loop_root = Path(args.loop_root).resolve()
+    code_root = Path(args.code_root).resolve()
     result: Dict[str, Any] = {
         "schema": "simplicio.code-worker-e2e/v1",
-        "proof_kind": "external_loop_hub_process",
+        "proof_kind": "rust_adapter_external_loop_hub_process",
         "loop_root": str(loop_root),
         "protocol": "simplicio.loop-worker/v1",
         "local_llm_started": False,
@@ -101,86 +138,29 @@ def main(argv=None) -> int:
             root = Path(directory)
             lock = root / "hub.lock"
             endpoint = root / "hub.sock"
-            payload = {
-                "schema": "simplicio.code-worker-adapter/v1",
-                "protocol": "simplicio.loop-worker/v1",
-                "identity": {
-                    "coordinator_id": "agent-host-e2e", "session_id": "session-e2e",
-                    "turn_id": "turn-e2e", "run_id": "run-e2e", "goal_id": "goal-e2e",
-                },
-                "idempotency_key": "code-worker-e2e-v1",
-                "max_concurrency": 2,
-                "tasks": [
-                    {"task_id": "implement", "role": "implementer", "depends_on": [],
-                     "task_contract": "perform workspace effects only through Runtime"},
-                    {"task_id": "review", "role": "reviewer", "depends_on": ["implement"],
-                     "task_contract": "independently review the external change"},
-                ],
-            }
             first = launch(loop_root, lock, endpoint)
             wait_for_socket(first, endpoint)
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
-                stream.settimeout(5)
-                stream.connect(str(endpoint))
-                reader = stream.makefile("rb")
-                delegate = request(stream, reader, 1, "worker_delegate", payload)
-                if not delegate.get("ok"):
-                    raise RuntimeError(delegate)
-                replay = request(stream, reader, 2, "worker_delegate", payload)
-                if replay.get("result") != delegate.get("result"):
-                    raise RuntimeError("worker delegate idempotency replay changed its receipt")
-                workflow = delegate["result"]["workflow_id"]
-                initial = request(stream, reader, 3, "worker_status", {
-                    "workflow_id": workflow, "after_sequence": 0,
-                })
-                events = initial["result"]["events"]
-                if [event["state"] for event in events] != ["waiting", "waiting"]:
-                    raise RuntimeError(f"unexpected initial worker states: {events}")
-                cancelled = request(stream, reader, 4, "worker_cancel", {
-                    "workflow_id": workflow, "idempotency_key": "code-worker-cancel-e2e",
-                    "reason": "E2E cancellation", "revoke_mutation_authority": True,
-                })
-                if not cancelled.get("ok"):
-                    raise RuntimeError(cancelled)
-                after_cancel = request(stream, reader, 5, "worker_status", {
-                    "workflow_id": workflow, "after_sequence": initial["result"]["next_sequence"],
-                })
-                if {event["state"] for event in after_cancel["result"]["events"]} != {"cancelled"}:
-                    raise RuntimeError("cancel did not revoke every pending task")
-                blocked_delivery = request(stream, reader, 6, "worker_deliver", {
-                    "workflow_id": workflow, "task_id": "review", "agent_id": "external-agent:review",
-                    "attempt": 1, "fence": 2, "review_receipt_id": "review-e2e",
-                    "idempotency_key": "delivery-e2e",
-                })
-                if blocked_delivery.get("ok") is not False:
-                    raise RuntimeError("cancelled worker delivery was not rejected")
-                reader.close()
-                result.update({
-                    "workflow_id": workflow,
-                    "idempotent_delegate": True,
-                    "initial_waiting_events": len(events),
-                    "cancelled_tasks": len(after_cancel["result"]["events"]),
-                    "delivery_blocked": True,
-                    "hub_pid_before_restart": first.pid,
-                })
+            initial_receipt = root / "initial.json"
+            initial = run_adapter_test(code_root, endpoint, "initial", initial_receipt)
+            workflow = initial["workflow_id"]
+            result.update({
+                "workflow_id": workflow,
+                "adapter_initial": initial,
+                "hub_pid_before_restart": first.pid,
+            })
             stop(first)
             first = None
             second = launch(loop_root, lock, endpoint)
             wait_for_socket(second, endpoint)
-            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stream:
-                stream.settimeout(5)
-                stream.connect(str(endpoint))
-                reader = stream.makefile("rb")
-                persisted = request(stream, reader, 7, "worker_status", {
-                    "workflow_id": workflow, "after_sequence": 2,
-                })
-                if not persisted.get("ok") or not persisted["result"]["events"]:
-                    raise RuntimeError(f"worker state did not survive Hub restart: {persisted}")
-                result.update({
-                    "restart_persisted": True,
-                    "hub_pid_after_restart": second.pid,
-                })
-                reader.close()
+            restart_receipt = root / "restart.json"
+            restart = run_adapter_test(
+                code_root, endpoint, "restart", restart_receipt, workflow=workflow
+            )
+            result.update({
+                "adapter_restart": restart,
+                "restart_persisted": restart["restart_persisted"],
+                "hub_pid_after_restart": second.pid,
+            })
             stop(second)
             second = None
         result["exit_code"] = 0
