@@ -14,10 +14,13 @@ JSON](https://github.com/wesleysimplicio/simplicio-runtime/blob/main/docs/ADR-20
 | Human Code runtime configuration | operator | Runtime client | strict typed TOML | Unknown keys and unsupported schema versions fail |
 | Runtime MCP / provider JSON | external Runtime/provider | boundary adapter | external protocol only | Raw JSON terminates at the adapter |
 
-`crates/codegen/simplicio-code-formats` contains the bounded HBP/HBI container,
-strict TOML model and atomic migration primitive. HBI validation checks magic,
-version, header/total length, schema fingerprint, section bounds, overlap and
-per-section BLAKE3 checksum before exposing a section slice.
+`crates/codegen/simplicio-code-formats` contains the Runtime-compatible HBP/HBI
+containers, strict TOML model and atomic migration primitive. HBI validation
+checks magic, version, endianness, alignment, header/total length, schema
+fingerprint, section bounds, overlap, zero padding, SHA-256 section checksums
+and the aggregate integrity stream before exposing a section slice. HBP uses
+Runtime's `HBP1` header, length-prefixed UTF-8 rows, genesis-linked SHA-256
+hashes and explicit topic/provenance ownership.
 
 ## Legacy migration contract
 
@@ -33,12 +36,12 @@ owned migration boundary.
 
 ## Runtime dependency
 
-The external Runtime confirms that HBI v1 is not yet a published/conformant
-module. Code therefore does not label Runtime mmap artifacts as HBI and does
-not claim cross-language conformance. Completion of Runtime
-[#3494](https://github.com/wesleysimplicio/simplicio-runtime/issues/3494) is
-required before the Code adapter can be certified against Runtime golden
-vectors.
+Runtime publishes HBI v1 and HBP v1 through the binary-contract receipt
+(`simplicio_binary_contracts`). Code's HBI encoder reproduces the Runtime
+golden-vector digest `b2599e6064597fe74fac2f73118cc9b278f2d6623d349491ea3fbab582a5656d`
+and its HBP adapter emits the Runtime `HBP1` row layout. The receipt remains
+the release-time authority for semantic versions and specification digests;
+the Code tests do not start an LLM, provider, scheduler or external service.
 
 ## Measurement
 
@@ -47,7 +50,7 @@ than estimated.
 
 | Workload | Before bytes | After bytes | Before load | After load | RSS / allocations |
 | --- | ---: | ---: | ---: | ---: | --- |
-| MapCache representative result | `null` — Rust toolchain unavailable in this checkout | `null` — Rust toolchain unavailable in this checkout | `null` — Runtime unavailable | `null` — Runtime unavailable | `null` — no profiler available |
+| MapCache representative result | `null` — no frozen baseline artifact | `null` — no frozen baseline artifact | `null` — no profiler captured | `null` — no profiler captured | `null` — no profiler available |
 | Managed marker | `null` — no captured baseline artifact | `null` — no captured migrated artifact | `null` — no profiler available | `null` — no profiler available | `null` — no profiler available |
 
 The Code-owned codec hot paths can be measured without Runtime or network access:
@@ -61,21 +64,22 @@ microseconds per operation. Peak RSS remains an external observation and must
 be captured with the platform tool (for example `/usr/bin/time -v` on Linux),
 not inferred by the benchmark.
 
-Observed on 2026-07-22 in the native Cloud container (Linux x86_64, three
-virtual CPUs, Intel Xeon Platinum 8370C, Rust 1.92.0, release profile):
+Observed on 2026-07-23 in the native Runtime MCP test container (Rust release
+profile, 1,000 iterations; the runner does not expose a stable CPU model):
 
 | Operation | Iterations | Artifact bytes | Mean µs/op | Peak RSS |
 | --- | ---: | ---: | ---: | --- |
-| HBI warm validate/read, 64 KiB payload | 10,000 | 65,678 | 13.266 | `null` — `/usr/bin/time` is unavailable in the container |
-| HBP decode, 32 records | 10,000 | 6,912 | 9.950 | `null` — `/usr/bin/time` is unavailable in the container |
+| HBI warm validate/read, 64 KiB payload | 1,000 | 65,704 | 381.788 | `null` — `/usr/bin/time` is unavailable in the container |
+| HBP decode, 32 records | 1,000 | 14,351 | 63.731 | `null` — `/usr/bin/time` is unavailable in the container |
 
 `cargo llvm-cov -p simplicio-code-formats --all-targets --summary-only`
 measured 85.30% line coverage and 88.27% region coverage. This toolchain did
 not expose branch coverage (`-`), so no branch percentage is inferred.
 
-The local Python scanner and package smoke tests are reproducible offline; the
-Runtime MCP and Rust test lanes remain blocked by missing executables in this
-environment.
+The local Python scanner and package smoke tests are reproducible offline. The
+Runtime MCP binary-contract receipt and the Rust HBI/HBP codec tests are the
+external compatibility gates; they are provider-free and do not require a
+local LLM.
 
 ## Release boundary gate
 
