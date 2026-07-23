@@ -25,7 +25,7 @@ SKIP = {".git", "node_modules", "target", "dist", "build", ".venv", "__pycache__
 SOURCE_SUFFIXES = {".py", ".mjs", ".js", ".ts", ".tsx", ".rs", ".go", ".java", ".cs", ".toml", ".yaml", ".yml"}
 ARTIFACT_SUFFIXES = {".json", ".jsonl", ".ndjson"}
 BUILD_MANIFESTS = {"Cargo.toml", "Cargo.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
-NON_CODE_TEXT_SUFFIXES = {".md", ".rst", ".txt", ".lock"}
+NON_CODE_TEXT_SUFFIXES = {".log", ".md", ".rst", ".txt", ".lock"}
 NON_CODE_FILENAMES = {"THIRD-PARTY-NOTICES", "LICENSE", "README", "NOTICE"}
 
 
