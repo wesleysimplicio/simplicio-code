@@ -20,12 +20,13 @@ profiles, cancellation/reconciliation, deterministic restart and advisory replay
 Runtime atomic edit, and argv-safe execution. Runtime compatibility is proven
 before the first Agent turn. Missing and incompatible AgentHost/Runtime cases
 are then exercised for every surface and recorded with `effect_attempted: false`,
-proving that dependency failure cannot silently become a productive turn. The
-JSON receipt includes the fixture SHA-256, a deterministic `evidence_sha256`
-over all non-timing evidence, the requested atomic/rollback policy and resulting
-effect state, and measured fixture throughput. Repeating the command must produce
-the same `evidence_sha256` even though elapsed time differs. Unobservable
-production latency is explicitly `null`-equivalent with a reason.
+proving that dependency failure cannot silently become a productive turn.
+
+The repository-owned no-network fixture remains available for regression tests:
+
+```console
+python3 scripts/installed_code_e2e.py --fixture --output fixture-receipt.json
+```
 
 This fixture is external to Code's productive process, but it is **not** a
 replacement implementation of AgentHost or Runtime. It refuses to start
