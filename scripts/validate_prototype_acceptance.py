@@ -24,7 +24,14 @@ REQUIRED_LOOP_STATES = {
     "prototype_required", "gallery", "compare", "revise", "reject",
     "accept", "stale", "build_authorized",
 }
-REQUIRED_RUNTIME_TOOLS = {"simplicio_prototype_artifact_write"}
+REQUIRED_RUNTIME_TOOLS = {
+    "simplicio_prototype_artifact_write",
+    "simplicio_prototype_artifact_read",
+}
+REQUIRED_AUDIT_EVENTS = {
+    "prototype_published", "comparison_opened", "decision_rejected",
+    "revision_requested", "decision_accepted", "build_authorized", "delivered",
+}
 REQUIRED_SURFACES = {"tui", "ui", "headless", "acp"}
 REQUIRED_STEPS = {
     "install", "prototype", "compare", "reject", "revise", "accept",
@@ -84,6 +91,8 @@ def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any])
         errors.append("Loop capability handshake missing states: " + ", ".join(missing_states))
     if loop.get("accepted") is not True:
         errors.append("Loop did not accept the Code prototype contract")
+    if loop.get("capability_issue") != 568:
+        errors.append("Loop capability receipt must identify upstream issue 568")
 
     tools = _string_set(runtime, "tools", "Runtime", errors)
     missing_tools = sorted(REQUIRED_RUNTIME_TOOLS - tools)
@@ -93,6 +102,10 @@ def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any])
         errors.append("Runtime preflight did not negotiate a versioned real binary")
     if not HEX64.fullmatch(str(runtime.get("binary_sha256", ""))):
         errors.append("Runtime binary_sha256 must be a lowercase SHA-256 digest")
+    if runtime.get("artifact_sanitization") != "passed":
+        errors.append("Runtime artifact path/content sanitization evidence did not pass")
+    if runtime.get("telemetry_emitted") is not False:
+        errors.append("Runtime prototype operations must prove that no telemetry was emitted")
 
     runs_value = e2e.get("runs")
     runs = runs_value if isinstance(runs_value, list) else []
@@ -125,6 +138,23 @@ def validate(loop: dict[str, Any], runtime: dict[str, Any], e2e: dict[str, Any])
         errors.append("failure injection/cancellation/rollback evidence did not pass")
     if e2e.get("replay_hash_match") is not True:
         errors.append("deterministic replay hashes did not match")
+    replay = e2e.get("replay_hashes")
+    if (not isinstance(replay, list) or len(replay) < 2
+            or not all(HEX64.fullmatch(str(item)) for item in replay)
+            or len(set(replay)) != 1):
+        errors.append("replay_hashes must contain at least two identical lowercase SHA-256 digests")
+    audit_events = _string_set(e2e, "audit_events", "E2E", errors)
+    missing_audit = sorted(REQUIRED_AUDIT_EVENTS - audit_events)
+    if missing_audit:
+        errors.append("E2E audit trail missing events: " + ", ".join(missing_audit))
+    if e2e.get("audit_sanitized") is not True:
+        errors.append("E2E audit records were not proven sanitized")
+    if e2e.get("telemetry_emitted") is not False:
+        errors.append("E2E prototype flow must prove that no telemetry was emitted")
+    authorization = e2e.get("build_authorization_sha256")
+    delivery = e2e.get("delivery_authorization_sha256")
+    if not HEX64.fullmatch(str(authorization or "")) or delivery != authorization:
+        errors.append("delivery must reference the exact Build authorization SHA-256")
 
     try:
         inputs: dict[str, str | None] = {

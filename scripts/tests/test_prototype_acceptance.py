@@ -7,13 +7,19 @@ from scripts.validate_prototype_acceptance import benchmark, main, validate
 def receipts():
     common = {"source_revision": "abc123", "plan_id": "plan-1"}
     loop = {**common, "schema": "simplicio.loop-prototype-capabilities/v1", "accepted": True,
+            "capability_issue": 568,
             "states": ["prototype_required", "gallery", "compare", "revise", "reject", "accept", "stale", "build_authorized"]}
     runtime = {**common, "schema": "simplicio.runtime-prototype-preflight/v1", "negotiated": True,
                "binary_version": "1.2.3", "binary_sha256": "a" * 64,
-               "tools": ["simplicio_prototype_artifact_write"]}
+               "artifact_sanitization": "passed", "telemetry_emitted": False,
+               "tools": ["simplicio_prototype_artifact_write", "simplicio_prototype_artifact_read"]}
     steps = ["install", "prototype", "compare", "reject", "revise", "accept", "build", "delivery"]
     e2e = {**common, "schema": "simplicio.prototype-product-e2e/v1", "failure_injection_passed": True,
-           "replay_hash_match": True, "runs": [{"surface": s, "status": "passed", "steps": steps} for s in ("tui", "ui", "headless", "acp")]}
+           "replay_hash_match": True, "replay_hashes": ["b" * 64, "b" * 64],
+           "audit_events": ["prototype_published", "comparison_opened", "decision_rejected", "revision_requested", "decision_accepted", "build_authorized", "delivered"],
+           "audit_sanitized": True, "telemetry_emitted": False,
+           "build_authorization_sha256": "c" * 64, "delivery_authorization_sha256": "c" * 64,
+           "runs": [{"surface": s, "status": "passed", "steps": steps} for s in ("tui", "ui", "headless", "acp")]}
     return loop, runtime, e2e
 
 
@@ -65,6 +71,24 @@ def test_every_receipt_schema_identity_and_replay_gate_is_enforced():
     result = validate(loop, runtime, e2e)
     assert result["status"] == "blocked"
     assert len(result["errors"]) >= 7
+
+
+def test_audit_sanitization_no_telemetry_and_delivery_link_fail_closed():
+    loop, runtime, e2e = receipts()
+    runtime["artifact_sanitization"] = "failed"
+    runtime["telemetry_emitted"] = True
+    e2e["audit_events"].remove("decision_rejected")
+    e2e["audit_sanitized"] = False
+    e2e["telemetry_emitted"] = True
+    e2e["replay_hashes"][1] = "d" * 64
+    e2e["delivery_authorization_sha256"] = "e" * 64
+    result = validate(loop, runtime, e2e)
+    assert result["status"] == "blocked"
+    assert any("sanitization" in error for error in result["errors"])
+    assert any("telemetry" in error for error in result["errors"])
+    assert any("audit trail" in error for error in result["errors"])
+    assert any("replay_hashes" in error for error in result["errors"])
+    assert any("Build authorization" in error for error in result["errors"])
 
 
 def test_non_list_contract_collections_fail_closed():
