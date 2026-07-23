@@ -692,7 +692,6 @@ paths = [
   'crates/codegen/xai-grok-hooks/src/dispatcher.rs',
   'crates/codegen/xai-grok-hooks/src/event.rs',
   'crates/codegen/xai-grok-hooks/src/runner/command.rs',
-  'crates/codegen/xai-grok-hooks/src/runner/http.rs',
   'crates/codegen/xai-grok-http/src/lib.rs',
   'crates/codegen/xai-grok-memory/src/dream_lock.rs',
   'crates/codegen/xai-grok-memory/src/embedding.rs',
@@ -801,7 +800,6 @@ paths = [
   'crates/codegen/xai-grok-plugin-marketplace/src/scanner.rs',
   'crates/codegen/xai-grok-plugin-marketplace/src/types.rs',
   'crates/codegen/xai-grok-sampler/src/actor/request_task.rs',
-  'crates/codegen/xai-grok-sampler/src/client.rs',
   'crates/codegen/xai-grok-sampler/src/config.rs',
   'crates/codegen/xai-grok-sampler/src/events.rs',
   'crates/codegen/xai-grok-sampler/src/retry.rs',
@@ -1554,4 +1552,28 @@ lifecycle = "ephemeral authenticated provider request/response payloads; citatio
 target_format = "versioned external Responses API JSON contract"
 status = "exception"
 reason = "This module is a provider-facing Responses API adapter for web search. JSON is confined to request/response serialization, error details, and response citation extraction; it does not persist workspace/session state or start a local inference authority."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-sampler/src/client.rs"
+category = "external_inference_protocol_adapter"
+owner = "code-sampler"
+producer = "external xAI/OpenAI-compatible/Anthropic sampling APIs"
+consumer = "Code sampler and session turn pipeline"
+lifecycle = "ephemeral authenticated HTTP/SSE inference payloads; no local model or durable Code state"
+target_format = "versioned external sampling JSON and SSE contracts"
+status = "exception"
+reason = "This module owns the HTTP/SSE adapter for external Chat Completions, Responses, and Anthropic Messages APIs. JSON is terminated at provider request/response boundaries, while the runtime remains a consumer and does not start DeepSeek or any local LLM."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-hooks/src/runner/http.rs"
+category = "external_hook_protocol_adapter"
+owner = "code-hooks"
+producer = "configured HTTPS hook endpoint"
+consumer = "Code hook runner"
+lifecycle = "ephemeral hook event/result HTTP payloads; no Code-owned persistence"
+target_format = "versioned external hook JSON contract"
+status = "exception"
+reason = "This runner serializes hook event envelopes to configured HTTPS endpoints and parses the optional blocking decision response. The JSON terminates at the explicit hook protocol boundary; SSRF validation and fail-closed handling remain local policy, not persisted session state."
 expires = "2099-12-31"
