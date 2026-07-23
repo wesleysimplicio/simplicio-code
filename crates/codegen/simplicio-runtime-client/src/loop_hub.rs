@@ -467,6 +467,27 @@ pub struct LifecycleReceipt {
     pub state: String,
 }
 
+/// A Runtime-owned argv effect forwarded by the Loop Hub. Code may describe
+/// the operation, but it never spawns a local process or owns its result.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeExecuteRequest {
+    pub schema: String,
+    pub workspace: String,
+    pub cwd: String,
+    pub argv: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub timeout_ms: u64,
+    pub max_output_bytes: usize,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeExecuteReceipt {
+    pub schema: String,
+    pub workspace: String,
+    pub result: Value,
+}
+
 /// The only effectful boundary in this module. Implementations belong to the
 /// Loop Hub adapter and must use the Hub's queue, claims, Runtime, Mapper and
 /// worker pools. This trait intentionally has no `spawn`, `exec`, or local
@@ -477,6 +498,15 @@ pub trait HubTransport: Send + Sync {
     fn progress(&self, request: &ProgressRequest) -> Result<ProgressSnapshot, HubError>;
     fn cancel(&self, request: &CancelRequest) -> Result<LifecycleReceipt, HubError>;
     fn resume(&self, request: &ResumeRequest) -> Result<LifecycleReceipt, HubError>;
+    fn runtime_execute(
+        &self,
+        request: &RuntimeExecuteRequest,
+    ) -> Result<RuntimeExecuteReceipt, HubError> {
+        let _ = request;
+        Err(HubError::TransportUnavailable(
+            "Loop Hub Runtime effect bridge is unavailable".into(),
+        ))
+    }
 }
 
 pub trait HubTransportFactory: Send + Sync {
@@ -555,6 +585,20 @@ impl SharedHubServiceHandle {
     /// session, rather than merely advertising equal string identifiers.
     pub fn shares_session_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.session, &other.session)
+    }
+
+    /// Forward one effect to the Hub-owned Runtime service. This capability is
+    /// intentionally available only on the negotiated Runtime handle.
+    pub fn runtime_execute(
+        &self,
+        request: &RuntimeExecuteRequest,
+    ) -> Result<RuntimeExecuteReceipt, HubError> {
+        if self.service != SharedService::Runtime {
+            return Err(HubError::InvalidRequest(
+                "only the shared Runtime handle may execute effects".into(),
+            ));
+        }
+        self.session.transport.runtime_execute(request)
     }
 }
 

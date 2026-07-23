@@ -8,6 +8,10 @@ use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socke
 use simplicio_runtime_client::{
     DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SharedRuntimeClient, start_workspace_map,
 };
+use simplicio_runtime_client::{
+    SocketPipeHubTransportFactory,
+    loop_hub::{HubClientConfig, HubMode, LoopHubClient, RuntimeExecuteRequest},
+};
 
 use super::preflight::{ProductivePreflightReport, run_installed_preflight};
 use crate::computer::types::{
@@ -132,6 +136,18 @@ impl RuntimeExecInvoker for SimplicioRuntimeFs {
         max_output_bytes: usize,
         idempotency_key: &str,
     ) -> Result<serde_json::Value, ComputerError> {
+        if loop_hub_owns_runtime() {
+            return self
+                .exec_workspace_via_loop_hub(
+                    cwd,
+                    argv,
+                    env,
+                    timeout_ms,
+                    max_output_bytes,
+                    idempotency_key,
+                )
+                .await;
+        }
         SimplicioRuntimeFs::exec_workspace(
             self,
             cwd,
@@ -333,26 +349,7 @@ impl SimplicioRuntimeFs {
         let agent_client = Arc::clone(&self.agent_client);
         let client = Arc::clone(&self.client);
         tokio::task::spawn_blocking(move || {
-            {
-                let mut agent_guard = agent_client
-                    .lock()
-                    .map_err(|_| ComputerError::io("Simplicio Agent client lock poisoned"))?;
-                let validation = if let Some(agent) = agent_guard.as_mut() {
-                    agent.ensure_ready()
-                } else {
-                    AgentHostCoordinator::connect_at(
-                        Self::agent_profile(),
-                        agent_socket.clone(),
-                    )
-                    .map(|agent| {
-                        *agent_guard = Some(agent);
-                    })
-                };
-                if let Err(error) = validation {
-                    *agent_guard = None;
-                    return Err(ComputerError::io(error.to_string()));
-                }
-            }
+            Self::ensure_agent_ready(&agent_client, &agent_socket)?;
 
             if loop_hub_owns_runtime() {
                 return Err(ComputerError::io("Simplicio Loop Hub owns Runtime/Mapper; local Runtime spawn is disabled while SIMPLICIO_LOOP_HUB_ENDPOINT is configured"));
@@ -386,6 +383,82 @@ impl SimplicioRuntimeFs {
         })
         .await
         .map_err(|e| ComputerError::io(format!("Simplicio Runtime task failed: {e}")))?
+    }
+
+    fn ensure_agent_ready(
+        agent_client: &Arc<Mutex<Option<AgentHostCoordinator>>>,
+        agent_socket: &Path,
+    ) -> Result<(), ComputerError> {
+        let mut agent_guard = agent_client
+            .lock()
+            .map_err(|_| ComputerError::io("Simplicio Agent client lock poisoned"))?;
+        let validation = if let Some(agent) = agent_guard.as_mut() {
+            agent.ensure_ready()
+        } else {
+            AgentHostCoordinator::connect_at(Self::agent_profile(), agent_socket.to_path_buf())
+                .map(|agent| *agent_guard = Some(agent))
+        };
+        if let Err(error) = validation {
+            *agent_guard = None;
+            return Err(ComputerError::io(error.to_string()));
+        }
+        Ok(())
+    }
+
+    async fn exec_workspace_via_loop_hub(
+        &self,
+        cwd: &Path,
+        argv: &[String],
+        env: &BTreeMap<String, String>,
+        timeout_ms: u64,
+        max_output_bytes: usize,
+        idempotency_key: &str,
+    ) -> Result<serde_json::Value, ComputerError> {
+        let relative_cwd = self.relative_path(cwd)?;
+        let root = self.root.clone();
+        let agent_socket = self.agent_socket.clone();
+        let agent_client = Arc::clone(&self.agent_client);
+        let argv = argv.to_vec();
+        let env = env.clone();
+        let idempotency_key = idempotency_key.to_owned();
+        tokio::task::spawn_blocking(move || {
+            Self::ensure_agent_ready(&agent_client, &agent_socket)?;
+            let endpoint = std::env::var("SIMPLICIO_LOOP_HUB_ENDPOINT")
+                .map_err(|_| ComputerError::io("Loop Hub endpoint is not configured"))?;
+            let mut config = HubClientConfig::new(
+                HubMode::Required,
+                "code-runtime-fs",
+                root.to_string_lossy().to_string(),
+                std::env::var("SIMPLICIO_CODE_SESSION_ID")
+                    .unwrap_or_else(|_| "code-runtime-session".into()),
+            );
+            config.endpoint = Some(endpoint);
+            let hub = LoopHubClient::connect(config, &SocketPipeHubTransportFactory)
+                .map_err(|error| {
+                    ComputerError::io(format!("Loop Hub Runtime connection failed: {error}"))
+                })?
+                .ok_or_else(|| {
+                    ComputerError::io("Loop Hub Runtime connection was not established")
+                })?;
+            let request = RuntimeExecuteRequest {
+                schema: "simplicio.loop-runtime-execute/v1".into(),
+                workspace: root.to_string_lossy().to_string(),
+                cwd: relative_cwd.to_string_lossy().to_string(),
+                argv,
+                env,
+                timeout_ms,
+                max_output_bytes,
+                idempotency_key,
+            };
+            hub.shared_runtime_handle()
+                .runtime_execute(&request)
+                .map(|receipt| receipt.result)
+                .map_err(|error| {
+                    ComputerError::io(format!("Loop Hub Runtime effect failed: {error}"))
+                })
+        })
+        .await
+        .map_err(|error| ComputerError::io(format!("Loop Hub Runtime task failed: {error}")))?
     }
 
     /// Read/write/delete variant of [`Self::with_runtime`]: resolves and
