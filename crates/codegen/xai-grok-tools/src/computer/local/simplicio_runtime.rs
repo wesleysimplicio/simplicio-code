@@ -1719,4 +1719,62 @@ mod tests {
             "unexpected error: {error}"
         );
     }
+
+    /// Full product seam: Code performs the real Agent handshake, sends the
+    /// filesystem calls over the real Loop Hub socket, and Loop owns the real
+    /// Runtime MCP process. Run with `--ignored` and the three explicit
+    /// environment variables; the default suite remains dependency-free.
+    #[tokio::test]
+    #[ignore = "requires real Agent Host, Loop Hub, and Runtime processes"]
+    async fn real_agent_code_loop_runtime_filesystem_e2e() {
+        let agent_socket = std::env::var("SIMPLICIO_AGENT_SOCKET")
+            .expect("SIMPLICIO_AGENT_SOCKET is required for the real E2E");
+        assert!(
+            !std::env::var(LOOP_HUB_ENDPOINT_ENV)
+                .expect("SIMPLICIO_LOOP_HUB_ENDPOINT is required for the real E2E")
+                .trim()
+                .is_empty()
+        );
+
+        let workspace = tempfile::tempdir().unwrap();
+        let fs = SimplicioRuntimeFs::with_agent_socket(workspace.path(), agent_socket);
+        fs.write_file(Path::new("probe.txt"), b"hello code")
+            .await
+            .unwrap();
+        assert_eq!(
+            fs.read_file(Path::new("probe.txt")).await.unwrap(),
+            b"hello code"
+        );
+        assert_eq!(
+            fs.stat_workspace(Path::new("probe.txt")).await.unwrap()["type"],
+            "file"
+        );
+        let listing = fs
+            .list_workspace(Path::new("."), json!({"hidden": false}))
+            .await
+            .unwrap();
+        assert!(
+            listing["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| { entry["path"] == "probe.txt" })
+        );
+        let search = fs
+            .search("hello", None, &[], false, true, 20, 20)
+            .await
+            .unwrap();
+        assert_eq!(search.matches.len(), 1);
+        let plan = json!({
+            "file": "probe.txt",
+            "operations": [{"op": "append", "text": "\nedit"}]
+        });
+        fs.apply_edit(plan).await.unwrap();
+        assert_eq!(
+            fs.read_workspace(Path::new("probe.txt")).await.unwrap(),
+            "hello code\nedit"
+        );
+        fs.delete_file(Path::new("probe.txt")).await.unwrap();
+        assert!(!workspace.path().join("probe.txt").exists());
+    }
 }
