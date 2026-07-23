@@ -6,13 +6,13 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use dashmap::DashMap;
-use ignore::{WalkBuilder, WalkState};
+use serde_json::{Value, json};
+use std::sync::Arc;
+use xai_grok_tools::{
+    computer::local::SimplicioRuntimeFs, types::resources::AsyncDirectoryListing,
+};
 
 use crate::file_system::FsError;
-
-/// Number of threads for parallel directory walking
-const NUM_WALK_THREADS: usize = 8;
 
 /// Configuration for limiting file tree traversal to prevent runaway I/O
 /// on very large or deeply nested directories.
@@ -99,18 +99,18 @@ struct DirContents {
 /// Performs a single parallel walk and collects all directory contents into a map.
 /// Returns a map from directory path -> (files, subdirs) in that directory.
 fn collect_all_contents(
+    payload: Value,
     root: &Path,
-    max_depth: usize,
-    max_dirs: usize,
 ) -> Result<HashMap<PathBuf, DirContents>, FsError> {
-    let _timer = (); // instrumentation_timer noop (dev infra)
-
-    let contents_map: DashMap<PathBuf, DirContents> = DashMap::new();
-    let files_count = std::sync::atomic::AtomicUsize::new(0);
-    let dirs_count = std::sync::atomic::AtomicUsize::new(0);
-    let entries_visited = std::sync::atomic::AtomicUsize::new(0);
-
-    // Initialize root entry
+    let payload = runtime_payload(payload)?;
+    let nodes = payload
+        .get("nodes")
+        .or_else(|| payload.get("entries"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            FsError::Other("Runtime list response is missing the v1 `nodes` array".into())
+        })?;
+    let mut contents_map = HashMap::new();
     contents_map.insert(
         root.to_path_buf(),
         DirContents {
@@ -119,102 +119,48 @@ fn collect_all_contents(
         },
     );
 
-    let walker = WalkBuilder::new(root)
-        .max_depth(Some(max_depth + 1)) // +1 because depth 0 is root itself
-        .follow_links(false)
-        .same_file_system(true)
-        .ignore(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .hidden(true)
-        .threads(NUM_WALK_THREADS)
-        .build_parallel();
-
-    tracing::debug!(
-        root = %root.display(),
-        max_depth = max_depth,
-        max_dirs = max_dirs,
-        threads = NUM_WALK_THREADS,
-        "Starting parallel file walk"
-    );
-
-    {
-        let _timer = (); // instrumentation_timer noop (dev infra)
-        walker.run(|| {
-            let contents_map = &contents_map;
-            let files_count = &files_count;
-            let dirs_count = &dirs_count;
-            let entries_visited = &entries_visited;
-            Box::new(move |entry| {
-                entries_visited.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-                // Stop early if we've collected enough directories
-                if dirs_count.load(std::sync::atomic::Ordering::Relaxed) >= max_dirs {
-                    return WalkState::Quit;
-                }
-
-                let entry = match entry {
-                    Ok(e) => e,
-                    Err(_) => return WalkState::Continue,
-                };
-
-                // Skip root itself
-                if entry.depth() == 0 {
-                    return WalkState::Continue;
-                }
-
-                let Some(file_type) = entry.file_type() else {
-                    return WalkState::Continue;
-                };
-
-                let path = entry.path();
-                let Some(parent) = path.parent() else {
-                    return WalkState::Continue;
-                };
-                let name = entry.file_name().to_string_lossy().to_string();
-
-                if file_type.is_dir() {
-                    dirs_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    contents_map
-                        .entry(parent.to_path_buf())
-                        .or_insert_with(|| DirContents {
-                            files: Vec::new(),
-                            dirs: Vec::new(),
-                        })
-                        .dirs
-                        .push(format!("{name}/"));
-                    // Pre-create entry for this directory (even if empty)
-                    contents_map
-                        .entry(path.to_path_buf())
-                        .or_insert_with(|| DirContents {
-                            files: Vec::new(),
-                            dirs: Vec::new(),
-                        });
-                } else if file_type.is_file() {
-                    files_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                    contents_map
-                        .entry(parent.to_path_buf())
-                        .or_insert_with(|| DirContents {
-                            files: Vec::new(),
-                            dirs: Vec::new(),
-                        })
-                        .files
-                        .push(name);
-                }
-
-                WalkState::Continue
+    for node in nodes {
+        let relative = node
+            .get("path")
+            .and_then(Value::as_str)
+            .or_else(|| node.get("name").and_then(Value::as_str))
+            .ok_or_else(|| {
+                FsError::Other("Runtime list entry is missing `path` or `name`".into())
+            })?;
+        let relative = relative.trim_end_matches('/');
+        if relative.is_empty() {
+            continue;
+        }
+        let path = root.join(relative);
+        let parent = path.parent().unwrap_or(root).to_path_buf();
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| FsError::Other("Runtime list returned a non-UTF-8 path".into()))?;
+        let is_dir = node
+            .get("is_dir")
+            .and_then(Value::as_bool)
+            .or_else(|| {
+                node.get("type")
+                    .or_else(|| node.get("nodeType"))
+                    .and_then(Value::as_str)
+                    .map(|kind| kind.eq_ignore_ascii_case("directory"))
             })
+            .unwrap_or_else(|| relative.ends_with('/'));
+        let parent_contents = contents_map.entry(parent).or_insert_with(|| DirContents {
+            files: vec![],
+            dirs: vec![],
         });
+        if is_dir {
+            parent_contents.dirs.push(format!("{name}/"));
+            contents_map.entry(path).or_insert_with(|| DirContents {
+                files: vec![],
+                dirs: vec![],
+            });
+        } else {
+            parent_contents.files.push(name.to_owned());
+        }
     }
-
-    let _entries_total = entries_visited.load(std::sync::atomic::Ordering::Relaxed);
-    // (instrumentation_timer.with_field calls removed — dev-only, not part of Phase 1 move)
-
-    let mut contents_map: HashMap<PathBuf, DirContents> = {
-        let _timer = (); // instrumentation_timer noop (dev infra)
-        contents_map.into_iter().collect()
-    };
 
     // Sort all entries for stable output
     {
@@ -226,6 +172,19 @@ fn collect_all_contents(
     }
 
     Ok(contents_map)
+}
+
+fn runtime_payload(value: Value) -> Result<Value, FsError> {
+    let Some(text) = value
+        .get("content")
+        .and_then(Value::as_array)
+        .and_then(|items| items.iter().find_map(|item| item.get("text")))
+        .and_then(Value::as_str)
+    else {
+        return Ok(value);
+    };
+    serde_json::from_str(text)
+        .map_err(|error| FsError::Other(format!("invalid Runtime list JSON: {error}")))
 }
 
 struct DirectoryNode {
@@ -342,6 +301,21 @@ pub async fn list_contents(
     path: impl Into<PathBuf>,
     limits: ListContentsLimits,
 ) -> Result<String, FsError> {
+    let path = path.into();
+    list_contents_with_runtime(
+        path.clone(),
+        limits,
+        Arc::new(SimplicioRuntimeFs::new(path)),
+    )
+    .await
+}
+
+/// Runtime-injectable implementation used by focused boundary tests.
+pub async fn list_contents_with_runtime(
+    path: impl Into<PathBuf>,
+    limits: ListContentsLimits,
+    runtime: Arc<dyn AsyncDirectoryListing>,
+) -> Result<String, FsError> {
     let _timer = (); // instrumentation_timer noop (dev infra)
     let t_total = Instant::now();
     let path: PathBuf = path.into();
@@ -358,16 +332,22 @@ pub async fn list_contents(
 
     let lim_characters = limits.max_characters + path_head.len();
 
-    // Single walk to collect all directory contents
-    let path_clone = path.clone();
-    let max_depth = limits.max_depth;
-    let max_dirs = limits.max_dirs_visited;
-    let contents = {
-        let _timer = (); // instrumentation_timer noop (dev infra)
-        tokio::task::spawn_blocking(move || collect_all_contents(&path_clone, max_depth, max_dirs))
-            .await
-            .map_err(|e| FsError::Other(format!("walk join error: {e}")))?
-    }?;
+    // Runtime is the sole traversal authority; it applies the Agent gate
+    // before returning the typed recursive listing.
+    let payload = runtime
+        .list_directory(
+            &path,
+            json!({
+                "depth": limits.max_depth,
+                "limit": limits.max_dirs_visited,
+                "include_hidden": false,
+                "follow_symlinks": false,
+                "respect_git_ignore": true,
+            }),
+        )
+        .await
+        .map_err(|error| FsError::Other(format!("Simplicio Runtime list denied: {error}")))?;
+    let contents = collect_all_contents(payload, &path)?;
 
     let t_walk = t_total.elapsed();
 
@@ -523,4 +503,55 @@ pub async fn list_contents(
         "list_contents complete"
     );
     Ok(output)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+    use xai_grok_tools::computer::types::ComputerError;
+
+    struct FakeRuntime {
+        calls: Mutex<Vec<(PathBuf, Value)>>,
+        payload: Value,
+    }
+
+    #[async_trait::async_trait]
+    impl AsyncDirectoryListing for FakeRuntime {
+        async fn list_directory(
+            &self,
+            path: &Path,
+            options: Value,
+        ) -> Result<Value, ComputerError> {
+            self.calls.lock().unwrap().push((path.to_owned(), options));
+            Ok(self.payload.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn tree_uses_runtime_recursive_listing() {
+        let runtime = Arc::new(FakeRuntime {
+            calls: Mutex::new(vec![]),
+            payload: json!({"nodes": [
+                {"path": "src", "type": "directory"},
+                {"path": "src/lib.rs", "type": "file"},
+                {"path": "README.md", "type": "file"}
+            ]}),
+        });
+        let output = list_contents_with_runtime(
+            "/repo",
+            ListContentsLimits::new(10_000, 4, 20),
+            runtime.clone(),
+        )
+        .await
+        .unwrap();
+
+        assert!(output.contains("src/"));
+        assert!(output.contains("lib.rs"));
+        let calls = runtime.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, Path::new("/repo"));
+        assert_eq!(calls[0].1["depth"], 4);
+        assert_eq!(calls[0].1["limit"], 20);
+    }
 }

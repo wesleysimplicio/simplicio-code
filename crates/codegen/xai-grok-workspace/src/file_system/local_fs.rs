@@ -78,6 +78,9 @@ mod tests {
             .await
             .expect_err("the real seam must require Agent and Runtime");
         assert!(error.to_string().contains("Simplicio Runtime denied"));
-        assert!(!path.exists(), "failure must not fall back to local storage");
+        assert!(
+            !path.exists(),
+            "failure must not fall back to local storage"
+        );
     }
 }
