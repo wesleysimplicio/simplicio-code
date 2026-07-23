@@ -116,6 +116,11 @@ cargo check -p xai-grok-pager-bin            # fast validation
 O artefato é `target/release/simplicio-code`. O fluxo de autenticação Simplicio
 e o gateway de inferência serão conectados antes da primeira distribuição.
 
+O launcher local `tools/simplicio_code_launcher.sh` procura primeiro os artefatos
+do checkout e, quando não há `target/`, usa a instalação por usuário em
+`~/.local/lib/simplicio-code/simplicio-code`. Para selecionar outro binário,
+defina `SIMPLICIO_CODE_BIN` explicitamente.
+
 ## Documentation
 
 Simplicio-specific docs (start here for this fork):
