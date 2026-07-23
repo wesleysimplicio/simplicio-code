@@ -123,14 +123,14 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
         created = not target.exists()
         if created:
             target.write_bytes(content)
-        payload = {"schema": "simplicio.prototype-mcp-artifact/v1", "operation": "write", "artifact_id": artifact_id, "path": str(target), "bytes": len(content), "encoding": "base64", "created": created}
+        payload = {"schema": "simplicio.prototype-artifact/v1", "operation": "write", "artifact_id": artifact_id, "path": str(target), "bytes": len(content), "encoding": "base64", "created": created}
     elif name == "simplicio_prototype_artifact_read":
         artifact_id = str(arguments["artifact_id"])
         if not artifact_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for char in artifact_id):
             raise ValueError("unsafe prototype artifact id")
         target = _safe_path(repo, f".simplicio/artifacts/prototype-first/{artifact_id}.json")
         content = target.read_bytes()
-        payload = {"receipt": {"schema": "simplicio.prototype-mcp-artifact/v1", "operation": "read", "artifact_id": artifact_id, "path": str(target), "bytes": len(content), "encoding": "base64", "created": False}, "content_base64": base64.b64encode(content).decode("ascii")}
+        payload = {"receipt": {"schema": "simplicio.prototype-artifact/v1", "operation": "read", "artifact_id": artifact_id, "path": str(target), "bytes": len(content), "encoding": "base64", "created": False}, "content_base64": base64.b64encode(content).decode("ascii")}
     else:
         payload = {"schema": "simplicio.fixture-result/v1", "accepted": True}
     return {"isError": False, "content": [{"type": "text", "text": json.dumps(payload, sort_keys=True)}]}
