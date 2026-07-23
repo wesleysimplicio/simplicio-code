@@ -30,12 +30,37 @@ def git_revision(root: Path) -> str:
 
 def wait_for_socket(path: Path, process: subprocess.Popen[str]) -> None:
     for _ in range(500):
-        if path.exists():
-            return
         if process.poll() is not None:
             raise RuntimeError("Loop Hub exited before creating its socket")
+        if path.exists():
+            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                probe.settimeout(0.1)
+                probe.connect(str(path))
+                return
+            except OSError:
+                pass
+            finally:
+                probe.close()
         time.sleep(0.02)
     raise RuntimeError("Loop Hub did not create its socket")
+
+
+def start_hub(loop_root: Path, env: dict[str, str], lock: Path, endpoint: Path) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        [sys.executable, "-c", "from simplicio_loop.hub_daemon import main; raise SystemExit(main())",
+         "serve", "--lock", str(lock), "--endpoint", str(endpoint), "--transport", "unix"],
+        cwd=loop_root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+
+
+def stop_hub(hub: subprocess.Popen[str]) -> None:
+    hub.terminate()
+    try:
+        hub.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        hub.kill()
+        hub.wait(timeout=5)
 
 
 def process_sample(pid: int) -> tuple[int, float, float]:
@@ -80,15 +105,20 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
         env = dict(os.environ)
         env["PYTHONPATH"] = str(loop_root) + os.pathsep + env.get("PYTHONPATH", "")
         startup_started = time.perf_counter()
-        hub = subprocess.Popen(
-            [sys.executable, "-c", "from simplicio_loop.hub_daemon import main; raise SystemExit(main())",
-             "serve", "--lock", str(lock), "--endpoint", str(endpoint), "--transport", "unix"],
-            cwd=loop_root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-        )
+        restart_ready = root / "restart.ready"
+        restart_complete = root / "restart.complete"
+        hub = start_hub(loop_root, env, lock, endpoint)
+        hub_pids = [hub.pid]
+        restart_downtime_ms: float | None = None
         try:
             wait_for_socket(endpoint, hub)
             startup_ms = round((time.perf_counter() - startup_started) * 1000, 3)
-            test_env = dict(env, SIMPLICIO_LOOP_HUB_ENDPOINT=f"unix://{endpoint}")
+            test_env = dict(
+                env,
+                SIMPLICIO_LOOP_HUB_ENDPOINT=f"unix://{endpoint}",
+                SIMPLICIO_LOOP_HUB_RESTART_READY=str(restart_ready),
+                SIMPLICIO_LOOP_HUB_RESTART_COMPLETE=str(restart_complete),
+            )
             command = [cargo, "test", "-p", "simplicio-runtime-client", "--test", "external_loop_hub", "--", "--nocapture"]
             test_started = time.perf_counter()
             child = subprocess.Popen(command, cwd=code_root, env=test_env, text=True,
@@ -96,6 +126,14 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
             samples: list[tuple[int, float, float]] = []
             while child.poll() is None:
                 samples.append(process_sample(hub.pid))
+                if restart_ready.exists() and restart_downtime_ms is None:
+                    restart_started = time.perf_counter()
+                    stop_hub(hub)
+                    hub = start_hub(loop_root, env, lock, endpoint)
+                    hub_pids.append(hub.pid)
+                    wait_for_socket(endpoint, hub)
+                    restart_downtime_ms = round((time.perf_counter() - restart_started) * 1000, 3)
+                    restart_complete.write_text("ready\n", encoding="utf-8")
                 time.sleep(0.02)
             stdout, stderr = child.communicate()
             test_ms = round((time.perf_counter() - test_started) * 1000, 3)
@@ -106,6 +144,8 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
             line = next((line for line in output.decode().splitlines() if line.startswith("hub_id=")), "")
             if not line:
                 raise RuntimeError("Code external Hub test omitted identity receipt")
+            if restart_downtime_ms is None or "restart_reconnected=true" not in line:
+                raise RuntimeError("Code external Hub test omitted real restart/reconnect proof")
             return {
                 "schema": "simplicio.code-loop-hub-e2e/v1",
                 "proof_kind": "external_loop_daemon",
@@ -116,6 +156,8 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
                 "stdout_sha256": digest(output),
                 "startup_ms": startup_ms,
                 "test_ms": test_ms,
+                "restart_downtime_ms": restart_downtime_ms,
+                "hub_pid_rotated": len(set(hub_pids)) == 2,
                 "hub_processes_max": max((sample[0] for sample in samples), default=1),
                 "hub_rss_kib_max": max((sample[1] for sample in samples), default=0.0),
                 "hub_cpu_percent_max": max((sample[2] for sample in samples), default=0.0),
@@ -128,14 +170,10 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
                 "lifecycle": ["handshake", "attach", "submit", "progress", "cancel", "resume", "replay"],
                 "surfaces": ["tui-1", "tui-2", "headless", "acp"],
                 "single_hub_identity": True,
+                "restart_reconnected": True,
             }
         finally:
-            hub.terminate()
-            try:
-                hub.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                hub.kill()
-                hub.wait(timeout=5)
+            stop_hub(hub)
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
@@ -145,6 +183,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     receipts = [run_once(code_root, loop_root) for _ in range(runs)]
     startup = [float(receipt["startup_ms"]) for receipt in receipts]
     test = [float(receipt["test_ms"]) for receipt in receipts]
+    restart = [float(receipt["restart_downtime_ms"]) for receipt in receipts]
     return {
         "schema": "simplicio.code-loop-hub-e2e/v1",
         "proof_kind": "external_loop_daemon",
@@ -156,6 +195,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "startup_ms_p95": percentile(startup, 0.95) if runs >= 2 else None,
             "test_ms_p50": percentile(test, 0.50),
             "test_ms_p95": percentile(test, 0.95) if runs >= 2 else None,
+            "restart_downtime_ms_p50": percentile(restart, 0.50),
+            "restart_downtime_ms_p95": percentile(restart, 0.95) if runs >= 2 else None,
             "hub_processes_max": max(int(receipt["hub_processes_max"]) for receipt in receipts),
             "hub_rss_kib_max": max(float(receipt["hub_rss_kib_max"]) for receipt in receipts),
             "hub_cpu_percent_max": max(float(receipt["hub_cpu_percent_max"]) for receipt in receipts),
@@ -170,6 +211,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "lifecycle": ["handshake", "attach", "submit", "progress", "cancel", "resume", "replay"],
         "surfaces": ["tui-1", "tui-2", "headless", "acp"],
         "single_hub_identity": all(bool(receipt["single_hub_identity"]) for receipt in receipts),
+        "restart_reconnected": all(bool(receipt["restart_reconnected"]) for receipt in receipts),
+        "hub_pid_rotated": all(bool(receipt["hub_pid_rotated"]) for receipt in receipts),
         "stdout_sha256": digest("\n".join(str(receipt["stdout_sha256"]) for receipt in receipts).encode()),
     }
 
