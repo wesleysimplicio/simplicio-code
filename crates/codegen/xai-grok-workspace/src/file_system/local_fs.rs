@@ -39,6 +39,39 @@ impl AsyncFileSystem for LocalFs {
     }
 
     async fn delete_file(&self, path: &Path) -> Result<(), FsError> {
-        self.runtime.delete_file(path).await
+        self.backend.delete_file(path).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file_system::MockFs;
+
+    #[tokio::test]
+    async fn fake_seam_delegates_without_host_io() {
+        let root = PathBuf::from("/virtual-workspace");
+        let backend = Arc::new(MockFs::new(root.clone()));
+        let fs = LocalFs::with_backend(root.clone(), backend);
+        let path = root.join("nested/file.txt");
+
+        fs.write_file(&path, b"runtime-owned").await.unwrap();
+        assert_eq!(fs.read_file(&path).await.unwrap(), b"runtime-owned");
+        fs.delete_file(&path).await.unwrap();
+        assert!(!fs.exists(&path).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn real_seam_fails_closed_without_agent() {
+        let workspace = tempfile::tempdir().unwrap();
+        let path = workspace.path().join("must-not-exist.txt");
+        let fs = LocalFs::new(workspace.path().to_path_buf());
+
+        let error = fs
+            .write_file(&path, b"must not reach host storage")
+            .await
+            .expect_err("the real seam must require Agent and Runtime");
+        assert!(error.to_string().contains("Simplicio Runtime denied"));
+        assert!(!path.exists(), "failure must not fall back to local storage");
     }
 }
