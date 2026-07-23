@@ -9,14 +9,16 @@ use std::{
     time::Duration,
 };
 
-use ignore::{DirEntry, WalkBuilder, WalkState, overrides::OverrideBuilder};
 use nucleo::{
     Match, Matcher, Nucleo, Snapshot, Utf32String,
     pattern::{CaseMatching, MultiPattern, Normalization, Pattern},
 };
+use serde_json::{Value, json};
+use xai_grok_tools::{
+    computer::local::SimplicioRuntimeFs, types::resources::AsyncDirectoryListing,
+};
 
 const NUM_NUCLEO_THREADS: usize = 2;
-const NUM_IGNORE_THREADS: usize = 8;
 
 #[derive(Debug, Clone, Default)]
 pub struct FuzzyMatchResult {
@@ -49,13 +51,18 @@ pub struct FuzzyFileMatcher {
     matcher: Matcher,
     walk_handle: Option<JoinHandle<()>>,
     cancel: Arc<AtomicBool>,
-    top_entries: Vec<FuzzyMatchResult>,
     dirs: bool,
+    runtime: Arc<dyn AsyncDirectoryListing>,
 }
 
 impl FuzzyFileMatcher {
     /// Create a new matcher with default config focused on matching paths.
     pub fn new(root: &Path) -> Self {
+        Self::with_runtime(root, Arc::new(SimplicioRuntimeFs::new(root.to_owned())))
+    }
+
+    /// Creates a matcher with an injectable Runtime listing backend.
+    pub fn with_runtime(root: &Path, runtime: Arc<dyn AsyncDirectoryListing>) -> Self {
         let matcher_config = nucleo::Config::DEFAULT.match_paths();
         // matcher_config.prefer_prefix = true; // yes or no? nucleo docs lean towards no
 
@@ -74,8 +81,8 @@ impl FuzzyFileMatcher {
             walk_handle: None,
             cancel: Arc::new(AtomicBool::new(false)),
             query: String::new(),
-            top_entries: Vec::new(),
             dirs: false,
+            runtime,
         }
     }
 
@@ -84,10 +91,7 @@ impl FuzzyFileMatcher {
     }
 
     /// Start a new walk and restart nucleo matcher.
-    pub fn restart_walk_custom(
-        &mut self,
-        make_walker: impl FnOnce(&mut WalkBuilder) -> &mut WalkBuilder,
-    ) {
+    fn restart_walk_with_hidden(&mut self, hidden: bool) {
         // first, wait for previous walker to finish if it's up
         self.cancel.store(true, Ordering::Relaxed);
         if let Some(walk_handle) = self.walk_handle.take() {
@@ -100,96 +104,86 @@ impl FuzzyFileMatcher {
         // we're back in business
         self.cancel.store(false, Ordering::Relaxed);
 
-        // build the walker(s)
-        let walker_builder = make_walker(
-            WalkBuilder::new(&self.root)
-                .threads(NUM_IGNORE_THREADS)
-                .follow_links(false)
-                .git_ignore(true)
-                .git_global(true)
-                .git_exclude(true)
-                .ignore(true)
-                .hidden(true)
-                .require_git(false)
-                .overrides(
-                    OverrideBuilder::new(&self.root)
-                        .add("!.git")
-                        .unwrap()
-                        .build()
-                        .unwrap(),
-                ),
-        )
-        .clone();
-
-        fn check_entry<'a>(entry: &'a DirEntry, root: &Path) -> Option<(&'a str, bool)> {
-            let path = entry.path();
-            if path != root
-                && let Some(file_type) = entry.file_type()
-                && (file_type.is_file() || file_type.is_dir())
-                && let Ok(path) = path.strip_prefix(root)
-                && let Some(path) = path.as_os_str().to_str()
-                && !path.is_empty()
-            {
-                Some((path, file_type.is_dir()))
-            } else {
-                None
-            }
-        }
-
-        // we'll just do it in a blocking way here assuming it's super fast anyway
-        let top_walker = walker_builder
-            .clone()
-            .max_depth(Some(1))
-            .sort_by_file_name(|a, b| a.cmp(b))
-            .build();
-        let top_entries = top_walker
-            .into_iter()
-            .filter_map(|entry| {
-                let entry = entry.ok()?;
-                let (path, is_dir) = check_entry(&entry, &self.root)?;
-                Some(FuzzyMatchResult {
-                    path: path.into(),
-                    score: 0,
-                    indices: Vec::new(),
-                    is_dir,
-                })
-            })
-            .collect::<Vec<_>>();
-
         let injector = self.nucleo.injector();
         let root = self.root.clone();
         let cancel = self.cancel.clone();
+        let runtime = self.runtime.clone();
 
-        // link walker threads with injectors and start it up
-        let walker = walker_builder.build_parallel();
         let walk_handle = thread::spawn(move || {
-            walker.run(|| {
-                let injector = injector.clone();
-                let root = root.clone();
-                let cancel = cancel.clone();
-                Box::new(move |entry| {
-                    if cancel.load(Ordering::Relaxed) {
-                        return WalkState::Quit;
-                    } else if let Ok(entry) = entry
-                        && let Some((path, is_dir)) = check_entry(&entry, &root)
-                    {
-                        injector.push(MatchEntry { is_dir }, |_entry, columns| {
-                            columns[0] = path.into();
-                        });
+            let Ok(tokio_runtime) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
+            let request = runtime.list_directory(
+                &root,
+                json!({
+                    "depth": usize::MAX,
+                    "include_hidden": hidden,
+                    "follow_symlinks": false,
+                    "respect_git_ignore": !hidden,
+                }),
+            );
+            let payload = tokio_runtime.block_on(async {
+                tokio::pin!(request);
+                loop {
+                    tokio::select! {
+                        result = &mut request => break result.ok(),
+                        _ = tokio::time::sleep(Duration::from_millis(10)) => {
+                            if cancel.load(Ordering::Relaxed) { break None; }
+                        }
                     }
-                    WalkState::Continue
-                })
+                }
             });
+            let Some(payload) = payload.and_then(|value| runtime_payload(value).ok()) else {
+                return;
+            };
+            let Some(nodes) = payload
+                .get("nodes")
+                .or_else(|| payload.get("entries"))
+                .and_then(Value::as_array)
+            else {
+                return;
+            };
+            for node in nodes {
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+                let Some(path) = node
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .or_else(|| node.get("name").and_then(Value::as_str))
+                else {
+                    continue;
+                };
+                let path = path.trim_end_matches('/');
+                if path.is_empty() {
+                    continue;
+                }
+                let is_dir = node
+                    .get("is_dir")
+                    .and_then(Value::as_bool)
+                    .or_else(|| {
+                        node.get("type")
+                            .or_else(|| node.get("nodeType"))
+                            .and_then(Value::as_str)
+                            .map(|kind| kind.eq_ignore_ascii_case("directory"))
+                    })
+                    .unwrap_or(false);
+                injector.push(MatchEntry { is_dir }, |_entry, columns| {
+                    columns[0] = path.into()
+                });
+            }
         });
         self.walk_handle = Some(walk_handle);
-        self.top_entries = top_entries;
 
         self.nucleo.tick(0);
     }
 
     /// Restart the walk with default walker parameters.
     pub fn restart_walk(&mut self) {
-        self.restart_walk_custom(|w| w);
+        self.restart_walk_with_hidden(false);
     }
 
     /// Set the query to a given string and trigger reparse.
@@ -219,12 +213,6 @@ impl FuzzyFileMatcher {
 
     /// Sends a tick to nucleo matcher. Can be safely called at any frequency.
     pub fn tick(&mut self, tick_timeout_ms: u64) -> FuzzyMatcherStatus {
-        if self.query.is_empty() {
-            return FuzzyMatcherStatus {
-                done: true,
-                changed: false,
-            };
-        }
         let status = self.nucleo.tick(tick_timeout_ms);
         let done = self.nucleo.active_injectors() == 0 && !status.running;
         FuzzyMatcherStatus {
@@ -236,7 +224,15 @@ impl FuzzyFileMatcher {
     /// Total number of currently matched items in the snapshot.
     pub fn num_items(&self) -> usize {
         if self.query.is_empty() {
-            self.top_entries.len()
+            let snapshot = self.nucleo.snapshot();
+            snapshot
+                .matches()
+                .iter()
+                .filter(|matched| {
+                    let item = unsafe { snapshot.get_item_unchecked(matched.idx) };
+                    !item.matcher_columns[0].slice(..).to_string().contains('/')
+                })
+                .count()
         } else {
             self.nucleo.snapshot().item_count() as _
         }
@@ -258,14 +254,25 @@ impl FuzzyFileMatcher {
 
         // special case: if query is empty, return top items only
         if self.query.is_empty() {
-            return self
-                .top_entries
+            let snapshot = self.nucleo.snapshot();
+            let mut entries = snapshot
+                .matches()
                 .iter()
-                // dirs_only=true means only directories; dirs_only=false means both files and directories
-                .filter(|e| !self.dirs || e.is_dir)
-                .take(k)
-                .cloned()
-                .collect(); // should be already sorted
+                .filter_map(|matched| {
+                    let item = unsafe { snapshot.get_item_unchecked(matched.idx) };
+                    let path = item.matcher_columns[0].clone();
+                    (!path.slice(..).to_string().contains('/') && (!self.dirs || item.data.is_dir))
+                        .then_some(FuzzyMatchResult {
+                            path,
+                            score: 0,
+                            indices: vec![],
+                            is_dir: item.data.is_dir,
+                        })
+                })
+                .collect::<Vec<_>>();
+            entries.sort_by(|a, b| a.path.cmp(&b.path));
+            entries.truncate(k);
+            return entries;
         }
 
         // https://github.com/helix-editor/helix/blob/d79cce4e4bfc24dd204f1b294c899ed73f7e9453/helix-term/src/ui/completion.rs#L369
@@ -351,6 +358,18 @@ impl FuzzyFileMatcher {
     }
 }
 
+fn runtime_payload(value: Value) -> Result<Value, serde_json::Error> {
+    let Some(text) = value
+        .get("content")
+        .and_then(Value::as_array)
+        .and_then(|items| items.iter().find_map(|item| item.get("text")))
+        .and_then(Value::as_str)
+    else {
+        return Ok(value);
+    };
+    serde_json::from_str(text)
+}
+
 impl Drop for FuzzyFileMatcher {
     fn drop(&mut self) {
         // note: walker threads *may* get detached for a little while but hopefully not for too long
@@ -410,9 +429,7 @@ impl FuzzyFileMatcherDaemon {
                             matcher.restart_walk();
                         } else {
                             tracing::trace!("restarting hidden walk");
-                            matcher.restart_walk_custom(|w| {
-                                w.hidden(false).ignore(false).git_ignore(false)
-                            });
+                            matcher.restart_walk_with_hidden(true);
                         }
                         generation += 1;
                         *results.lock().unwrap() = FuzzyMatcherDaemonResults::default();
@@ -475,5 +492,41 @@ impl FuzzyFileMatcherDaemon {
 impl Drop for FuzzyFileMatcherDaemon {
     fn drop(&mut self) {
         _ = self.tx.send(FuzzyMatcherDaemonMessage::Stop).ok();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xai_grok_tools::computer::types::ComputerError;
+
+    struct FakeRuntime;
+
+    #[async_trait::async_trait]
+    impl AsyncDirectoryListing for FakeRuntime {
+        async fn list_directory(
+            &self,
+            _path: &Path,
+            _options: Value,
+        ) -> Result<Value, ComputerError> {
+            Ok(json!({"nodes": [
+                {"path": "src", "type": "directory"},
+                {"path": "src/runtime.rs", "type": "file"},
+                {"path": "README.md", "type": "file"}
+            ]}))
+        }
+    }
+
+    #[test]
+    fn matcher_indexes_runtime_listing_on_background_thread() {
+        let mut matcher = FuzzyFileMatcher::with_runtime(Path::new("/repo"), Arc::new(FakeRuntime));
+        matcher.restart_walk();
+        matcher.set_query("runtime", false);
+
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while !matcher.tick(10).done && std::time::Instant::now() < deadline {}
+        let matches = matcher.get_top_k(10);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].path.to_string(), "src/runtime.rs");
     }
 }

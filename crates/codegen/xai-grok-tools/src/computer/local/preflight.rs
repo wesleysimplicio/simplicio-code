@@ -253,14 +253,19 @@ fn runtime_error(error: &RuntimeError) -> CheckDiagnostic {
     }
 }
 
-fn runtime_capability_check(capabilities: &simplicio_runtime_client::RuntimeCapabilities) -> CheckDiagnostic {
+fn runtime_capability_check(
+    capabilities: &simplicio_runtime_client::RuntimeCapabilities,
+) -> CheckDiagnostic {
     let missing = REQUIRED_RUNTIME_TOOLS
         .iter()
         .filter(|tool| !capabilities.supports(tool))
         .copied()
         .collect::<Vec<_>>();
     if missing.is_empty() {
-        return ready("runtime.ready", "installed Runtime handshake and Code tool contract accepted");
+        return ready(
+            "runtime.ready",
+            "installed Runtime handshake and Code tool contract accepted",
+        );
     }
     CheckDiagnostic {
         component: "runtime".into(),

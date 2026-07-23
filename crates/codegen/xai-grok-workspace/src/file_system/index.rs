@@ -133,8 +133,6 @@ use std::path::Path;
 
 use bstr::{BStr, BString};
 use hashbrown::HashMap;
-use ignore::WalkBuilder;
-use ignore::overrides::OverrideBuilder;
 use nohash_hasher::BuildNoHashHasher;
 use rustc_hash::FxHasher;
 
@@ -163,14 +161,6 @@ const ENTRY_FLAG_IS_DIR: u8 = 0x01;
 
 #[allow(dead_code)] // Documentation constant
 const MAX_DEPTH: usize = 255;
-
-/// Number of threads to use for parallel directory walking.
-fn num_cpus() -> usize {
-    std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(4)
-        .min(8) // Cap at 8 to avoid excessive parallelism
-}
 
 // ============================================================================
 // WalkOptions - configuration for directory walking
@@ -599,70 +589,33 @@ impl FileIndex {
         options: WalkOptions,
     ) -> io::Result<Self> {
         let root = root.as_ref();
-        let root_canonical = dunce::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-
-        let mut builder = WalkBuilder::new(&root_canonical);
-        builder
-            .follow_links(false)
-            .git_ignore(options.respect_gitignore)
-            .git_global(options.respect_gitignore)
-            .git_exclude(options.respect_gitignore)
-            .ignore(options.respect_ignore)
-            .hidden(options.skip_hidden)
-            .require_git(false)
-            .max_depth(options.max_depth);
-
-        // Always exclude .git directory
-        if let Ok(overrides) = OverrideBuilder::new(&root_canonical)
-            .add("!.git")
-            .and_then(|b| b.build())
-        {
-            builder.overrides(overrides);
-        }
-
-        // Use parallel walking for better performance
-        if options.parallel {
-            builder.threads(num_cpus());
-        }
-
+        let max_depth = options.max_depth.unwrap_or(MAX_DEPTH);
+        let exclude_globs = [String::from(".git/**")];
+        let list = super::walk::list_directory_paged(
+            root,
+            super::walk::ListOptions {
+                depth: max_depth,
+                follow_symlinks: false,
+                respect_git_ignore: options.respect_gitignore && options.respect_ignore,
+                include_hidden: !options.skip_hidden,
+                include_globs: &[],
+                exclude_globs: &exclude_globs,
+                offset: 0,
+                limit: super::walk::MAX_LIST_COLLECT,
+                confine_to_canonical_root: None,
+            },
+            super::walk::MAX_LIST_COLLECT,
+        );
         let mut index = FileIndex::new();
-
-        for entry in builder.build() {
-            let entry = match entry {
-                Ok(e) => e,
-                Err(_) => continue,
-            };
-
-            let path = entry.path();
-
-            // Skip the root itself
-            if path == root_canonical {
-                continue;
-            }
-
-            // Get file type
-            let file_type = match entry.file_type() {
-                Some(ft) => ft,
-                None => continue,
-            };
-
-            // Only index files and directories
-            if !file_type.is_file() && !file_type.is_dir() {
-                continue;
-            }
-
-            // Get relative path
-            let rel_path = match path.strip_prefix(&root_canonical) {
+        for entry in list.entries {
+            let rel_path = match entry.abs_path.strip_prefix(root) {
                 Ok(p) => p,
                 Err(_) => continue,
             };
-
-            // Skip empty paths
             if rel_path.as_os_str().is_empty() {
                 continue;
             }
-
-            index.insert(rel_path, file_type.is_dir());
+            index.insert(rel_path, entry.is_dir);
         }
 
         Ok(index)

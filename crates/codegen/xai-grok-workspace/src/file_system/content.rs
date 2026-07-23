@@ -6,8 +6,8 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use xai_grok_tools::computer::local::SimplicioRuntimeFs;
 use xai_grok_tools::computer::types::AsyncSearch;

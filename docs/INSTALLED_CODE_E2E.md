@@ -13,6 +13,14 @@ replaced with a private socket path. Missing, non-executable, or incompatible
 dependencies fail closed. Only this mode can emit `proof_kind:
 external_installed`.
 
+When no model provider is configured, the independently shipped AgentHost can
+run its explicit `--deterministic-e2e` mode. That mode still exercises the real
+AgentHost session, causal identity, cancellation/reconciliation, restart and
+advisory replay boundaries, but performs zero provider calls. It is valid
+evidence for Code↔AgentHost↔Runtime transport/effect integration; it is not
+evidence of model quality or provider availability. Runtime remains
+provider/model-neutral and does not embed a local LLM.
+
 The harness starts an AgentHost Unix socket and a Runtime MCP stdio process,
 then removes the temporary workspace. It exercises `host.status`, stable
 causal identity, turns from the TUI, headless, ACP, and workspace entry-point

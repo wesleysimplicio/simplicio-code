@@ -245,10 +245,7 @@ async fn read_file_as_string(
 /// Translate the already-computed patch into the Runtime `simplicio_edit`
 /// plan shape. Paths stay repo-relative at this boundary; RuntimeClient then
 /// performs its own canonical containment check before sending the request.
-fn build_runtime_edit_plan(
-    cwd: &std::path::Path,
-    changes: &[FileChange],
-) -> Result<Value, String> {
+fn build_runtime_edit_plan(cwd: &std::path::Path, changes: &[FileChange]) -> Result<Value, String> {
     let relative = |path: &std::path::Path| {
         path.strip_prefix(cwd)
             .map(|path| path.to_string_lossy().replace('\\', "/"))
@@ -683,7 +680,10 @@ impl xai_tool_runtime::Tool for ApplyPatchTool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::computer::{local::LocalFs, types::{AsyncFileSystem, ComputerError}};
+    use crate::computer::{
+        local::LocalFs,
+        types::{AsyncFileSystem, ComputerError},
+    };
     use crate::notification::types::ToolNotificationHandle;
     use crate::types::resources::Resources;
     use crate::types::tool_metadata::test_ctx;
@@ -718,18 +718,19 @@ mod tests {
             _data: &[u8],
         ) -> Result<(), ComputerError> {
             self.writes.fetch_add(1, Ordering::Relaxed);
-            Err(ComputerError::io("local write must not be used by Runtime edits"))
+            Err(ComputerError::io(
+                "local write must not be used by Runtime edits",
+            ))
         }
 
         async fn delete_file(&self, _path: &std::path::Path) -> Result<(), ComputerError> {
             self.deletes.fetch_add(1, Ordering::Relaxed);
-            Err(ComputerError::io("local delete must not be used by Runtime edits"))
+            Err(ComputerError::io(
+                "local delete must not be used by Runtime edits",
+            ))
         }
 
-        async fn apply_edit(
-            &self,
-            plan: Value,
-        ) -> Result<Option<Value>, ComputerError> {
+        async fn apply_edit(&self, plan: Value) -> Result<Option<Value>, ComputerError> {
             if self.fail_edit {
                 return Err(ComputerError::io("Runtime rejected atomic edit"));
             }
@@ -982,7 +983,10 @@ mod tests {
         assert!(error.to_string().contains("Runtime atomic edit failed"));
         assert_eq!(fs.writes.load(Ordering::Relaxed), 0);
         assert_eq!(fs.deletes.load(Ordering::Relaxed), 0);
-        assert_eq!(std::fs::read_to_string(tmp.path().join("update.txt")).unwrap(), "old\n");
+        assert_eq!(
+            std::fs::read_to_string(tmp.path().join("update.txt")).unwrap(),
+            "old\n"
+        );
     }
 
     #[tokio::test]
@@ -993,12 +997,16 @@ mod tests {
         let result = xai_tool_runtime::Tool::run(
             &ApplyPatchTool,
             test_ctx(resources.into_shared()),
-            make_input(&wrap_patch("*** Add File: ../apply-patch-escape.txt\n+blocked")),
+            make_input(&wrap_patch(
+                "*** Add File: ../apply-patch-escape.txt\n+blocked",
+            )),
         )
         .await
         .unwrap();
 
-        assert!(matches!(result, ApplyPatchOutput::ApplicationError(message) if message.contains("escapes workspace")));
+        assert!(
+            matches!(result, ApplyPatchOutput::ApplicationError(message) if message.contains("escapes workspace"))
+        );
         assert!(!outside.exists());
     }
 
