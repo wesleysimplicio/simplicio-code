@@ -2,8 +2,8 @@
 """Hermetic tests for #52's wrapper and disposable cleanup guard."""
 from __future__ import annotations
 
-import json
 import os
+import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -30,7 +30,7 @@ def main() -> int:
         target = root / "target"
         target.mkdir()
         (target / "artifact").write_bytes(b"x" * 32)
-        receipt = root / "receipts" / "run.json"
+        receipt = root / "receipts" / "run.hbp"
         original = wrapper.disk.run_preflight
         observations = iter(
             [
@@ -43,10 +43,21 @@ def main() -> int:
             exit_code = wrapper.run([sys.executable, "-c", "pass"], str(root), 5, receipt)
         finally:
             wrapper.disk.run_preflight = original
-        report = json.loads(receipt.read_text(encoding="utf-8"))
-        check("allowed command runs and writes receipt", exit_code == 2 and receipt.is_file())
-        check("receipt contains initial and final observations", "initial" in report and "final" in report)
-        check("post-command disk breach is visible", report["decision"] == "completed_disk_budget_breached")
+        ledger = receipt.read_bytes()
+        body_length = struct.unpack_from("<I", ledger, 8)[0]
+        body = ledger[12:12 + body_length]
+        cursor = 16
+        decoded = []
+        for _ in range(3):
+            length = struct.unpack_from("<I", body, cursor)[0]
+            cursor += 4
+            decoded.append(body[cursor:cursor + length].decode("utf-8"))
+            cursor += length
+        payload = bytes.fromhex(decoded[1]).decode("utf-8")
+        check("allowed command runs and writes HBP receipt", exit_code == 2 and ledger[:8] == b"HBP1\x01\x00\x00\x00")
+        check("HBP record has exact bounded length", len(ledger) == 12 + body_length)
+        check("receipt contains initial and final observations", "initial_free_bytes=10" in payload and "final_free_bytes=4" in payload)
+        check("post-command disk breach is visible", "decision=completed_disk_budget_breached" in payload)
 
         planned = cleanup_disposable.cleanup(root, delete=False, environ={})
         check("cleanup defaults to a plan", planned["status"] == "planned" and target.exists())
