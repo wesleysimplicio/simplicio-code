@@ -157,7 +157,11 @@ fn render_runtime_listing(display_path: &Path, payload: serde_json::Value) -> Li
                     .map(|kind| kind.eq_ignore_ascii_case("directory"))
             })
             .unwrap_or_else(|| name.ends_with('/'));
-        let suffix = if is_dir && !name.ends_with('/') { "/" } else { "" };
+        let suffix = if is_dir && !name.ends_with('/') {
+            "/"
+        } else {
+            ""
+        };
         lines.push(format!("  - {name}{suffix}"));
     }
     if payload
@@ -595,16 +599,14 @@ impl xai_tool_runtime::Tool for ListDirTool {
             backend.map(|backend| (backend, max_output_chars, respect_gitignore))
         };
         if let Some((backend, max_output_chars, respect_gitignore)) = runtime_listing {
-            return Ok(
-                run_runtime_listing(
-                    backend,
-                    &path,
-                    &display_path,
-                    max_output_chars,
-                    respect_gitignore,
-                )
-                .await,
-            );
+            return Ok(run_runtime_listing(
+                backend,
+                &path,
+                &display_path,
+                max_output_chars,
+                respect_gitignore,
+            )
+            .await);
         }
 
         let meta = tokio::fs::metadata(&path).await;
@@ -703,8 +705,8 @@ Other details:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::resources::{AsyncDirectoryListing, Cwd, DirectoryBackend, Resources};
     use crate::computer::types::ComputerError;
+    use crate::types::resources::{AsyncDirectoryListing, Cwd, DirectoryBackend, Resources};
     use crate::types::tool_metadata::test_ctx;
     use std::fs::{self, File};
     use std::path::{Path, PathBuf};

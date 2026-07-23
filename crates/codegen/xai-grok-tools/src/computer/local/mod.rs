@@ -3,19 +3,21 @@ pub mod cgroup;
 pub mod embedded_search_tools;
 pub mod file_system;
 pub mod mock_fs;
+pub mod preflight;
 #[cfg(unix)]
 pub mod shell_state;
 pub mod simplicio_runtime;
-pub mod preflight;
 pub mod terminal;
 
 pub use cgroup::{CgroupMemoryConfig, PROCESS_OOM_EXIT_CODE};
 pub use file_system::LocalFs;
 pub use mock_fs::MockFs;
-pub use simplicio_runtime::{RuntimeExecInvoker, SimplicioRuntimeFs, SimplicioRuntimeTerminalBackend};
 pub use preflight::{
-    CheckDiagnostic, CheckStatus, CausalIdentityDiagnostic, OfflineContractFixture,
+    CausalIdentityDiagnostic, CheckDiagnostic, CheckStatus, OfflineContractFixture,
     ProductivePreflightReport, run_installed_preflight,
+};
+pub use simplicio_runtime::{
+    RuntimeExecInvoker, SimplicioRuntimeFs, SimplicioRuntimeTerminalBackend,
 };
 pub use terminal::{ExitStatus, LocalTerminalBackend};
 

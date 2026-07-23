@@ -713,7 +713,11 @@ async fn runtime_search(
     use crate::types::tool_metadata::{resolve_cwd, shared_resources};
 
     let resources = shared_resources(ctx)?;
-    let backend = resources.lock().await.get::<SearchBackend>().map(|b| b.0.clone());
+    let backend = resources
+        .lock()
+        .await
+        .get::<SearchBackend>()
+        .map(|b| b.0.clone());
     let Some(backend) = backend else {
         return Ok(None);
     };
@@ -740,16 +744,16 @@ async fn runtime_search(
             res.get::<DenyReadGlobs>()
                 .map(|d| d.0.clone())
                 .unwrap_or_default(),
-            res.get::<Params<GrepParams>>()
-                .cloned()
-                .unwrap_or_default(),
+            res.get::<Params<GrepParams>>().cloned().unwrap_or_default(),
         )
     };
     let display_base = display_cwd_or_cwd(&cwd, display_cwd.as_deref());
     let display_root = display_base.display().to_string();
-    let search_path = input.path.as_deref().filter(|p| !p.trim().is_empty()).map(|p| {
-        resolve_model_path(&cwd, display_cwd.as_deref(), p)
-    });
+    let search_path = input
+        .path
+        .as_deref()
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| resolve_model_path(&cwd, display_cwd.as_deref(), p));
     let mut globs = input
         .glob
         .as_deref()
@@ -794,7 +798,12 @@ async fn runtime_search(
         if let Some(file) = file_matches.last_mut() {
             file.matches.push(GrepLineMatch {
                 line_number: item.line as usize,
-                content: truncate_line(&item.text, params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE)),
+                content: truncate_line(
+                    &item.text,
+                    params
+                        .max_chars_per_line
+                        .unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                ),
             });
         }
     }
@@ -804,18 +813,25 @@ async fn runtime_search(
             format_content_output(
                 lines,
                 outcome.truncated,
-                params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                params
+                    .max_chars_per_line
+                    .unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
                 params.max_output_bytes.unwrap_or(DEFAULT_TOOL_OUTPUT_BYTES),
             ),
             outcome.matches.len(),
         ),
         OutputMode::FilesWithMatches => {
-            let files = file_matches.iter().map(|f| f.path.clone()).collect::<Vec<_>>();
+            let files = file_matches
+                .iter()
+                .map(|f| f.path.clone())
+                .collect::<Vec<_>>();
             (
                 format_files_with_matches_output(
                     files.clone(),
                     outcome.truncated,
-                    params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                    params
+                        .max_chars_per_line
+                        .unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
                     params.max_output_bytes.unwrap_or(DEFAULT_TOOL_OUTPUT_BYTES),
                 ),
                 files.len(),
@@ -831,7 +847,9 @@ async fn runtime_search(
                 format_count_output(
                     counts,
                     outcome.truncated,
-                    params.max_chars_per_line.unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
+                    params
+                        .max_chars_per_line
+                        .unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
                     params.max_output_bytes.unwrap_or(DEFAULT_TOOL_OUTPUT_BYTES),
                 ),
                 total,
@@ -1880,8 +1898,8 @@ mod tests {
     async fn productive_grep_uses_runtime_search_result() {
         let mut resources = Resources::new();
         resources.insert(Cwd(std::path::PathBuf::from("/workspace")));
-        resources.insert(crate::types::resources::SearchBackend(
-            std::sync::Arc::new(FakeRuntimeSearch {
+        resources.insert(crate::types::resources::SearchBackend(std::sync::Arc::new(
+            FakeRuntimeSearch {
                 result: Ok(SearchOutcome {
                     matches: vec![SearchMatch {
                         path: "virtual.rs".to_owned(),
@@ -1890,8 +1908,8 @@ mod tests {
                     }],
                     truncated: false,
                 }),
-            }),
-        ));
+            },
+        )));
         let output = xai_tool_runtime::Tool::run(
             &GrepTool,
             test_ctx(resources.into_shared()),
@@ -1908,11 +1926,11 @@ mod tests {
     async fn productive_grep_fails_closed_on_runtime_search_error() {
         let mut resources = Resources::new();
         resources.insert(Cwd(std::env::temp_dir()));
-        resources.insert(crate::types::resources::SearchBackend(
-            std::sync::Arc::new(FakeRuntimeSearch {
+        resources.insert(crate::types::resources::SearchBackend(std::sync::Arc::new(
+            FakeRuntimeSearch {
                 result: Err("Runtime unavailable".to_owned()),
-            }),
-        ));
+            },
+        )));
         let error = xai_tool_runtime::Tool::run(
             &GrepTool,
             test_ctx(resources.into_shared()),

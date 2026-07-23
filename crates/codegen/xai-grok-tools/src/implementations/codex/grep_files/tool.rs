@@ -236,7 +236,11 @@ impl xai_tool_runtime::Tool for CodexGrepFilesTool {
         // contract `SimplicioRuntimeFs::read_file`/`write_file`/`delete_file`
         // already established. When absent, behavior is unchanged from
         // before this backend existed.
-        let search_backend = resources.lock().await.get::<SearchBackend>().map(|b| b.0.clone());
+        let search_backend = resources
+            .lock()
+            .await
+            .get::<SearchBackend>()
+            .map(|b| b.0.clone());
         if let Some(backend) = search_backend {
             let globs = include.iter().cloned().collect::<Vec<_>>();
             return match backend
@@ -262,7 +266,9 @@ impl xai_tool_runtime::Tool for CodexGrepFilesTool {
                         }
                     }
                     if files.is_empty() {
-                        Ok(CodexGrepFilesOutput::NoMatches("No matches found.".to_string()))
+                        Ok(CodexGrepFilesOutput::NoMatches(
+                            "No matches found.".to_string(),
+                        ))
                     } else {
                         let file_count = files.len();
                         Ok(CodexGrepFilesOutput::Matches {

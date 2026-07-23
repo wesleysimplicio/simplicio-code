@@ -341,7 +341,11 @@ impl xai_tool_runtime::Tool for CodexListDirTool {
         // available only to tests/legacy contexts that did not negotiate the
         // Runtime directory contract.
         let resources = crate::types::tool_metadata::shared_resources(&ctx)?;
-        let runtime_backend = resources.lock().await.get::<DirectoryBackend>().map(|b| b.0.clone());
+        let runtime_backend = resources
+            .lock()
+            .await
+            .get::<DirectoryBackend>()
+            .map(|b| b.0.clone());
         if let Some(backend) = runtime_backend {
             let payload = backend
                 .list_directory(
@@ -477,7 +481,9 @@ mod tests {
     ) -> xai_tool_runtime::ToolCallContext {
         let mut resources = Resources::new();
         resources.insert(Cwd(cwd.to_path_buf()));
-        resources.insert(DirectoryBackend(std::sync::Arc::new(FakeRuntimeList { response })));
+        resources.insert(DirectoryBackend(std::sync::Arc::new(FakeRuntimeList {
+            response,
+        })));
         let mut ctx = xai_tool_runtime::ToolCallContext::default();
         ctx.extensions.insert(resources.into_shared());
         ctx
