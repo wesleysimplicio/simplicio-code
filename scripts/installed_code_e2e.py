@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -26,6 +27,8 @@ REQUIRED_RUNTIME_TOOLS = frozenset(
         "simplicio_fs_stat",
         "simplicio_fs_write",
         "simplicio_search",
+        "simplicio_prototype_artifact_read",
+        "simplicio_prototype_artifact_write",
     )
 )
 REQUIRED_AGENT_CAPABILITIES = frozenset(
@@ -411,6 +414,42 @@ def run(
                         ),
                     },
                 )
+                prototype_bytes = b"prototype-first-installed-e2e\n"
+                prototype_id = "installed-preview"
+                prototype_write = runtime_call(
+                    runtime,
+                    7,
+                    "tools/call",
+                    {
+                        "name": "simplicio_prototype_artifact_write",
+                        "arguments": effect_arguments(
+                            "simplicio_prototype_artifact_write",
+                            {
+                                "repo": str(temp),
+                                "artifact_id": prototype_id,
+                                "path": f".simplicio/artifacts/prototype-first/{prototype_id}.json",
+                                "content_base64": base64.b64encode(prototype_bytes).decode("ascii"),
+                                "encoding": "base64",
+                                "atomic": True,
+                                "rollback": True,
+                            },
+                            transaction_id="e2e-prototype-write",
+                        ),
+                    },
+                )
+                prototype_read = runtime_call(
+                    runtime,
+                    8,
+                    "tools/call",
+                    {
+                        "name": "simplicio_prototype_artifact_read",
+                        "arguments": {
+                            "repo": str(temp),
+                            "artifact_id": prototype_id,
+                            "path": f".simplicio/artifacts/prototype-first/{prototype_id}.json",
+                        },
+                    },
+                )
             finally:
                 runtime.terminate()
                 runtime.wait(timeout=2)
@@ -422,6 +461,8 @@ def run(
             list_payload = json.loads(listing["content"][0]["text"])
             stat_payload = json.loads(stat["content"][0]["text"])
             exec_payload = json.loads(execution["content"][0]["text"])
+            prototype_write_payload = json.loads(prototype_write["content"][0]["text"])
+            prototype_read_payload = json.loads(prototype_read["content"][0]["text"])
             exec_stdout = exec_payload.get("stdout")
             if isinstance(exec_stdout, dict):
                 exec_stdout = exec_stdout.get("data")
@@ -433,6 +474,16 @@ def run(
                 raise RuntimeError("Runtime list/stat did not observe the Runtime edit")
             if exec_payload.get("success") is not True:
                 raise RuntimeError("Runtime exec did not return an authoritative completed effect")
+            if (
+                prototype_write_payload.get("schema")
+                != "simplicio.prototype-mcp-artifact/v1"
+                or prototype_read_payload.get("receipt", {}).get("schema")
+                != "simplicio.prototype-mcp-artifact/v1"
+                or prototype_read_payload.get("content_base64")
+                != base64.b64encode(prototype_bytes).decode("ascii")
+                or not (temp / ".simplicio/artifacts/prototype-first/installed-preview.json").is_file()
+            ):
+                raise RuntimeError("Runtime Prototype-First artifact round trip did not match receipts")
             if first["advisories"] != replay["advisories"]:
                 raise RuntimeError("advisory replay is not deterministic")
             agent.terminate()
@@ -482,6 +533,8 @@ def run(
                     "stat": stat_payload["schema"],
                     "edit": edit_payload["schema"],
                     "exec": exec_payload["schema"],
+                    "prototype_artifact_write": prototype_write_payload["schema"],
+                    "prototype_artifact_read": prototype_read_payload["receipt"]["schema"],
                     "effect_state": "completed" if exec_payload.get("success") else "failed",
                 },
                 "surfaces": surfaces,
