@@ -1,12 +1,20 @@
+use base64::Engine as _;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
 use std::{
     collections::BTreeMap,
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socket_path};
 use simplicio_runtime_client::{
-    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SharedRuntimeClient, start_workspace_map,
+    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SearchResult, SharedRuntimeClient,
+    start_workspace_map,
 };
 use simplicio_runtime_client::{
     SocketPipeHubTransportFactory,
@@ -18,6 +26,294 @@ use crate::computer::types::{
     AsyncFileSystem, AsyncSearch, BackgroundHandle, ComputerError, KillOutcome, SearchMatch,
     SearchOutcome, TaskSnapshot, TerminalBackend, TerminalRunRequest, TerminalRunResult,
 };
+
+pub const LOOP_HUB_CLIENT_SCHEMA: &str = "simplicio.loop-hub-client/v1";
+pub const LOOP_HUB_RUNTIME_CALL_SCHEMA: &str = "simplicio.loop-runtime-call/v1";
+const LOOP_HUB_ENDPOINT_ENV: &str = "SIMPLICIO_LOOP_HUB_ENDPOINT";
+const LOOP_HUB_MAX_FRAME_BYTES: usize = 4 * 1024 * 1024;
+
+/// Payload for the Loop Hub's external `runtime_call` method.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct RuntimeCallRequest {
+    pub workspace: String,
+    pub tool: String,
+    pub arguments: Value,
+    pub cwd: String,
+    pub timeout_ms: u64,
+    pub idempotency_key: String,
+}
+
+/// Result envelope returned by the Loop Hub's external `runtime_call` method.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct RuntimeCallResponse {
+    pub schema: String,
+    pub workspace: String,
+    pub tool: String,
+    pub result: Value,
+}
+
+/// Client-only seam for fake Hub tests and the production socket/pipe adapter.
+/// Implementations must not perform a local filesystem fallback.
+pub trait RuntimeCallTransport: Send + Sync {
+    fn call(&self, request: RuntimeCallRequest) -> Result<RuntimeCallResponse, ComputerError>;
+}
+
+#[derive(Debug, Serialize)]
+struct RuntimeCallWireRequest<'a> {
+    schema: &'static str,
+    id: u64,
+    method: &'static str,
+    payload: &'a RuntimeCallRequest,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuntimeCallWireResponse {
+    schema: String,
+    id: u64,
+    ok: bool,
+    #[serde(default)]
+    result: Option<RuntimeCallResponse>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+trait RuntimeCallReadWrite: Read + Write + Send {}
+impl<T: Read + Write + Send> RuntimeCallReadWrite for T {}
+
+struct RuntimeCallChannel {
+    reader: BufReader<Box<dyn RuntimeCallReadWrite>>,
+    writer: Box<dyn RuntimeCallReadWrite>,
+}
+
+impl RuntimeCallChannel {
+    fn connect(endpoint: &str) -> Result<Self, ComputerError> {
+        let endpoint = endpoint.trim();
+        if let Some(path) = endpoint.strip_prefix("unix://") {
+            #[cfg(unix)]
+            {
+                let stream = std::os::unix::net::UnixStream::connect(path)?;
+                let reader_stream = stream.try_clone()?;
+                return Ok(Self {
+                    reader: BufReader::new(Box::new(reader_stream)),
+                    writer: Box::new(stream),
+                });
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = path;
+                return Err(hub_runtime_error(
+                    "unix:// endpoints are only supported on Unix",
+                ));
+            }
+        }
+        if let Some(name) = endpoint.strip_prefix("pipe://") {
+            #[cfg(windows)]
+            {
+                let path = if name.starts_with(r"\\.\pipe\") {
+                    name.to_owned()
+                } else {
+                    format!(r"\\.\pipe\{name}")
+                };
+                let stream = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(path)?;
+                let reader_stream = stream.try_clone()?;
+                return Ok(Self {
+                    reader: BufReader::new(Box::new(reader_stream)),
+                    writer: Box::new(stream),
+                });
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = name;
+                return Err(hub_runtime_error(
+                    "pipe:// endpoints are only supported on Windows",
+                ));
+            }
+        }
+        Err(hub_runtime_error(
+            "Loop Hub endpoint must use unix:// or pipe://",
+        ))
+    }
+
+    fn request(
+        &mut self,
+        id: u64,
+        payload: &RuntimeCallRequest,
+    ) -> Result<RuntimeCallResponse, ComputerError> {
+        let wire = RuntimeCallWireRequest {
+            schema: LOOP_HUB_CLIENT_SCHEMA,
+            id,
+            method: "runtime_call",
+            payload,
+        };
+        serde_json::to_writer(&mut self.writer, &wire)
+            .map_err(|error| hub_runtime_error(error.to_string()))?;
+        self.writer
+            .write_all(b"\n")
+            .and_then(|_| self.writer.flush())
+            .map_err(|error| hub_runtime_error(error.to_string()))?;
+
+        let mut frame = Vec::new();
+        let bytes = self
+            .reader
+            .read_until(b'\n', &mut frame)
+            .map_err(|error| hub_runtime_error(error.to_string()))?;
+        if bytes == 0 {
+            return Err(hub_runtime_error("Loop Hub closed the transport"));
+        }
+        if frame.len() > LOOP_HUB_MAX_FRAME_BYTES {
+            return Err(hub_runtime_error(
+                "Loop Hub response exceeded the frame limit",
+            ));
+        }
+        let response: RuntimeCallWireResponse = serde_json::from_slice(&frame)
+            .map_err(|error| hub_runtime_error(format!("invalid Loop Hub response: {error}")))?;
+        if response.schema != LOOP_HUB_CLIENT_SCHEMA {
+            return Err(hub_runtime_error(
+                "Loop Hub response uses an unsupported client schema",
+            ));
+        }
+        if response.id != id {
+            return Err(hub_runtime_error(
+                "Loop Hub response id does not match the request",
+            ));
+        }
+        if !response.ok {
+            return Err(hub_runtime_error(
+                response
+                    .error
+                    .unwrap_or_else(|| "Loop Hub rejected the runtime_call".into()),
+            ));
+        }
+        let result = response
+            .result
+            .ok_or_else(|| hub_runtime_error("Loop Hub response omitted runtime_call result"))?;
+        if result.schema != LOOP_HUB_RUNTIME_CALL_SCHEMA {
+            return Err(hub_runtime_error(format!(
+                "Loop Hub runtime_call response uses unsupported schema {}",
+                result.schema
+            )));
+        }
+        if result.workspace != payload.workspace || result.tool != payload.tool {
+            return Err(hub_runtime_error(
+                "Loop Hub runtime_call response identity does not match the request",
+            ));
+        }
+        Ok(result)
+    }
+}
+
+/// Transport for an already-running Loop Hub Unix socket or Windows named pipe.
+/// It attaches to the endpoint and never starts Hub, Runtime, Mapper, or a local
+/// filesystem implementation.
+pub struct SocketRuntimeCallTransport {
+    endpoint: String,
+    next_id: AtomicU64,
+}
+
+impl SocketRuntimeCallTransport {
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            next_id: AtomicU64::new(1),
+        }
+    }
+
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+}
+
+impl RuntimeCallTransport for SocketRuntimeCallTransport {
+    fn call(&self, request: RuntimeCallRequest) -> Result<RuntimeCallResponse, ComputerError> {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        RuntimeCallChannel::connect(&self.endpoint)?.request(id, &request)
+    }
+}
+
+fn hub_runtime_error(message: impl Into<String>) -> ComputerError {
+    ComputerError::io(format!(
+        "Simplicio Loop Hub runtime_call failed closed: {}",
+        message.into()
+    ))
+}
+
+fn configured_hub_endpoint() -> Option<String> {
+    std::env::var(LOOP_HUB_ENDPOINT_ENV)
+        .ok()
+        .map(|endpoint| endpoint.trim().to_owned())
+        .filter(|endpoint| !endpoint.is_empty())
+}
+
+fn decode_hub_read_result(value: Value) -> Result<Vec<u8>, ComputerError> {
+    let schema = value
+        .get("schema")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if schema != "simplicio.read-result/v1" {
+        return Err(hub_runtime_error(format!(
+            "unsupported Runtime read response schema {schema}"
+        )));
+    }
+    if value
+        .get("truncated")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return Err(hub_runtime_error("file exceeded the Runtime read limit"));
+    }
+    let content = value
+        .get("content")
+        .and_then(Value::as_str)
+        .ok_or_else(|| hub_runtime_error("Runtime read response omitted content"))?;
+    if value.get("encoding").and_then(Value::as_str) == Some("base64") {
+        let encoded = value
+            .get("bytes_base64")
+            .and_then(Value::as_str)
+            .unwrap_or(content);
+        return base64::engine::general_purpose::STANDARD
+            .decode(encoded)
+            .map_err(|error| hub_runtime_error(format!("invalid base64 read: {error}")));
+    }
+    Ok(content.as_bytes().to_vec())
+}
+
+fn decode_hub_file_read_result(value: Value) -> Result<FileReadResult, ComputerError> {
+    let result: FileReadResult = serde_json::from_value(value)
+        .map_err(|error| hub_runtime_error(format!("invalid Runtime read response: {error}")))?;
+    if result.schema != "simplicio.read-result/v1" {
+        return Err(hub_runtime_error(format!(
+            "unsupported Runtime read response schema {}",
+            result.schema
+        )));
+    }
+    Ok(result)
+}
+
+fn decode_hub_search_result(value: Value) -> Result<SearchOutcome, ComputerError> {
+    let result: SearchResult = serde_json::from_value(value)
+        .map_err(|error| hub_runtime_error(format!("invalid Runtime search response: {error}")))?;
+    if result.schema != "simplicio.search-result/v1" {
+        return Err(hub_runtime_error(format!(
+            "unsupported Runtime search response schema {}",
+            result.schema
+        )));
+    }
+    Ok(SearchOutcome {
+        matches: result
+            .matches
+            .into_iter()
+            .map(|m| SearchMatch {
+                path: m.path,
+                line: m.line,
+                text: m.text,
+            })
+            .collect(),
+        truncated: result.truncated,
+    })
+}
 
 /// Runtime-owned execution boundary used by [`SimplicioRuntimeTerminalBackend`].
 /// The trait makes the production adapter independently testable with a fake
@@ -45,6 +341,8 @@ pub struct SimplicioRuntimeFs {
     agent_socket: PathBuf,
     agent_client: Arc<Mutex<Option<AgentHostCoordinator>>>,
     client: Arc<Mutex<Option<SharedRuntimeClient>>>,
+    hub_transport: Option<Arc<dyn RuntimeCallTransport>>,
+    next_hub_id: AtomicU64,
 }
 
 /// Terminal backend for productive Code sessions. It submits an argv-safe
@@ -231,12 +529,32 @@ impl SimplicioRuntimeFs {
     }
 
     fn with_agent_socket(root: impl Into<PathBuf>, agent_socket: impl Into<PathBuf>) -> Self {
+        Self::with_agent_socket_and_hub_transport(root, agent_socket, None)
+    }
+
+    fn with_agent_socket_and_hub_transport(
+        root: impl Into<PathBuf>,
+        agent_socket: impl Into<PathBuf>,
+        hub_transport: Option<Arc<dyn RuntimeCallTransport>>,
+    ) -> Self {
         Self {
             root: root.into(),
             agent_socket: agent_socket.into(),
             agent_client: Arc::new(Mutex::new(None)),
             client: Arc::new(Mutex::new(None)),
+            hub_transport,
+            next_hub_id: AtomicU64::new(1),
         }
+    }
+
+    /// Creates a filesystem adapter backed by an injected Hub transport.
+    /// This is the production adapter's fake seam; the transport remains the
+    /// sole authority and no local filesystem fallback is introduced.
+    pub fn with_hub_transport(
+        root: impl Into<PathBuf>,
+        transport: Arc<dyn RuntimeCallTransport>,
+    ) -> Self {
+        Self::with_agent_socket_and_hub_transport(root, resolve_socket_path(), Some(transport))
     }
 
     fn agent_profile() -> String {
@@ -333,6 +651,55 @@ impl SimplicioRuntimeFs {
         }
 
         Ok(relative)
+    }
+
+    fn hub_transport(&self) -> Option<Arc<dyn RuntimeCallTransport>> {
+        self.hub_transport.clone().or_else(|| {
+            configured_hub_endpoint().map(|endpoint| {
+                Arc::new(SocketRuntimeCallTransport::new(endpoint)) as Arc<dyn RuntimeCallTransport>
+            })
+        })
+    }
+
+    fn hub_workspace(&self) -> String {
+        self.root
+            .canonicalize()
+            .unwrap_or_else(|_| self.root.clone())
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    fn next_hub_id(&self) -> String {
+        format!(
+            "code-runtime-call-{}",
+            self.next_hub_id.fetch_add(1, Ordering::Relaxed)
+        )
+    }
+
+    async fn call_hub(&self, tool: &str, arguments: Value) -> Result<Value, ComputerError> {
+        let transport = self
+            .hub_transport()
+            .ok_or_else(|| hub_runtime_error("runtime_call transport is not configured"))?;
+        let request = RuntimeCallRequest {
+            workspace: self.hub_workspace(),
+            tool: tool.to_owned(),
+            arguments,
+            cwd: ".".into(),
+            timeout_ms: 120_000,
+            idempotency_key: self.next_hub_id(),
+        };
+        let agent_client = Arc::clone(&self.agent_client);
+        let agent_socket = self.agent_socket.clone();
+        let requires_agent = configured_hub_endpoint().is_some();
+        tokio::task::spawn_blocking(move || {
+            if requires_agent {
+                Self::ensure_agent_ready(&agent_client, &agent_socket)?;
+            }
+            transport.call(request)
+        })
+        .await
+        .map_err(|error| hub_runtime_error(format!("transport task failed: {error}")))?
+        .map(|response| response.result)
     }
 
     /// Verifies the independent Agent host, then runs `op` against a lazily
@@ -485,6 +852,20 @@ impl SimplicioRuntimeFs {
         path: &Path,
         options: serde_json::Value,
     ) -> Result<serde_json::Value, ComputerError> {
+        let relative = self.relative_path(path)?;
+        if self.hub_transport().is_some() {
+            let workspace = self.hub_workspace();
+            return self
+                .call_hub(
+                    "simplicio_fs_list",
+                    json!({
+                        "repo": workspace,
+                        "path": relative.to_string_lossy(),
+                        "options": options,
+                    }),
+                )
+                .await;
+        }
         self.with_client(path, move |client, root, relative| {
             client.list(root, relative, options)
         })
@@ -495,6 +876,19 @@ impl SimplicioRuntimeFs {
     /// [`Self::list_workspace`], this remains fail-closed on either missing
     /// dependency and performs no local filesystem fallback.
     pub async fn stat_workspace(&self, path: &Path) -> Result<serde_json::Value, ComputerError> {
+        let relative = self.relative_path(path)?;
+        if self.hub_transport().is_some() {
+            let workspace = self.hub_workspace();
+            return self
+                .call_hub(
+                    "simplicio_fs_stat",
+                    json!({
+                        "repo": workspace,
+                        "path": relative.to_string_lossy(),
+                    }),
+                )
+                .await;
+        }
         self.with_client(path, |client, root, relative| client.stat(root, relative))
             .await
     }
@@ -506,6 +900,21 @@ impl SimplicioRuntimeFs {
         &self,
         plan: serde_json::Value,
     ) -> Result<serde_json::Value, ComputerError> {
+        if self.hub_transport().is_some() {
+            let plan = serde_json::to_string(&plan)
+                .map_err(|error| hub_runtime_error(format!("invalid edit plan: {error}")))?;
+            return self
+                .call_hub(
+                    "simplicio_edit",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "plan": plan,
+                        "atomic": true,
+                        "rollback": true,
+                    }),
+                )
+                .await;
+        }
         self.with_runtime(move |client, root| client.edit(root, plan))
             .await
     }
@@ -541,6 +950,12 @@ impl SimplicioRuntimeFs {
     /// Reads UTF-8 text through the Runtime boundary for the explicit TUI
     /// inspection route. Binary-oriented callers keep using `read_file`.
     pub async fn read_workspace(&self, path: &Path) -> Result<String, ComputerError> {
+        if self.hub_transport().is_some() {
+            let bytes = self.read_file(path).await?;
+            return String::from_utf8(bytes).map_err(|error| {
+                hub_runtime_error(format!("Runtime returned non-UTF-8 text: {error}"))
+            });
+        }
         self.with_client(path, |client, root, relative| {
             client
                 .read_file(root, relative, DEFAULT_MAX_FILE_BYTES)
@@ -558,6 +973,22 @@ impl SimplicioRuntimeFs {
         end: Option<u64>,
         max_bytes: usize,
     ) -> Result<FileReadResult, ComputerError> {
+        if self.hub_transport().is_some() {
+            let relative = self.relative_path(path)?;
+            return self
+                .call_hub(
+                    "simplicio_file_read",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": relative.to_string_lossy(),
+                        "start": start,
+                        "end": end,
+                        "max_bytes": max_bytes,
+                    }),
+                )
+                .await
+                .and_then(decode_hub_file_read_result);
+        }
         self.with_client(path, move |client, root, relative| {
             client.read_file_range(root, relative, start, end, max_bytes)
         })
@@ -597,6 +1028,29 @@ impl AsyncSearch for SimplicioRuntimeFs {
         let relative_scope = path.map(|p| self.relative_path(p)).transpose()?;
         let pattern = pattern.to_owned();
         let globs = globs.to_vec();
+        if self.hub_transport().is_some() {
+            let path = relative_scope
+                .as_deref()
+                .unwrap_or_else(|| Path::new("."))
+                .to_string_lossy()
+                .into_owned();
+            return self
+                .call_hub(
+                    "simplicio_fs_search",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": path,
+                        "pattern": pattern,
+                        "globs": globs,
+                        "case_insensitive": case_insensitive,
+                        "literal": literal,
+                        "max_files": max_files,
+                        "max_matches": max_matches,
+                    }),
+                )
+                .await
+                .and_then(decode_hub_search_result);
+        }
         self.with_runtime(move |client, root| {
             let result = client.search(
                 root,
@@ -629,6 +1083,20 @@ impl AsyncSearch for SimplicioRuntimeFs {
 impl AsyncFileSystem for SimplicioRuntimeFs {
     #[tracing::instrument(name = "simplicio_runtime.fs.read_file", skip_all)]
     async fn read_file(&self, path: &Path) -> Result<Vec<u8>, ComputerError> {
+        if self.hub_transport().is_some() {
+            let relative = self.relative_path(path)?;
+            return self
+                .call_hub(
+                    "simplicio_file_read",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": relative.to_string_lossy(),
+                        "max_bytes": DEFAULT_MAX_FILE_BYTES,
+                    }),
+                )
+                .await
+                .and_then(decode_hub_read_result);
+        }
         self.with_client(path, |client, root, relative| {
             client
                 .read_file(root, relative, DEFAULT_MAX_FILE_BYTES)
@@ -643,6 +1111,23 @@ impl AsyncFileSystem for SimplicioRuntimeFs {
     #[tracing::instrument(name = "simplicio_runtime.fs.write_file", skip_all)]
     async fn write_file(&self, path: &Path, data: &[u8]) -> Result<(), ComputerError> {
         let data = data.to_vec();
+        if self.hub_transport().is_some() {
+            let relative = self.relative_path(path)?;
+            return self
+                .call_hub(
+                    "simplicio_fs_write",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": relative.to_string_lossy(),
+                        "content_base64": base64::engine::general_purpose::STANDARD.encode(data),
+                        "encoding": "base64",
+                        "atomic": true,
+                        "rollback": true,
+                    }),
+                )
+                .await
+                .map(|_| ());
+        }
         self.with_client(path, move |client, root, relative| {
             client.write_file(root, relative, &data).map(|_| ())
         })
@@ -654,6 +1139,21 @@ impl AsyncFileSystem for SimplicioRuntimeFs {
     /// error rather than silently touching disk directly.
     #[tracing::instrument(name = "simplicio_runtime.fs.delete_file", skip_all)]
     async fn delete_file(&self, path: &Path) -> Result<(), ComputerError> {
+        if self.hub_transport().is_some() {
+            let relative = self.relative_path(path)?;
+            return self
+                .call_hub(
+                    "simplicio_fs_delete",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": relative.to_string_lossy(),
+                        "atomic": true,
+                        "rollback": true,
+                    }),
+                )
+                .await
+                .map(|_| ());
+        }
         self.with_client(path, |client, root, relative| {
             client.delete_file(root, relative).map(|_| ())
         })
@@ -685,6 +1185,165 @@ mod tests {
         assert!(loop_hub_endpoint_configured(Some(std::ffi::OsStr::new(
             "/tmp/simplicio-loop.sock"
         ))));
+    }
+
+    #[derive(Default)]
+    struct FakeRuntimeCallTransport {
+        calls: Mutex<Vec<RuntimeCallRequest>>,
+    }
+
+    impl RuntimeCallTransport for FakeRuntimeCallTransport {
+        fn call(&self, request: RuntimeCallRequest) -> Result<RuntimeCallResponse, ComputerError> {
+            let tool = request.tool.clone();
+            self.calls.lock().unwrap().push(request.clone());
+            let result = match tool.as_str() {
+                "simplicio_file_read" => json!({
+                    "schema": "simplicio.read-result/v1",
+                    "path": "read.txt",
+                    "content": "aHViLXJlYWQ=",
+                    "bytes_base64": "aHViLXJlYWQ=",
+                    "encoding": "base64",
+                    "truncated": false,
+                }),
+                "simplicio_fs_search" => json!({
+                    "schema": "simplicio.search-result/v1",
+                    "matches": [{"path": "read.txt", "line": 1, "text": "needle"}],
+                    "truncated": false,
+                }),
+                _ => json!({"schema": "simplicio.fake-result/v1", "tool": tool}),
+            };
+            Ok(RuntimeCallResponse {
+                schema: LOOP_HUB_RUNTIME_CALL_SCHEMA.into(),
+                workspace: request.workspace,
+                tool,
+                result,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn hub_runtime_call_routes_supported_filesystem_operations_to_fake_transport() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fake = Arc::new(FakeRuntimeCallTransport::default());
+        let fs = SimplicioRuntimeFs::with_hub_transport(workspace.path(), fake.clone());
+        let edit_plan = json!({
+            "files": [{"file": "edited.txt", "operation": "update", "content": "hub"}]
+        });
+
+        fs.list_workspace(Path::new("."), json!({"hidden": false}))
+            .await
+            .unwrap();
+        fs.stat_workspace(Path::new("read.txt")).await.unwrap();
+        assert_eq!(
+            fs.read_file(Path::new("read.txt")).await.unwrap(),
+            b"hub-read"
+        );
+        fs.write_file(Path::new("write.txt"), b"hub-write")
+            .await
+            .unwrap();
+        fs.delete_file(Path::new("delete.txt")).await.unwrap();
+        fs.apply_edit(edit_plan.clone()).await.unwrap();
+
+        let calls = fake.calls.lock().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call.tool.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "simplicio_fs_list",
+                "simplicio_fs_stat",
+                "simplicio_file_read",
+                "simplicio_fs_write",
+                "simplicio_fs_delete",
+                "simplicio_edit",
+            ]
+        );
+        assert!(calls.iter().all(|call| call.cwd == "."));
+        assert!(
+            calls
+                .iter()
+                .all(|call| call.idempotency_key.starts_with("code-runtime-call-"))
+        );
+        assert_eq!(calls[0].arguments["options"], json!({"hidden": false}));
+        assert_eq!(
+            calls[2].arguments["max_bytes"],
+            json!(DEFAULT_MAX_FILE_BYTES)
+        );
+        assert_eq!(
+            calls[3].arguments["content_base64"],
+            json!(base64::engine::general_purpose::STANDARD.encode(b"hub-write"))
+        );
+        assert_eq!(
+            calls[5].arguments["plan"],
+            serde_json::to_string(&edit_plan).unwrap()
+        );
+        assert!(!workspace.path().join("write.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn hub_runtime_call_routes_search_through_versioned_contract() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fake = Arc::new(FakeRuntimeCallTransport::default());
+        let fs = SimplicioRuntimeFs::with_hub_transport(workspace.path(), fake.clone());
+
+        let result = fs
+            .search("needle", None, &[], false, false, 100, 100)
+            .await
+            .expect("search must use the Runtime contract");
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].path, "read.txt");
+        assert_eq!(fake.calls.lock().unwrap()[0].tool, "simplicio_fs_search");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn socket_runtime_call_transport_serializes_and_validates_wire() {
+        use std::os::unix::net::UnixListener;
+        use std::thread;
+
+        let directory = tempfile::tempdir().unwrap();
+        let endpoint = directory.path().join("hub.sock");
+        let listener = UnixListener::bind(&endpoint).unwrap();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let request: Value = serde_json::from_str(&line).unwrap();
+            assert_eq!(request["schema"], LOOP_HUB_CLIENT_SCHEMA);
+            assert_eq!(request["method"], "runtime_call");
+            assert_eq!(request["payload"]["tool"], "simplicio_fs_stat");
+
+            let mut stream = stream;
+            let response = json!({
+                "schema": LOOP_HUB_CLIENT_SCHEMA,
+                "id": request["id"],
+                "ok": true,
+                "result": {
+                    "schema": LOOP_HUB_RUNTIME_CALL_SCHEMA,
+                    "workspace": "/workspace",
+                    "tool": "simplicio_fs_stat",
+                    "result": {"schema": "simplicio.fs-stat-result/v1", "exists": true},
+                },
+            });
+            writeln!(stream, "{response}").unwrap();
+        });
+
+        let transport = SocketRuntimeCallTransport::new(format!("unix://{}", endpoint.display()));
+        let response = transport
+            .call(RuntimeCallRequest {
+                workspace: "/workspace".into(),
+                tool: "simplicio_fs_stat".into(),
+                arguments: json!({"repo": "/workspace", "path": "probe.txt"}),
+                cwd: ".".into(),
+                timeout_ms: 1_000,
+                idempotency_key: "wire-test-1".into(),
+            })
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(response.schema, LOOP_HUB_RUNTIME_CALL_SCHEMA);
+        assert_eq!(response.result["exists"], true);
     }
 
     #[tokio::test]
