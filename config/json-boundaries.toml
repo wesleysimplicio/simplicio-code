@@ -68,6 +68,21 @@ expires = "2027-07-23"
 
 [[boundary]]
 paths = [
+  'scripts/code_loop_hub_e2e.py',
+  'crates/codegen/simplicio-runtime-client/tests/external_loop_hub.rs',
+]
+category = "external_protocol_system_fixture"
+owner = "code-loop-hub"
+producer = "installed Loop Hub daemon and Code transport integration test"
+consumer = "Code cross-repository Hub acceptance review"
+lifecycle = "ephemeral external socket frames and redacted test receipt; never Code-owned state"
+target_format = "versioned external JSON wire contract"
+status = "exception"
+reason = "The fixture proves Code attaches to an already-running Loop Hub and reuses Hub-owned Runtime/Mapper/scheduler/inference identities without starting local authorities."
+expires = "2027-07-23"
+
+[[boundary]]
+paths = [
   '.github/workflows/component-release-event.yml',
   'scripts/release/apply_component_release.py',
   'scripts/release/prepare_component_bump.py',
