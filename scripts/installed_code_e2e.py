@@ -505,9 +505,9 @@ def run(
                 raise RuntimeError("Runtime exec did not return an authoritative completed effect")
             if (
                 prototype_write_payload.get("schema")
-                != "simplicio.prototype-mcp-artifact/v1"
+                != "simplicio.prototype-artifact/v1"
                 or prototype_read_payload.get("receipt", {}).get("schema")
-                != "simplicio.prototype-mcp-artifact/v1"
+                != "simplicio.prototype-artifact/v1"
                 or prototype_read_payload.get("content_base64")
                 != base64.b64encode(prototype_bytes).decode("ascii")
                 or not (temp / ".simplicio/artifacts/prototype-first/installed-preview.json").is_file()
