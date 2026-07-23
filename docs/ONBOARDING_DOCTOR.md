@@ -9,8 +9,11 @@ python3 scripts/onboarding_doctor.py --mode productive
 ```
 
 The JSON report identifies each independent component's expected and detected
-version, capabilities, origin, health and blocker. It also measures preflight
-time and executable probes. `protocol_only` is deliberately diagnostic: its
+version, capabilities, origin, health and blocker. Component health is
+`missing`, `installed`, `compatible`, `ready`, or `degraded`; an exact pinned
+version is `ready`, an accepted N-1 major is `compatible`, and any other parsed
+version is `degraded`. It also measures preflight time and executable probes.
+`protocol_only` is deliberately diagnostic: its
 `effect_authority` is always `false`. Productive work remains under the
 external AgentHost/Runtime/Loop authority and requires their compatible
 processes plus a secure persistent socket. Doctor never starts a provider,
@@ -26,6 +29,8 @@ authority.
 
 GitHub authentication is intentionally reported as `unknown`: use
 `gh auth status` interactively rather than exposing tokens to a receipt.
+Malformed JSON, duplicate components, unsafe fixture paths, and invalid bundle
+compatibility metadata fail closed with a redacted machine-readable error.
 macOS and Linux are supported by the first-run command above. Windows should
 run it from a checkout with Python 3 and Git, but Unix-domain socket and file
 permission results are environment-dependent; restricted containers may also

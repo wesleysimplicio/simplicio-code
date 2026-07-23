@@ -55,6 +55,12 @@ fn dependency(name: &str, variable: &str, binary: &str) -> DependencyStatus {
         },
         version: None,
         reason: (!found).then_some(ReasonCode::DependencyMissing),
-        safe_command: (!found).then(|| format!("command -v {binary}")),
+        safe_command: (!found).then(|| {
+            if cfg!(windows) {
+                format!("where {binary}")
+            } else {
+                format!("command -v {binary}")
+            }
+        }),
     }
 }
