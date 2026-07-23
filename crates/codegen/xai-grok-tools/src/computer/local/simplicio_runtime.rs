@@ -201,6 +201,14 @@ impl TerminalBackend for SimplicioRuntimeTerminalBackend {
     }
 }
 
+fn loop_hub_endpoint_configured(endpoint: Option<&std::ffi::OsStr>) -> bool {
+    endpoint.is_some_and(|value| !value.to_string_lossy().trim().is_empty())
+}
+
+fn loop_hub_owns_runtime() -> bool {
+    loop_hub_endpoint_configured(std::env::var_os("SIMPLICIO_LOOP_HUB_ENDPOINT").as_deref())
+}
+
 impl SimplicioRuntimeFs {
     pub fn new(root: impl Into<PathBuf>) -> Self {
         Self::with_agent_socket(root, resolve_socket_path())
@@ -344,6 +352,10 @@ impl SimplicioRuntimeFs {
                     *agent_guard = None;
                     return Err(ComputerError::io(error.to_string()));
                 }
+            }
+
+            if loop_hub_owns_runtime() {
+                return Err(ComputerError::io("Simplicio Loop Hub owns Runtime/Mapper; local Runtime spawn is disabled while SIMPLICIO_LOOP_HUB_ENDPOINT is configured"));
             }
 
             // Runtime-owned mapping starts only after the mandatory Agent
@@ -590,6 +602,17 @@ impl AsyncFileSystem for SimplicioRuntimeFs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loop_hub_endpoint_ownership_is_fail_closed() {
+        assert!(!loop_hub_endpoint_configured(None));
+        assert!(!loop_hub_endpoint_configured(Some(std::ffi::OsStr::new(
+            "  "
+        ))));
+        assert!(loop_hub_endpoint_configured(Some(std::ffi::OsStr::new(
+            "/tmp/simplicio-loop.sock"
+        ))));
+    }
 
     #[tokio::test]
     async fn operation_fails_closed_before_runtime_when_agent_is_missing() {
