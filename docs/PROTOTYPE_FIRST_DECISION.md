@@ -86,6 +86,21 @@ The resulting `simplicio.prototype-product-e2e/v1` receipt is the evidence
 used to close the Prototype-First acceptance issue. A passing validator-only
 fixture is not a substitute for this installed binary run.
 
+For the external Hub ownership proof, run the Code Rust transport against a
+real Loop daemon from the merged Loop checkout:
+
+```bash
+python3 scripts/code_loop_hub_e2e.py \
+  --repo /path/to/simplicio-code \
+  --loop-root /path/to/simplicio-loop \
+  --output /tmp/simplicio-code-loop-hub-e2e.json
+```
+
+This proof starts only Loop Hub. Code attaches through the versioned socket,
+uses Hub-owned Runtime/Mapper/scheduler/inference handles, and exercises
+submit/progress/cancel. It does not start a local scheduler, Runtime, Mapper,
+worker, model, DeepSeek, or local LLM.
+
 Use `--benchmark 10000` to measure the receipt-validation hot path. Timing is
 otherwise `null` with a reason so a deterministic receipt never estimates an
 unobserved metric.
