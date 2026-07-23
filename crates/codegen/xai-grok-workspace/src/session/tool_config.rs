@@ -583,6 +583,7 @@ pub mod test_support {
                 backend,
                 fs: Arc::new(LocalFs),
                 search: None,
+                directory: None,
                 cwd,
                 session_folder: session_root.clone(),
                 session_env,

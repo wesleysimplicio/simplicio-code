@@ -19,12 +19,14 @@
 //! <cwd>/.grok/rewind-checkpoints/
 //!   .gitignore                          # "*" — blobs are never committed
 //!   <session_id>/
-//!     checkpoint-<prompt_index>.json    # one RewindCheckpoint per prompt
+//!     checkpoint-<prompt_index>.hbp     # one Runtime HBP record per prompt
 //! ```
 
 use std::collections::BTreeMap;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use simplicio_code_formats::{HbpRecord, decode_hbp, encode_hbp};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
@@ -36,6 +38,8 @@ const STORE_SUBDIR: &str = "rewind-checkpoints";
 /// Default cap on retained checkpoints per session. Bounds on-disk and in-memory
 /// size; the oldest (lowest `prompt_index`) are evicted beyond this.
 const DEFAULT_CHECKPOINT_CAP: usize = 64;
+const CHECKPOINT_PAYLOAD_MAGIC: &[u8] = b"SCRW\x01";
+const MAX_CHECKPOINT_BYTES: usize = 16 * 1024 * 1024;
 
 /// Monotonic counter making each checkpoint temp-file name unique within the
 /// process, so concurrent writers for the same `prompt_index` never collide.
@@ -244,11 +248,11 @@ impl CheckpointStore {
     /// unique suffix (pid + counter), not just `prompt_index`: two overlapping
     /// persists of the same prompt would otherwise share one temp file and tear.
     async fn write_checkpoint_file(&self, checkpoint: &RewindCheckpoint) -> std::io::Result<()> {
-        let json = serde_json::to_vec(checkpoint).map_err(std::io::Error::other)?;
+        let bytes = encode_checkpoint(checkpoint)?;
         let final_path = self.checkpoint_path(checkpoint.prompt_index);
         let unique = TMP_WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let tmp_path = self.dir.join(format!(
-            "checkpoint-{}.json.tmp.{}.{}",
+            "checkpoint-{}.hbp.tmp.{}.{}",
             checkpoint.prompt_index,
             std::process::id(),
             unique,
@@ -259,7 +263,7 @@ impl CheckpointStore {
         // blob. `sync_all` fsyncs contents + metadata.
         {
             let mut f = tokio::fs::File::create(&tmp_path).await?;
-            f.write_all(&json).await?;
+            f.write_all(&bytes).await?;
             f.sync_all().await?;
         }
         tokio::fs::rename(&tmp_path, &final_path).await?;
@@ -274,7 +278,124 @@ impl CheckpointStore {
 
 /// On-disk path for a single checkpoint under `dir`.
 fn checkpoint_file_path(dir: &Path, prompt_index: usize) -> PathBuf {
+    dir.join(format!("checkpoint-{prompt_index}.hbp"))
+}
+
+/// Legacy JSON path, read only by the explicit one-way migration below.
+fn legacy_checkpoint_file_path(dir: &Path, prompt_index: usize) -> PathBuf {
     dir.join(format!("checkpoint-{prompt_index}.json"))
+}
+
+fn encode_checkpoint(checkpoint: &RewindCheckpoint) -> io::Result<Vec<u8>> {
+    let mut payload = CHECKPOINT_PAYLOAD_MAGIC.to_vec();
+    payload.extend(bincode::serialize(checkpoint).map_err(io::Error::other)?);
+    if payload.len() > MAX_CHECKPOINT_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "rewind checkpoint exceeds the HBP safety limit",
+        ));
+    }
+    encode_hbp(&[HbpRecord {
+        sequence: 0,
+        payload,
+    }])
+    .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))
+}
+
+fn decode_checkpoint(bytes: &[u8]) -> io::Result<RewindCheckpoint> {
+    if bytes.len() > MAX_CHECKPOINT_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "rewind checkpoint exceeds the HBP safety limit",
+        ));
+    }
+    let records = decode_hbp(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error.to_string()))?;
+    if records.len() != 1 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "rewind checkpoint HBP must contain exactly one record",
+        ));
+    }
+    let record = records.into_iter().next().expect("record count checked");
+    if record.sequence != 0 || !record.payload.starts_with(CHECKPOINT_PAYLOAD_MAGIC) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "rewind checkpoint payload schema is unsupported",
+        ));
+    }
+    bincode::deserialize(&record.payload[CHECKPOINT_PAYLOAD_MAGIC.len()..])
+        .map_err(io::Error::other)
+}
+
+fn write_checkpoint_sync(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let unique = TMP_WRITE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let temporary = path.with_file_name(format!(
+        ".{}.migration.{}.{}",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("checkpoint.hbp"),
+        std::process::id(),
+        unique,
+    ));
+    {
+        let mut file = std::fs::File::create(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    std::fs::rename(&temporary, path)?;
+    if let Ok(dir) = std::fs::File::open(path.parent().unwrap_or_else(|| Path::new("."))) {
+        let _ = dir.sync_all();
+    }
+    Ok(())
+}
+
+fn migrate_legacy_checkpoint(
+    dir: &Path,
+    index: usize,
+    source: &Path,
+) -> io::Result<RewindCheckpoint> {
+    let bytes = std::fs::read(source)?;
+    if bytes.len() > MAX_CHECKPOINT_BYTES {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "legacy rewind checkpoint exceeds the safety limit",
+        ));
+    }
+    let checkpoint: RewindCheckpoint = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
+    if checkpoint.prompt_index != index {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "legacy rewind checkpoint index does not match its filename",
+        ));
+    }
+    let target = checkpoint_file_path(dir, index);
+    if target.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "binary rewind checkpoint already exists",
+        ));
+    }
+    let backup = source.with_file_name(format!(
+        "{}.legacy.bak",
+        source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("checkpoint.json")
+    ));
+    if backup.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "legacy rewind checkpoint backup already exists",
+        ));
+    }
+    let encoded = encode_checkpoint(&checkpoint)?;
+    write_checkpoint_sync(&target, &encoded)?;
+    if let Err(error) = std::fs::rename(source, &backup) {
+        let _ = std::fs::remove_file(&target);
+        return Err(error);
+    }
+    Ok(checkpoint)
 }
 
 /// Derive the on-disk store directory name for a caller-controlled `session_id`.
@@ -368,21 +489,23 @@ fn load_capped_from_disk(dir: &Path, cap: usize) -> BTreeMap<usize, RewindCheckp
             }
             continue;
         };
-        match std::fs::read(entry.path()) {
-            Ok(bytes) => match serde_json::from_slice::<RewindCheckpoint>(&bytes) {
-                Ok(checkpoint) => {
-                    loaded.insert(idx, checkpoint);
-                }
-                Err(e) => tracing::warn!(
-                    error = %e,
-                    path = %entry.path().display(),
-                    "rewind checkpoint store: skipping unparseable blob on rehydrate"
-                ),
-            },
+        let result = if is_legacy_checkpoint(&file_name) {
+            migrate_legacy_checkpoint(dir, idx, &entry.path())
+        } else {
+            std::fs::read(entry.path()).and_then(|bytes| decode_checkpoint(&bytes))
+        };
+        match result {
+            Ok(checkpoint) if checkpoint.prompt_index == idx => {
+                loaded.insert(idx, checkpoint);
+            }
+            Ok(_) => tracing::warn!(
+                path = %entry.path().display(),
+                "rewind checkpoint store: checkpoint index mismatch on rehydrate"
+            ),
             Err(e) => tracing::warn!(
                 error = %e,
                 path = %entry.path().display(),
-                "rewind checkpoint store: skipping unreadable blob on rehydrate"
+                "rewind checkpoint store: skipping unparseable checkpoint on rehydrate"
             ),
         }
     }
@@ -395,24 +518,28 @@ fn load_capped_from_disk(dir: &Path, cap: usize) -> BTreeMap<usize, RewindCheckp
     loaded
 }
 
-/// Parse `checkpoint-<n>.json` → `n`. `None` for anything else (including the
-/// in-flight `checkpoint-<n>.json.tmp` written by `write_checkpoint_file`).
+/// Parse `checkpoint-<n>.hbp` or the bounded legacy `checkpoint-<n>.json` → `n`.
 fn parse_checkpoint_index(file_name: &std::ffi::OsStr) -> Option<usize> {
-    file_name
-        .to_str()?
-        .strip_prefix("checkpoint-")?
-        .strip_suffix(".json")?
+    let name = file_name.to_str()?.strip_prefix("checkpoint-")?;
+    name.strip_suffix(".hbp")
+        .or_else(|| name.strip_suffix(".json"))?
         .parse()
         .ok()
 }
 
-/// Whether `file_name` is an orphaned checkpoint temp file
-/// (`checkpoint-<idx>.json.tmp[...]`) left by a crashed `write_checkpoint_file`,
-/// swept on rehydrate (`parse_checkpoint_index` deliberately skips them).
-fn is_orphan_checkpoint_tmp(file_name: &std::ffi::OsStr) -> bool {
+fn is_legacy_checkpoint(file_name: &std::ffi::OsStr) -> bool {
     file_name
         .to_str()
-        .is_some_and(|n| n.starts_with("checkpoint-") && n.contains(".json.tmp"))
+        .is_some_and(|name| name.ends_with(".json"))
+}
+
+/// Whether `file_name` is an orphaned checkpoint temp file
+/// (`checkpoint-<idx>.hbp.tmp[...]`) left by a crashed `write_checkpoint_file`,
+/// swept on rehydrate (`parse_checkpoint_index` deliberately skips them).
+fn is_orphan_checkpoint_tmp(file_name: &std::ffi::OsStr) -> bool {
+    file_name.to_str().is_some_and(|n| {
+        n.starts_with("checkpoint-") && (n.contains(".hbp.tmp") || n.contains(".json.tmp"))
+    })
 }
 
 #[cfg(test)]
@@ -432,7 +559,7 @@ impl CheckpointStore {
         let bytes = tokio::fs::read(self.checkpoint_path(prompt_index))
             .await
             .ok()?;
-        let checkpoint: RewindCheckpoint = serde_json::from_slice(&bytes).ok()?;
+        let checkpoint = decode_checkpoint(&bytes).ok()?;
         self.cache
             .lock()
             .await
@@ -635,6 +762,77 @@ mod tests {
         assert!(checkpoint_file_path(&writer.dir, 3).exists());
     }
 
+    #[test]
+    fn legacy_json_checkpoint_migrates_once_to_hbp_with_backup() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("store");
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = legacy_checkpoint_file_path(&dir, 4);
+        let checkpoint = fs_only_checkpoint(4);
+        std::fs::write(&source, serde_json::to_vec(&checkpoint).unwrap()).unwrap();
+
+        let loaded = load_capped_from_disk(&dir, 10);
+        let restored = loaded.get(&4).expect("legacy checkpoint loaded");
+        assert_eq!(restored.prompt_index, checkpoint.prompt_index);
+        assert_eq!(
+            restored.fs.file_snapshots.values().next().unwrap().content,
+            checkpoint
+                .fs
+                .file_snapshots
+                .values()
+                .next()
+                .unwrap()
+                .content
+        );
+        assert!(
+            checkpoint_file_path(&dir, 4).exists(),
+            "HBP target published"
+        );
+        assert!(
+            !source.exists(),
+            "legacy source is moved out of the live path"
+        );
+        assert!(
+            dir.join("checkpoint-4.json.legacy.bak").exists(),
+            "legacy source remains recoverable as a backup"
+        );
+
+        let loaded_again = load_capped_from_disk(&dir, 10);
+        assert_eq!(
+            loaded_again.get(&4).map(|value| value.prompt_index),
+            Some(4)
+        );
+        assert!(source.with_extension("json.legacy.bak").exists());
+    }
+
+    #[test]
+    fn corrupt_or_mismatched_legacy_json_is_left_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("store");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let corrupt = legacy_checkpoint_file_path(&dir, 5);
+        std::fs::write(&corrupt, br#"{"#).unwrap();
+        let mismatched = legacy_checkpoint_file_path(&dir, 6);
+        std::fs::write(
+            &mismatched,
+            serde_json::to_vec(&fs_only_checkpoint(7)).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = load_capped_from_disk(&dir, 10);
+        assert!(loaded.is_empty());
+        assert!(corrupt.exists(), "corrupt legacy input is not destroyed");
+        assert!(
+            mismatched.exists(),
+            "mismatched legacy input is not destroyed"
+        );
+        assert!(!checkpoint_file_path(&dir, 5).exists());
+        assert!(!checkpoint_file_path(&dir, 6).exists());
+        assert!(!dir.join("checkpoint-5.json.legacy.bak").exists());
+        assert!(!dir.join("checkpoint-6.json.legacy.bak").exists());
+    }
+
     #[tokio::test]
     async fn rehydrate_sweeps_orphan_tmp_files() {
         let tmp = tempfile::tempdir().unwrap();
@@ -660,6 +858,10 @@ mod tests {
     #[test]
     fn is_orphan_checkpoint_tmp_matches_only_temp_files() {
         use std::ffi::OsStr;
+        assert!(is_orphan_checkpoint_tmp(OsStr::new(
+            "checkpoint-3.hbp.tmp.123.0"
+        )));
+        assert!(is_orphan_checkpoint_tmp(OsStr::new("checkpoint-3.hbp.tmp")));
         assert!(is_orphan_checkpoint_tmp(OsStr::new(
             "checkpoint-3.json.tmp.123.0"
         )));

@@ -1148,7 +1148,6 @@ paths = [
   'crates/codegen/xai-grok-workspace/src/recovery.rs',
   'crates/codegen/xai-grok-workspace/src/rpc_envelope.rs',
   'crates/codegen/xai-grok-workspace/src/session/checkpoint.rs',
-  'crates/codegen/xai-grok-workspace/src/session/checkpoint_store.rs',
   'crates/codegen/xai-grok-workspace/src/session/file_state.rs',
   'crates/codegen/xai-grok-workspace/src/session/git.rs',
   'crates/codegen/xai-grok-workspace/src/session/mod.rs',
@@ -1377,6 +1376,18 @@ target_format = "HBI"
 status = "migrated"
 reason = "The managed configuration marker is a typed HBI artifact; no JSON reader or writer remains in this module."
 expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-workspace/src/session/checkpoint_store.rs"
+category = "internal_session_state"
+owner = "code-runtime"
+producer = "WorkspaceSession rewind checkpoint store"
+consumer = "Code workspace rewind and sandbox restore"
+lifecycle = "bounded HBP v1 checkpoint; one-way legacy JSON upgrade through a recoverable backup"
+target_format = "HBP"
+status = "migrated"
+reason = "Durable RewindCheckpoint blobs are written and read as one Runtime-compatible HBP record. Legacy checkpoint-<n>.json is accepted only during bounded startup migration, atomically promoted to HBP, then moved to checkpoint-<n>.json.legacy.bak; corrupt or mismatched legacy input remains untouched."
+expires = "2026-12-31"
 
 [[boundary]]
 path = "scripts/check_json_boundaries.py"
