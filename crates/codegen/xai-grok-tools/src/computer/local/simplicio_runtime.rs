@@ -13,7 +13,8 @@ use std::{
 
 use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socket_path};
 use simplicio_runtime_client::{
-    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SharedRuntimeClient, start_workspace_map,
+    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SearchResult, SharedRuntimeClient,
+    start_workspace_map,
 };
 use simplicio_runtime_client::{
     SocketPipeHubTransportFactory,
@@ -277,6 +278,41 @@ fn decode_hub_read_result(value: Value) -> Result<Vec<u8>, ComputerError> {
             .map_err(|error| hub_runtime_error(format!("invalid base64 read: {error}")));
     }
     Ok(content.as_bytes().to_vec())
+}
+
+fn decode_hub_file_read_result(value: Value) -> Result<FileReadResult, ComputerError> {
+    let result: FileReadResult = serde_json::from_value(value)
+        .map_err(|error| hub_runtime_error(format!("invalid Runtime read response: {error}")))?;
+    if result.schema != "simplicio.read-result/v1" {
+        return Err(hub_runtime_error(format!(
+            "unsupported Runtime read response schema {}",
+            result.schema
+        )));
+    }
+    Ok(result)
+}
+
+fn decode_hub_search_result(value: Value) -> Result<SearchOutcome, ComputerError> {
+    let result: SearchResult = serde_json::from_value(value)
+        .map_err(|error| hub_runtime_error(format!("invalid Runtime search response: {error}")))?;
+    if result.schema != "simplicio.search-result/v1" {
+        return Err(hub_runtime_error(format!(
+            "unsupported Runtime search response schema {}",
+            result.schema
+        )));
+    }
+    Ok(SearchOutcome {
+        matches: result
+            .matches
+            .into_iter()
+            .map(|m| SearchMatch {
+                path: m.path,
+                line: m.line,
+                text: m.text,
+            })
+            .collect(),
+        truncated: result.truncated,
+    })
 }
 
 /// Runtime-owned execution boundary used by [`SimplicioRuntimeTerminalBackend`].
@@ -652,10 +688,18 @@ impl SimplicioRuntimeFs {
             timeout_ms: 120_000,
             idempotency_key: self.next_hub_id(),
         };
-        tokio::task::spawn_blocking(move || transport.call(request))
-            .await
-            .map_err(|error| hub_runtime_error(format!("transport task failed: {error}")))?
-            .map(|response| response.result)
+        let agent_client = Arc::clone(&self.agent_client);
+        let agent_socket = self.agent_socket.clone();
+        let requires_agent = configured_hub_endpoint().is_some();
+        tokio::task::spawn_blocking(move || {
+            if requires_agent {
+                Self::ensure_agent_ready(&agent_client, &agent_socket)?;
+            }
+            transport.call(request)
+        })
+        .await
+        .map_err(|error| hub_runtime_error(format!("transport task failed: {error}")))?
+        .map(|response| response.result)
     }
 
     /// Verifies the independent Agent host, then runs `op` against a lazily
@@ -929,6 +973,22 @@ impl SimplicioRuntimeFs {
         end: Option<u64>,
         max_bytes: usize,
     ) -> Result<FileReadResult, ComputerError> {
+        if self.hub_transport().is_some() {
+            let relative = self.relative_path(path)?;
+            return self
+                .call_hub(
+                    "simplicio_file_read",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": relative.to_string_lossy(),
+                        "start": start,
+                        "end": end,
+                        "max_bytes": max_bytes,
+                    }),
+                )
+                .await
+                .and_then(decode_hub_file_read_result);
+        }
         self.with_client(path, move |client, root, relative| {
             client.read_file_range(root, relative, start, end, max_bytes)
         })
@@ -966,13 +1026,31 @@ impl AsyncSearch for SimplicioRuntimeFs {
         max_matches: usize,
     ) -> Result<SearchOutcome, ComputerError> {
         let relative_scope = path.map(|p| self.relative_path(p)).transpose()?;
-        if self.hub_transport().is_some() {
-            return Err(hub_runtime_error(
-                "Loop Hub runtime_call has no search contract; refusing direct Runtime or local fallback",
-            ));
-        }
         let pattern = pattern.to_owned();
         let globs = globs.to_vec();
+        if self.hub_transport().is_some() {
+            let path = relative_scope
+                .as_deref()
+                .unwrap_or_else(|| Path::new("."))
+                .to_string_lossy()
+                .into_owned();
+            return self
+                .call_hub(
+                    "simplicio_fs_search",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "path": path,
+                        "pattern": pattern,
+                        "globs": globs,
+                        "case_insensitive": case_insensitive,
+                        "literal": literal,
+                        "max_files": max_files,
+                        "max_matches": max_matches,
+                    }),
+                )
+                .await
+                .and_then(decode_hub_search_result);
+        }
         self.with_runtime(move |client, root| {
             let result = client.search(
                 root,
