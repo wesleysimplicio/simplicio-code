@@ -54,10 +54,7 @@ def test_socket_rejects_regular_file_and_world_writable_socket(tmp_path):
 
 
 def test_socket_accepts_private_unix_socket(tmp_path):
-    # macOS limits AF_UNIX paths to 104 bytes; pytest's nested tmp_path can
-    # exceed that before the doctor is exercised.
-    target = Path("/tmp") / f"simplicio-agent-test-{os.getpid()}.sock"
-    target.unlink(missing_ok=True)
+    target = tmp_path / "agent.sock"
     server = socket.socket(socket.AF_UNIX)
     try:
         server.bind(str(target))
@@ -65,7 +62,6 @@ def test_socket_accepts_private_unix_socket(tmp_path):
         assert subject._socket_check(str(target))["health"] == "ready"
     finally:
         server.close()
-        target.unlink(missing_ok=True)
 
 
 def test_version_probe_parses_semver(tmp_path):
