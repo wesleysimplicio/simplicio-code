@@ -1,81 +1,4 @@
-# Code internal-state migration
-
-This document records the Code-side implementation for issue #99. The accepted
-ecosystem decision is [ADR 2026-07-21 â€” Binary internal formats and edge-only
-JSON](https://github.com/wesleysimplicio/simplicio-runtime/blob/main/docs/ADR-2026-07-21-BINARY-INTERNAL-FORMATS.md).
-
-## Ownership map
-
-| Artifact | Producer | Consumer | Canonical format | Compatibility |
-| --- | --- | --- | --- | --- |
-| Runtime repository-map cache | Runtime map adapter / Code cache | mapper-context consumer | HBI adapter, `simplicio.map-result/v1` | Explicit JSON upgrade reader only; no normal JSON fallback |
-| Managed configuration sync marker | managed-config sync | staleness and policy gates | HBI, `simplicio.managed-config-marker/v1` | Old JSON marker is not read as live state |
-| Append-only migration/evidence records | Code migration and audit tools | release/evidence readers | HBP v1 | Hash-chain verification is fail-closed |
-| Disk-preflight execution receipt | disk-budget wrapper | build/performance evidence reader | HBP v1, `code.record` | Atomic single-record publication; no JSON fallback |
-| Durable rewind checkpoint | `xai-grok-workspace::CheckpointStore` | workspace rewind and sandbox restore | HBP v1, `simplicio.code-rewind/v1` payload | Legacy `checkpoint-<n>.json` is read only during bounded startup migration, then moved to `.legacy.bak`; no normal JSON fallback |
-| Human Code runtime configuration | operator | Runtime client | strict typed TOML | Unknown keys and unsupported schema versions fail |
-| Runtime MCP / provider JSON | external Runtime/provider | boundary adapter | external protocol only | Raw JSON terminates at the adapter |
-
-`crates/codegen/simplicio-code-formats` contains the Runtime-compatible HBP/HBI
-containers, strict TOML model and atomic migration primitive. HBI validation
-checks magic, version, endianness, alignment, header/total length, schema
-fingerprint, section bounds, overlap, zero padding, SHA-256 section checksums
-and the aggregate integrity stream before exposing a section slice. HBP uses
-Runtime's `HBP1` header, length-prefixed UTF-8 rows, genesis-linked SHA-256
-hashes and explicit topic/provenance ownership.
-
-## Legacy migration contract
-
-Legacy conversion is explicit and one-way. A caller must request dry-run or
-commit, the parser is bounded, the source is copied to a `.legacy.bak` backup,
-and the target is published through a same-directory synced temp file and
-rename. A failed or truncated conversion leaves the legacy source untouched.
-`MapCache::load` only reads HBI; it never silently falls back to JSON.
-
-The legacy readers in `MapCache::migrate_legacy` and
-`CheckpointStore::migrate_legacy_checkpoint` are scheduled for removal after
-2026-12-31. They are classified in `config/json-boundaries.toml` as exact,
-owned migration boundaries. Checkpoint migration validates the filename index,
-publishes the HBP target through a synced same-directory temp file, and leaves
-corrupt or mismatched input untouched.
-
-## Runtime dependency
-
-Runtime publishes HBI v1 and HBP v1 through the binary-contract receipt
-(`simplicio_binary_contracts`). Code's HBI encoder reproduces the Runtime
-golden-vector digest `b2599e6064597fe74fac2f73118cc9b278f2d6623d349491ea3fbab582a5656d`
-and its HBP adapter emits the Runtime `HBP1` row layout. The receipt remains
-the release-time authority for semantic versions and specification digests;
-the Code tests do not start an LLM, provider, scheduler or external service.
-
-## Measurement
-
-Only observations are recorded here; unavailable values remain explicit rather
-than estimated.
-
-| Workload | Before bytes | After bytes | Before load | After load | RSS / allocations |
-| --- | ---: | ---: | ---: | ---: | --- |
-| MapCache representative result | `null` â€” no frozen baseline artifact | `null` â€” no frozen baseline artifact | `null` â€” no profiler captured | `null` â€” no profiler captured | `null` â€” no profiler available |
-| Managed marker | `null` â€” no captured baseline artifact | `null` â€” no captured migrated artifact | `null` â€” no profiler available | `null` â€” no profiler available | `null` â€” no profiler available |
-
-The Code-owned codec hot paths can be measured without Runtime or network access:
-
-```sh
-cargo run --release -p simplicio-code-formats --example format_benchmark -- 10000
-```
-
-The benchmark prints iteration count, actual encoded size, and measured mean
-microseconds per operation. Peak RSS remains an external observation and must
-be captured with the platform tool (for example `/usr/bin/time -v` on Linux),
-not inferred by the benchmark.
-
-Observed on 2026-07-23 in the native Runtime MCP test container (Rust release
-profile, 1,000 iterations; the runner does not expose a stable CPU model):
-
-| Operation | Iterations | Artifact bytes | Mean Âµs/op | Peak RSS |
-| --- | ---: | ---: | ---: | --- |
-| HBI warm validate/read, 64 KiB payload | 1,000 | 65,704 | 381.788 | `null` â€” `/usr/bin/time` is unavailable in the container |
-| HBP decode, 32 records | 1,000 | 14,351 | 63.731 | `null` â€” `/usr/bin/time` is unavailable in the container |
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛ_7N‹Z–‹­¦ëeŠw¬ÔŒ½‘”¥¹Ñ•É¹…°µÍÑ…Ñ”µ¥É…Ñ¥½¸()Q¡¥Ì‘½Õµ•¹ĞÉ•½É‘ÌÑ¡”½‘”µÍ¥‘”¥µÁ±•µ•¹Ñ…Ñ¥½¸™½È¥ÍÍÕ”€Œää¸Q¡”…•ÁÑ•)•½ÍåÍÑ•´‘•¥Í¥½¸¥ÌmH€ÈÀÈØ´ÀÜ´ÈÄƒŠP	¥¹…Éä¥¹Ñ•É¹…°™½Éµ…ÑÌ…¹•‘”µ½¹±ä))M=9t¡¡ÑÑÁÌè¼½¥Ñ¡Õˆ¹½´½İ•Í±•åÍ¥µÁ±¥¥¼½Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”½‰±½ˆ½µ…¥¸½‘½Ì½H´ÈÀÈØ´ÀÜ´ÈÄµ	%9Idµ%9QI90µ=I5QL¹µ¤¸((ŒŒ=İ¹•ÉÍ¡¥Àµ…À()ğÉÑ¥™…ĞğAÉ½‘Õ•Èğ½¹ÍÕµ•Èğ…¹½¹¥…°™½Éµ…Ğğ½µÁ…Ñ¥‰¥±¥Ñäğ)ğ€´´´ğ€´´´ğ€´´´ğ€´´´ğ€´´´ğ)ğIÕ¹Ñ¥µ”É•Á½Í¥Ñ½Éäµµ…À…¡”ğIÕ¹Ñ¥µ”µ…À…‘…ÁÑ•È€¼½‘”…¡”ğµ…ÁÁ•Èµ½¹Ñ•áĞ½¹ÍÕµ•Èğ!	$…‘…ÁÑ•È°Í¥µÁ±¥¥¼¹µ…ÀµÉ•ÍÕ±Ğ½ØÅ€ğáÁ±¥¥Ğ)M=8ÕÁÉ…‘”É•…‘•È½¹±äì¹¼¹½Éµ…°)M=8™…±±‰…¬ğ)ğ5…¹…•½¹™¥ÕÉ…Ñ¥½¸Íå¹Œµ…É­•Èğµ…¹…•µ½¹™¥œÍå¹ŒğÍÑ…±•¹•ÍÌ…¹Á½±¥ä…Ñ•Ìğ!	$°Í¥µÁ±¥¥¼¹µ…¹…•µ½¹™¥œµµ…É­•È½ØÅ€ğ=±)M=8µ…É­•È¥Ì¹½ĞÉ•……Ì±¥Ù”ÍÑ…Ñ”ğ)ğÁÁ•¹µ½¹±äµ¥É…Ñ¥½¸½•Ù¥‘•¹”É•½É‘Ìğ½‘”µ¥É…Ñ¥½¸…¹…Õ‘¥ĞÑ½½±ÌğÉ•±•…Í”½•Ù¥‘•¹”É•…‘•ÉÌğ!	@ØÄğ!…Í µ¡…¥¸Ù•É¥™¥…Ñ¥½¸¥Ì™…¥°µ±½Í•ğ)ğ¥Í¬µÁÉ•™±¥¡Ğ•á•ÕÑ¥½¸É••¥ÁĞğ‘¥Í¬µ‰Õ‘•ĞİÉ…ÁÁ•Èğ‰Õ¥±½Á•É™½Éµ…¹”•Ù¥‘•¹”É•…‘•Èğ!	@ØÄ°½‘”¹É•½É‘€ğÑ½µ¥ŒÍ¥¹±”µÉ•½ÉÁÕ‰±¥…Ñ¥½¸ì¹¼)M=8™…±±‰…¬ğ)ğM¹…­”‰•¹¡µ…É¬±¥™•å±”•Ù•¹ÑÌğ‰•¹¡µ…É¬¡…É¹•ÍÌğ‰•¹¡µ…É¬•Ù¥‘•¹”Ù•É¥™¥•Èğ!	@ØÄİ¥Ñ ÑåÁ•Q=50Á…å±½…‘ÌğÑ½µ¥Œİ¡½±”µ±•‘•ÈÁÕ‰±¥…Ñ¥½¸…¹™…¥°µ±½Í•É•…µ‰…¬ìÉ•ÍÕ±Ğ½½ÍĞ)M=8µ¥É…Ñ¥½¸É•µ…¥¹ÌÁ•¹‘¥¹œğ)ğ!Õµ…¸½‘”ÉÕ¹Ñ¥µ”½¹™¥ÕÉ…Ñ¥½¸ğ½Á•É…Ñ½ÈğIÕ¹Ñ¥µ”±¥•¹ĞğÍÑÉ¥ĞÑåÁ•Q=50ğU¹­¹½İ¸­•åÌ…¹Õ¹ÍÕÁÁ½ÉÑ•Í¡•µ„Ù•ÉÍ¥½¹Ì™…¥°ğ)ğIÕ¹Ñ¥µ—]|ŞÚ$z{-®éÜj×container |
 
 `cargo llvm-cov -p simplicio-code-formats --all-targets --summary-only`
 measured 85.30% line coverage and 88.27% region coverage. This toolchain did
