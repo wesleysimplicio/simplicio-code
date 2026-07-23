@@ -30,6 +30,16 @@ def test_scans_generated_output_only_when_requested(tmp_path: pathlib.Path) -> N
     assert MODULE.findings(tmp_path, include_generated=True) == [("target/package/session.json", 1, "artifact:.json")]
 
 
+def test_scans_generated_simplicio_artifacts_only_when_requested(tmp_path: pathlib.Path) -> None:
+    generated = tmp_path / ".simplicio" / "history" / "run"
+    generated.mkdir(parents=True)
+    (generated / "manifest.json").write_text("{}", encoding="utf-8")
+    assert not MODULE.findings(tmp_path)
+    assert MODULE.findings(tmp_path, include_generated=True) == [
+        (".simplicio/history/run/manifest.json", 1, "artifact:.json")
+    ]
+
+
 def test_scope_limits_findings_to_exact_paths(tmp_path: pathlib.Path) -> None:
     (tmp_path / "owned.py").write_text('import json\n', encoding="utf-8")
     (tmp_path / "other.py").write_text('import json\n', encoding="utf-8")
