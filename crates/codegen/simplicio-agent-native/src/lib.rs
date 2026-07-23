@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 pub const SCHEMA_V1: &str = "simplicio.agent-native/v1";
 pub const CAPABILITY_SCHEMA_V1: &str = "simplicio.agent-native-capabilities/v1";
 pub const RECEIPT_SCHEMA_V1: &str = "simplicio.agent-native-receipt/v1";
+pub const SUPPORTED_PROTOCOL_VERSIONS: [&str; 1] = [SCHEMA_V1];
 pub const DEFAULT_PAGE_SIZE: u16 = 50;
 pub const MAX_PAGE_SIZE: u16 = 200;
 const MAX_ID_BYTES: usize = 256;
@@ -36,6 +37,7 @@ pub enum Health {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DependencyStatus {
     pub name: String,
     pub health: Health,
@@ -47,6 +49,7 @@ pub struct DependencyStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DoctorReport {
     pub schema: String,
     pub health: Health,
@@ -90,6 +93,7 @@ fn aggregate_health(dependencies: &[DependencyStatus]) -> Health {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CapabilityManifest {
     pub schema: String,
     pub protocol_versions: Vec<String>,
@@ -117,6 +121,7 @@ impl Default for CapabilityManifest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct AuthorityContract {
     pub cognitive_authority: String,
     pub scheduling_authority: String,
@@ -189,6 +194,7 @@ impl Operation {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Request {
     pub schema: String,
     pub request_id: String,
@@ -202,6 +208,13 @@ pub struct Request {
 }
 
 impl Request {
+    pub fn from_json(input: &str) -> Result<Self, ProtocolError> {
+        let request: Self = serde_json::from_str(input)
+            .map_err(|_| ProtocolError::malformed("request payload is malformed"))?;
+        request.validate()?;
+        Ok(request)
+    }
+
     pub fn validate(&self) -> Result<(), ProtocolError> {
         if self.schema != SCHEMA_V1 {
             return Err(ProtocolError::malformed("unsupported schema"));
@@ -213,6 +226,9 @@ impl Request {
         validate_id("invoker_id", &self.authority.invoker_id)?;
         if let Some(page) = &self.page {
             page.validate()?;
+        }
+        if let Some(target) = &self.target {
+            target.validate()?;
         }
         if let Some(goal) = &self.goal
             && (goal.is_empty() || goal.len() > MAX_GOAL_BYTES)
@@ -237,19 +253,37 @@ impl Request {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ExternalAuthority {
     pub kind: String,
     pub invoker_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Target {
     pub project_id: Option<String>,
     pub session_id: Option<String>,
     pub agent_id: Option<String>,
 }
 
+impl Target {
+    fn validate(&self) -> Result<(), ProtocolError> {
+        for (field, value) in [
+            ("project_id", self.project_id.as_deref()),
+            ("session_id", self.session_id.as_deref()),
+            ("agent_id", self.agent_id.as_deref()),
+        ] {
+            if let Some(value) = value {
+                validate_id(field, value)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PageRequest {
     pub limit: u16,
     pub cursor: Option<String>,
@@ -268,6 +302,7 @@ impl PageRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct GovernedIntent {
     pub intent_id: String,
     pub approval_receipt_id: String,
@@ -284,6 +319,7 @@ impl GovernedIntent {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Response {
     pub schema: String,
     pub request_id: String,
@@ -294,12 +330,14 @@ pub struct Response {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PageInfo {
     pub next_cursor: Option<String>,
     pub has_more: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ReceiptRef {
     pub schema: String,
     pub receipt_id: String,
@@ -329,6 +367,7 @@ pub enum ReasonCode {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ErrorBody {
     pub reason: ReasonCode,
     pub message: String,
@@ -377,22 +416,37 @@ fn validate_id(field: &str, value: &str) -> Result<(), ProtocolError> {
     Ok(())
 }
 
+fn sensitive_key(key: &str) -> bool {
+    let normalized: String = key
+        .bytes()
+        .filter(|byte| byte.is_ascii_alphanumeric())
+        .map(|byte| byte.to_ascii_lowercase() as char)
+        .collect();
+    matches!(
+        normalized.as_str(),
+        "token"
+            | "accesstoken"
+            | "refreshtoken"
+            | "secret"
+            | "password"
+            | "apikey"
+            | "authorization"
+            | "cookie"
+            | "setcookie"
+            | "prompt"
+            | "content"
+            | "code"
+            | "sourcecode"
+    )
+}
+
 /// Removes known secret/content fields before a value reaches logs or a
 /// receipt. Redaction is recursive and key based so adapters share behavior.
 pub fn redact(value: &mut serde_json::Value) {
     match value {
         serde_json::Value::Object(map) => {
             for (key, value) in map {
-                if matches!(
-                    key.to_ascii_lowercase().as_str(),
-                    "token"
-                        | "access_token"
-                        | "refresh_token"
-                        | "authorization"
-                        | "prompt"
-                        | "code"
-                        | "content"
-                ) {
+                if sensitive_key(key) {
                     *value = serde_json::Value::String("[REDACTED]".into());
                 } else {
                     redact(value);
@@ -451,6 +505,26 @@ mod tests {
     }
 
     #[test]
+    fn malformed_json_and_unknown_fields_fail_closed() {
+        assert_eq!(
+            Request::from_json("not-json").unwrap_err().body.reason,
+            ReasonCode::MalformedPayload
+        );
+        let payload = r#"{
+            "schema":"simplicio.agent-native/v1",
+            "request_id":"req-1",
+            "surface":"mcp",
+            "operation":"get_state",
+            "authority":{"kind":"external_llm","invoker_id":"caller-1"},
+            "unexpected":"reject"
+        }"#;
+        assert_eq!(
+            Request::from_json(payload).unwrap_err().body.reason,
+            ReasonCode::MalformedPayload
+        );
+    }
+
+    #[test]
     fn all_surfaces_serialize_the_same_operation_semantics() {
         for surface in [
             Surface::Cli,
@@ -498,11 +572,11 @@ mod tests {
 
     #[test]
     fn nested_secrets_and_source_content_are_redacted() {
-        let mut value = serde_json::json!({"token":"secret", "nested":[{"code":"private"}], "receipt_id":"safe"});
+        let mut value = serde_json::json!({"token":"secret", "nested":[{"code":"private", "api-key":"key"}], "receipt_id":"safe"});
         redact(&mut value);
         assert_eq!(
             value,
-            serde_json::json!({"token":"[REDACTED]", "nested":[{"code":"[REDACTED]"}], "receipt_id":"safe"})
+            serde_json::json!({"token":"[REDACTED]", "nested":[{"code":"[REDACTED]", "api-key":"[REDACTED]"}], "receipt_id":"safe"})
         );
     }
 

@@ -249,14 +249,17 @@ impl OperationalInbox {
                 {
                     return Err(InboxError::ForgedAuthorization);
                 }
-                if decision.authorization.is_some() {
-                    return Err(InboxError::StaleEvent);
-                }
-                decision.authorization = Some(authorization.clone());
                 let item = self
                     .items
                     .get_mut(&decision.intent.session_id)
                     .ok_or(InboxError::UnknownIntent)?;
+                if item.intent_id.as_deref() != Some(authorization.intent_id.as_str()) {
+                    return Err(InboxError::StaleEvent);
+                }
+                if decision.authorization.is_some() {
+                    return Err(InboxError::StaleEvent);
+                }
+                decision.authorization = Some(authorization.clone());
                 item.status = if authorization.approved {
                     if needs_confirmation(item.risk, decision.intent.action) {
                         ItemStatus::AwaitingConfirmation
@@ -296,6 +299,11 @@ impl OperationalInbox {
                     .items
                     .get_mut(&decision.intent.session_id)
                     .ok_or(InboxError::UnknownIntent)?;
+                if item.intent_id.as_deref() != Some(intent_id.as_str())
+                    || item.receipt_id.is_some()
+                {
+                    return Err(InboxError::StaleEvent);
+                }
                 item.receipt_id = Some(receipt_id.clone());
                 item.status = if *applied {
                     ItemStatus::Applied
@@ -310,6 +318,9 @@ impl OperationalInbox {
 
     pub fn record_intent(&mut self, intent: ActionIntent) -> Result<(), InboxError> {
         validate_intent(&intent)?;
+        if self.decisions.contains_key(&intent.intent_id) {
+            return Err(InboxError::StaleEvent);
+        }
         let item = self
             .items
             .get_mut(&intent.session_id)
@@ -435,10 +446,34 @@ fn sanitize_text(value: &str) -> Result<String, InboxError> {
     if value.len() > MAX_TEXT_BYTES {
         return Err(InboxError::InvalidField("summary"));
     }
-    Ok(value
+    let sanitized: String = value
         .chars()
         .filter(|ch| !ch.is_control() && *ch != '\u{1b}')
-        .collect())
+        .collect();
+    Ok(redact_sensitive(&sanitized))
+}
+
+fn redact_sensitive(value: &str) -> String {
+    let mut redacted = value.to_owned();
+    for marker in [
+        "Bearer ",
+        "api_key=",
+        "apikey=",
+        "password=",
+        "secret=",
+        "token=",
+    ] {
+        let lower = redacted.to_ascii_lowercase();
+        let Some(start) = lower.find(&marker.to_ascii_lowercase()) else {
+            continue;
+        };
+        let value_start = start + marker.len();
+        let value_end = redacted[value_start..]
+            .find(char::is_whitespace)
+            .map_or(redacted.len(), |offset| value_start + offset);
+        redacted.replace_range(value_start..value_end, "[REDACTED]");
+    }
+    redacted
 }
 
 #[cfg(test)]
@@ -564,5 +599,106 @@ mod tests {
         }
         inbox.apply(event).unwrap();
         assert_eq!(inbox.ordered_items()[0].summary, "ok[2Jnext");
+    }
+
+    #[test]
+    fn duplicate_intents_and_receipts_cannot_replace_decisions() {
+        let mut inbox = OperationalInbox::default();
+        inbox
+            .apply(attention("event-1", "s1", Risk::Low, 1))
+            .unwrap();
+        inbox.record_intent(intent("s1")).unwrap();
+        assert_eq!(
+            inbox.record_intent(intent("s1")),
+            Err(InboxError::StaleEvent)
+        );
+        inbox
+            .apply(CanonicalEvent::Authorization {
+                event_id: "event-2".into(),
+                authorization: Authorization {
+                    intent_id: "intent-s1".into(),
+                    decision_id: "decision-1".into(),
+                    actor: "operator".into(),
+                    target: "run/s1".into(),
+                    policy_revision: 7,
+                    approved: true,
+                },
+            })
+            .unwrap();
+        inbox.confirm("intent-s1").unwrap();
+        inbox.take_dispatch("intent-s1").unwrap();
+        let receipt = |event_id: &str, receipt_id: &str, applied: bool| CanonicalEvent::Receipt {
+            event_id: event_id.into(),
+            intent_id: "intent-s1".into(),
+            decision_id: "decision-1".into(),
+            receipt_id: receipt_id.into(),
+            target: "run/s1".into(),
+            policy_revision: 7,
+            applied,
+        };
+        inbox.apply(receipt("event-3", "receipt-1", true)).unwrap();
+        assert_eq!(
+            inbox.apply(receipt("event-4", "receipt-2", false)),
+            Err(InboxError::StaleEvent)
+        );
+        assert_eq!(inbox.ordered_items()[0].status, ItemStatus::Applied);
+        assert_eq!(
+            inbox.ordered_items()[0].receipt_id.as_deref(),
+            Some("receipt-1")
+        );
+    }
+
+    #[test]
+    fn newer_attention_invalidates_old_authorization_and_receipt() {
+        let mut inbox = OperationalInbox::default();
+        inbox
+            .apply(attention("event-1", "s1", Risk::Low, 1))
+            .unwrap();
+        inbox.record_intent(intent("s1")).unwrap();
+        inbox
+            .apply(CanonicalEvent::Authorization {
+                event_id: "event-2".into(),
+                authorization: Authorization {
+                    intent_id: "intent-s1".into(),
+                    decision_id: "decision-1".into(),
+                    actor: "operator".into(),
+                    target: "run/s1".into(),
+                    policy_revision: 7,
+                    approved: true,
+                },
+            })
+            .unwrap();
+        inbox.confirm("intent-s1").unwrap();
+        inbox.take_dispatch("intent-s1").unwrap();
+        inbox
+            .apply(attention("event-3", "s1", Risk::Low, 2))
+            .unwrap();
+        assert_eq!(
+            inbox.apply(CanonicalEvent::Receipt {
+                event_id: "event-4".into(),
+                intent_id: "intent-s1".into(),
+                decision_id: "decision-1".into(),
+                receipt_id: "late".into(),
+                target: "run/s1".into(),
+                policy_revision: 7,
+                applied: true,
+            }),
+            Err(InboxError::StaleEvent)
+        );
+        assert_eq!(inbox.ordered_items()[0].status, ItemStatus::NeedsDecision);
+    }
+
+    #[test]
+    fn sensitive_summary_values_are_redacted() {
+        let mut inbox = OperationalInbox::default();
+        let mut event = attention("event-1", "s1", Risk::Low, 1);
+        if let CanonicalEvent::Attention { summary, .. } = &mut event {
+            *summary = "Bearer abc token=xyz api_key=key".into();
+        }
+        inbox.apply(event).unwrap();
+        assert_eq!(
+            inbox.ordered_items()[0].summary,
+            "Bearer [REDACTED] token=[REDACTED] api_key=[REDACTED]"
+        );
     }
 }

@@ -1,4 +1,240 @@
-YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛM´N‹Z–‹­¦ëeŠw¬Õf«ž)à¶»§q«^v‹­¦ëh®("©m¢G§r‹§·uñ:-jZ.¶›­–)Þ³VæÖS¢4 ¢2ÖæFF÷'’VÆ—G’÷6V7W&—G’vFRf÷"F†—2&Wò†—77VR3’â'Vç2öâWfW'¢2W6‚æB"æB×W7B&Rw&VVâ&Vf÷&RÖW&vRâæ÷F†–ær†W&RFWVæG2öà¢2&W÷6—F÷'’ö÷&væ—¦F–öâ6V7&WG2Â6ò—B—26fRFò'Vâöâ'2g&öÒf÷&·2à¢0¢2v–æF÷w2÷&÷Fö2†—7F÷'’†—77VR3‚Â33R(	B6VRFö72÷v–æF÷w2Ö'V–ÆB×7FGW2æÖ@¢2f÷"F†RgVÆÂÆö6ÂfW&–f–6F–öâw&—FWW“ ¢0¢27&FW2ö'V–ÆB÷†’×&÷FòÖ'V–ÆFW6VBFò†&F6öFP¢2ÒÖFWVæFVæ7•ö÷WCÒöFWb÷7FF÷WFòÒÖFW67&—F÷%÷6WEö÷WCÒöFWböçVÆÆv†Và¢2–çfö¶–ær&÷Fö6âF†÷6R&Rõ4•‚ÖöæÇ’FWf–6RF‡2Â6òç’7&FRF†@¢2G&ç6—F—fVÇ’FWVæG2öâ&÷Fö2Ö6öFVvVâ7&FR†Rærâ†’Öw&ö²×FööÇ2Ö’À¢2æBWfW'—F†–ærF†BFWVæG2öâ—C¢†’Öw&ö²×6×ÆW"Â†’Öw&ö²×FVÆVÖWG'’À¢2âââ’f–ÆVBFò'V–ÆBæF—fVÇ’öâv–æF÷w2ÖÆFW7BâF†B'Vr—2æ÷rd•„T@¢2‡6VRF†Rf—‚‡†’×&÷FòÖ'V–ÆB’6öÖÖ—B’æBfW&–f–VBÆö6ÆÇ’öâæF—fP¢2v–æF÷w3¢†’Öw&ö²×FööÇ2Ö’æBF†RÆ&vRÖ¦÷&—G’öbF†Rv÷&·76R'V–Æ@¢26ÆVæÇ’F†W&Ræ÷rÂv—fVâ&VÂ&÷Fö2æW†V&V6†&ÆRf–E$õDô6÷ ¢2ED†à¢0¢2Gvò6ÖÆÆW"—FV×27F–ÆÂ&Æö6²fÆ—–ærv–æF÷w2×66÷VF&VÆ÷rFòF†RgVÆÀ¢2Ò×v÷&·76VÖG&—‚W6VB'’F†RÆ–çW‚öÖ4õ2ÆVw3 ¢2â&–â÷&÷Fö6w2F÷E6Æ6‚w&W"—26†V&ær67&—Bv–æF÷w26âw@¢2W†V7WFRF—&V7FÇ’†æò6†–Ò–WBÂG&6¶VB–â33R’(	BF†—2¦ö"–ç7FÆÇ2¢2&VÂ&÷Fö2æW†Vf–6†ö6öÆFW’æBö–çG2E$õDô6B—B–ç7FVBö`¢2&VÇ––æröâ&–â÷&÷Fö6à¢2"ââVç&VÆFVB6ö×–ÆRW'&÷"†vVçE&V'V–ÆE7V6×]6ÒÚ$z{-®éÜj×(xai-grok-tools-api, protoc-dependent, issue #8/#35)
+name: CI
+
+# Mandatory quality/security gate for this repo (issue #11). Runs on every
+# push and PR and must be green before merge. Nothing here depends on
+# repository/organization secrets, so it is safe to run on PRs from forks.
+#
+# Windows/protoc history (issue #8, #35 â€” see docs/windows-build-status.md
+# for the full local verification writeup):
+#
+# `crates/build/xai-proto-build` used to hardcode
+# `--dependency_out=/dev/stdout` / `--descriptor_set_out=/dev/null` when
+# invoking `protoc`. Those are POSIX-only device paths, so any crate that
+# transitively depends on a protoc-codegen crate (e.g. xai-grok-tools-api,
+# and everything that depends on it: xai-grok-sampler, xai-grok-telemetry,
+# ...) failed to build natively on windows-latest. That bug is now FIXED
+# (see the fix(xai-proto-build) commit) and verified locally on native
+# Windows: xai-grok-tools-api and the large majority of the workspace build
+# cleanly there now, given a real `protoc.exe` reachable via `$PROTOC` or
+# `$PATH`.
+#
+# Two smaller items still block flipping `windows-scoped` below to the full
+# `--workspace` matrix used by the Linux/macOS legs:
+#   1. `bin/protoc`'s DotSlash wrapper is a shebang script Windows can't
+#      execute directly (no shim yet, tracked in #35) â€” this job installs a
+#      real `protoc.exe` via chocolatey and points `$PROTOC` at it instead of
+#      relying on `bin/protoc`.
+#   2. An unrelated compile error (`AgentRebuildSpec` missing the
+#      `search_backend` field at one call site in xai-grok-shell) currently
+#      breaks `cargo check --workspace` on every platform, not just Windows;
+#      it's tracked as a separate follow-up rather than papered over here.
+# Until (2) is fixed, this job is intentionally scoped to
+# `xai-grok-tools-api` (the crate that was the canonical repro for the
+# /dev/stdout bug) plus the previously-covered `xai-grok-secrets`, so it's a
+# real, honest signal instead of a green check that never compiles anything
+# meaningful, or a red check for a reason that has nothing to do with
+# Windows.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fmt:
+    name: fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - run: cargo fmt --all -- --check
+
+  coverage:
+    name: coverage (LCOV threshold)
+    runs-on: ubuntu-latest
+    needs: [fmt]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+      - name: Generate LCOV coverage
+        run: cargo llvm-cov --workspace --all-targets --lcov --output-path coverage.lcov
+      - name: Enforce coverage threshold
+        run: python3 scripts/check_coverage.py coverage.lcov --threshold 85
+
+  simplicio-owned-reports:
+    name: Simplicio invariant and invocation reports
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run scoped struct-initializer review report
+        continue-on-error: true
+        run: python3 scripts/check_unused_struct_locals.py --json > struct-initializer-report.json
+      - name: Generate offline headless invocation matrix
+        run: python3 scripts/headless_invocation_matrix.py --json > headless-invocation-matrix.json
+      - name: Validate failure-diagnostics artifact path
+        run: |
+          python3 -m py_compile scripts/ci_diagnostics.py scripts/tests/test_ci_diagnostics.py
+          python3 scripts/tests/test_ci_diagnostics.py
+      - name: Run gate self-tests
+        run: python3 scripts/tests/test_issue_68_gates.py
+      - name: Prove reproducible offline install lifecycle
+        run: |
+          python3 -m pytest scripts/tests/test_installed_lifecycle_e2e.py -q
+          python3 scripts/release/installed_lifecycle_e2e.py --fixture > /tmp/lifecycle-a.json
+          python3 scripts/release/installed_lifecycle_e2e.py --fixture > /tmp/lifecycle-b.json
+          cmp /tmp/lifecycle-a.json /tmp/lifecycle-b.json
+      - name: Verify reproducible issue meta-audit
+        run: |
+          python3 -m pytest scripts/tests/test_issue_meta_audit.py -q
+          python3 scripts/issue_meta_audit.py \
+            --input docs/audits/issue-139-source.json \
+            --json /tmp/issue-139-inventory.json \
+            --markdown /tmp/issue-139-report.md \
+            --rewrites /tmp/issue-139-rewrites.json
+          diff -u docs/audits/issue-139-inventory.json /tmp/issue-139-inventory.json
+          diff -u docs/audits/issue-139-report.md /tmp/issue-139-report.md
+          diff -u docs/audits/issue-139-rewrites.json /tmp/issue-139-rewrites.json
+      - name: Upload Simplicio reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: simplicio-owned-reports
+          path: |
+            struct-initializer-report.json
+            headless-invocation-matrix.json
+
+  # Fails the build on any secret-shaped string introduced by this push/PR.
+  # This is the CI-side half of issue #9's "block release when the scanner
+  # finds a secret" requirement.
+  #
+  # Deliberately scoped to the new commits (base..head for a PR, before..
+  # after for a push), NOT gitleaks' whole-history mode: a real
+  # `gitleaks detect` full-history run against this repo's actual git log
+  # (19k+ commits, inherited from the pre-Rust-rewrite "opencode" ancestor
+  # project) surfaces ~87 findings, all in files that no longer exist in the
+  # tree (deleted TS/Go source, `.stats.yml` config hashes) and all
+  # entropy-based false positives on hashes/checksums, not real secrets â€”
+  # see the incident-runbook Â§6 note. Gating every PR on that pre-existing,
+  # already-public history would make the check permanently red for reasons
+  # unrelated to the change under review. A one-time full-history baseline
+  # scan (and, if any turn out to be real, a history rewrite) is tracked as
+  # separate follow-up, not something this per-PR gate should own.
+  secret-scan:
+    name: secret-scan (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          curl -sSfL -o gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: Determine commit range
+        id: range
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "range=${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            before="${{ github.event.before }}"
+            # First push of a new branch reports an all-zero SHA; fall back
+            # to scanning just the pushed commit in that case.
+            if [ -z "$before" ] || [[ "$before" =~ ^0+$ ]]; then
+              echo "range=${{ github.sha }}~1..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            else
+              echo "range=${before}..${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: gitleaks (diff-scoped)
+        run: |
+          gitleaks detect --source . -c .gitleaks.toml \
+            --log-opts="${{ steps.range.outputs.range }}" \
+            --redact -v
+
+  # Full workspace lint/build/test on the two platforms where the workspace
+  # is known to build cleanly (see the header note re: Windows/protoc).
+  lint-build-test:
+    name: lint-build-test (${{ matrix.os }})
+    needs: [fmt]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - name: Install protoc (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install protoc (macOS)
+        if: runner.os == 'macOS'
+        run: brew install protobuf
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: cargo clippy (deny warnings)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+      - name: cargo test
+        run: cargo test --workspace --all-targets
+
+  # Windows leg: the xai-proto-build /dev/stdout|/dev/null bug (issues #8,
+  # #35) is fixed and locally verified (docs/windows-build-status.md), so
+  # this now also builds xai-grok-tools-api â€” the crate that was the
+  # canonical repro for that bug â€” using a real protoc.exe installed via
+  # chocolatey (bin/protoc's DotSlash wrapper still can't run natively on
+  # Windows; that's the separate, still-open part of #35). Still scoped
+  # short of the full `--workspace` matrix used by Linux/macOS because of an
+  # unrelated pre-existing compile error breaking `cargo check --workspace`
+  # on every platform right now (see the header comment above) â€” extend this
+  # list as more crates are verified clean, and replace with the full matrix
+  # once that's fixed.
+  windows-scoped:
+    name: lint-build-test (windows-latest, security crates)
+    needs: [fmt]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust (from rust-toolchain.toml)
+        run: rustup show
+      - name: Install protoc (Windows)
+        run: choco install protoc -y --no-progress
+      - name: Add protoc to PROTOC env var
+        shell: bash
+        run: echo "PROTOC=$(which protoc)" >> "$GITHUB_ENV"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+      - name: cargo clippy (xai-grok-secrets, deny warnings)
+        run: cargo clippy -p xai-grok-secrets --all-targets -- -D warnings
+      - name: cargo test (xai-grok-secrets)
+        run: cargo test -p xai-grok-secrets --all-targets
+      - name: cargo check (xai-grok-tools-api, protoc-dependent, issue #8/#35)
         run: cargo check -p xai-grok-tools-api --all-targets
 
   # cargo-deny: advisories (known vulns), license allow-list, and duplicate/

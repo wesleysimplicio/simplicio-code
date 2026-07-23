@@ -14,8 +14,10 @@ instead of selecting a local fallback.
 Discovery returns `simplicio.agent-native-capabilities/v1`. `doctor --json`
 returns `installed`, `compatible`, `ready`, `degraded`, or `missing`, plus only
 safe diagnostic commands. List and event methods use opaque cursors and reject
-zero/oversized pages. The N-1 compatibility rule is expressed by the manifest's
-`protocol_versions`; an unlisted schema is rejected.
+zero/oversized pages. The N-1 compatibility rule is expressed by the bundle's
+accepted major versions and the manifest's `protocol_versions`; an unlisted
+schema, unknown field, duplicate bundle component, or malformed payload is
+rejected without executing any effect.
 
 The source-tree diagnostic can be exercised with `cargo run -p
 simplicio-agent-native -- doctor --json`; `capabilities` prints the manifest.
@@ -29,7 +31,8 @@ perform the effect. `effect_unknown` is terminal and must not be retried.
 
 Receipts contain IDs, effect state, and redacted metadata only. Adapters must
 apply the shared recursive redactor before logging or persisting untrusted
-payloads; tokens, authorization, prompts, source code, and content are removed.
+payloads; tokens, authorization headers, prompts, source code, cookies, and
+content are removed.
 
 ## External invoker flow
 

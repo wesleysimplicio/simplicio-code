@@ -53,9 +53,17 @@ def serve_agent(socket_path: Path) -> None:  # pragma: no cover - system subproc
     socket_path.parent.mkdir(parents=True, exist_ok=True)
     socket_path.unlink(missing_ok=True)
     state: dict[str, object] = {}
-    with socket.socket(socket.AF_UNIX) as server:
+    family = getattr(socket, "AF_UNIX", None)
+    if family is not None:
+        server = socket.socket(family)
         server.bind(str(socket_path))
         os.chmod(socket_path, 0o600)
+    else:
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind(("127.0.0.1", 0))
+        host, port = server.getsockname()
+        socket_path.write_text(f"tcp://{host}:{port}\n", encoding="ascii")
+    with server:
         server.listen(8)
         while True:
             connection, _ = server.accept()
@@ -109,7 +117,7 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
         payload = {"schema": "simplicio.fs-stat-result/v1", "exists": target.exists(), "type": "directory" if target.is_dir() else "file" if target.is_file() else None, "size": target.stat().st_size if target.exists() else None}
     elif name == "simplicio_exec":
         cwd = _safe_path(repo, str(arguments.get("cwd", ".")))
-        completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)
+        completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)
         payload = {"schema": "simplicio.exec-result/v1", "success": completed.returncode == 0, "stdout": completed.stdout, "stderr": completed.stderr, "exit_code": completed.returncode, "timed_out": False, "truncated": False, "effect_state": "completed"}
     elif name == "simplicio_prototype_artifact_write":
         artifact_id = str(arguments["artifact_id"])

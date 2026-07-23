@@ -326,7 +326,7 @@ impl SessionRegistry {
     ) -> Result<String, RegistryError> {
         validate_id(client_id)?;
         let record = self.record_mut(session_id)?;
-        if record.status.terminal() {
+        if record.status.terminal() || record.status == SessionStatus::Cancelling {
             return Err(RegistryError::InvalidTransition);
         }
         if !record.attached_clients.contains(client_id)
@@ -365,12 +365,17 @@ impl SessionRegistry {
     }
 
     pub fn resume(&mut self, session_id: &str, now_ms: u64) -> Result<(), RegistryError> {
-        self.transition(
-            session_id,
-            now_ms,
-            &[SessionStatus::Paused],
-            SessionStatus::Detached,
-        )
+        let record = self.record_mut(session_id)?;
+        if record.status != SessionStatus::Paused {
+            return Err(RegistryError::InvalidTransition);
+        }
+        record.status = if record.attached_clients.is_empty() {
+            SessionStatus::Detached
+        } else {
+            SessionStatus::Active
+        };
+        record.last_activity_ms = record.last_activity_ms.max(now_ms);
+        Ok(())
     }
 
     pub fn cancel(&mut self, session_id: &str, now_ms: u64) -> Result<(), RegistryError> {
@@ -419,6 +424,9 @@ impl SessionRegistry {
     ) -> Result<Option<Notification>, RegistryError> {
         let record = self.record_mut(session_id)?;
         if record.status == SessionStatus::Closed {
+            return Err(RegistryError::InvalidTransition);
+        }
+        if record.status.terminal() && status != record.status {
             return Err(RegistryError::InvalidTransition);
         }
         record.status = status;
@@ -499,6 +507,16 @@ impl SessionRegistry {
                 session_id,
                 DegradedReason::HostInstanceMismatch,
                 RegistryError::HostInstanceMismatch,
+            );
+        }
+        if response_sequence == record.response_sequence {
+            if to_cursor == record.cursor {
+                return Ok(());
+            }
+            return self.degrade(
+                session_id,
+                DegradedReason::DelayedResponse,
+                RegistryError::DelayedResponse,
             );
         }
         if response_sequence < record.response_sequence {
@@ -824,6 +842,19 @@ mod tests {
         );
         assert_eq!(registry.get("s1").unwrap().cursor, 2);
         assert_eq!(registry.snapshot().sessions.len(), 1);
+    }
+
+    #[test]
+    fn repeated_response_sequence_is_idempotent_but_conflicts_fail_closed() {
+        let mut registry = registry();
+        registry.apply_replay("s1", "host-a", 1, 0, 5).unwrap();
+        registry.apply_replay("s1", "host-a", 1, 0, 5).unwrap();
+        assert_eq!(registry.get("s1").unwrap().cursor, 5);
+        assert_eq!(
+            registry.apply_replay("s1", "host-a", 1, 5, 6),
+            Err(RegistryError::DelayedResponse)
+        );
+        assert_eq!(registry.get("s1").unwrap().cursor, 5);
     }
 
     proptest::proptest! {
