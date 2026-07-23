@@ -1,0 +1,102 @@
+{
+  "artifacts_sha256": {
+    "crates/codegen/simplicio-runtime-client/benches/session_registry.rs": "0171ef9bc12a77b61c76536d34f4633b7b477fa0a06d497ebc8ed940757ca447",
+    "crates/codegen/simplicio-runtime-client/src/session_registry.rs": "bfebfd52cf6be9cc9d6b7feb8aabaffb3d0469d61b59978f74a0935772aa6824"
+  },
+  "authority": {
+    "internal_provider_started": false,
+    "invoking_llm": "external",
+    "local_llm_started": false,
+    "orca_opened": false,
+    "runtime_started_by_change": false
+  },
+  "benchmark_ns": {
+    "attach_detach": {
+      "high": 134.97,
+      "low": 122.78
+    },
+    "cold_create": {
+      "high": 1406.6,
+      "low": 1251.5
+    },
+    "detail_1": {
+      "high": 7.4756,
+      "low": 7.2993
+    },
+    "detail_100": {
+      "high": 18.021,
+      "low": 17.732
+    },
+    "replay": {
+      "high": 34.84,
+      "low": 34.166
+    },
+    "snapshot_100_sessions": {
+      "high": 137440.0,
+      "low": 136640.0
+    },
+    "warm_list_1": {
+      "high": 39.431,
+      "low": 38.342
+    },
+    "warm_list_100": {
+      "high": 1193.8,
+      "low": 1152.2
+    }
+  },
+  "external_e2e": {
+    "reason": "No real authenticated AgentHost/Loop Hub/Runtime multi-process fixture was supplied; the Code-side registry intentionally does not start them.",
+    "status": "NOT_FINAL_APPROVED"
+  },
+  "issue": 204,
+  "privacy": {
+    "contains_absolute_user_path": false,
+    "contains_code_content": false,
+    "contains_prompt": false,
+    "contains_secret": false
+  },
+  "rollback": {
+    "command": "git revert <issue-204-commit>",
+    "data_migration_required": false
+  },
+  "schema": "simplicio.session-registry-evidence/v1",
+  "source": {
+    "base_revision": "734cdfe46a39d4601849503ca174b4ad55129393",
+    "branch": "work",
+    "repository": "wesleysimplicio/simplicio-code"
+  },
+  "tests": {
+    "coverage": {
+      "command": "cargo llvm-cov --lib -p simplicio-runtime-client --json --output-path /tmp/loop204/coverage.json -- session_registry",
+      "function_percent": 93.18181818181817,
+      "line_percent": 91.57509157509159,
+      "region_percent": 89.0840652446675
+    },
+    "crate_regression": {
+      "command": "cargo test -p simplicio-runtime-client --lib",
+      "ignored_count": 2,
+      "passed": true,
+      "passed_count": 76
+    },
+    "format": {
+      "command": "rustfmt --edition 2024 --check crates/codegen/simplicio-runtime-client/src/session_registry.rs crates/codegen/simplicio-runtime-client/benches/session_registry.rs",
+      "passed": true
+    },
+    "session_registry": {
+      "command": "cargo test -p simplicio-runtime-client session_registry --lib",
+      "passed": true,
+      "passed_count": 11
+    }
+  },
+  "toolchain": {
+    "arch": "x86_64",
+    "cargo": "cargo 1.92.0 (344c4567c 2025-10-21)",
+    "os": "Linux",
+    "rustc": "rustc 1.92.0 (ded5c06cf 2025-12-08)",
+    "simplicio_dev_cli": "0.16.2",
+    "simplicio_loop": "3.38.1",
+    "simplicio_loop_revision": "8c0c5ca",
+    "simplicio_mapper": "0.24.1"
+  },
+  "verdict": "PR_READY_NOT_E2E_APPROVED"
+}
