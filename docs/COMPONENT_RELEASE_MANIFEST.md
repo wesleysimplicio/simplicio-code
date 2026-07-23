@@ -1,102 +1,1 @@
-# Component release manifest
-
-`component-release/v1` is the provenance boundary for the release train in
-issue #57. The normative shape is
-[`docs/contracts/component-release-v1.schema.json`](contracts/component-release-v1.schema.json).
-It requires one pinned entry for Code, Runtime, Loop Hub, and Agent contracts,
-each with version, commit, protocol, and a SHA-256 artifact digest. Floating
-`latest`, `main`, and `dev` references are rejected.
-
-The manifest digest is deterministic and can be attached to a bundle receipt.
-The generated Runtime client fingerprint is produced with:
-
-```text
-python3 scripts/release/generate_component_client.py \
-  --schema docs/contracts/component-release-v1.schema.json \
-  --out crates/codegen/simplicio-runtime-client/src/generated.rs
-```
-
-`RuntimeClient::spawn_in_with_manifest` performs the compatibility handshake:
-the installed Runtime must announce the exact pinned version, commit, artifact
-digest, and supported protocol range. Missing provenance is a hard failure.
-
-`BundleStore` stages into a digest-named inactive slot, runs a caller-supplied
-canary, then swaps `active`/`previous` using filesystem renames. A rejected
-canary does not change the active bundle, and rollback never touches the
-session/config directory. The update lock prevents two promoters from
-starting the update at once; the store does not start Runtime or map/queue
-authorities.
-
-This repository provides the contract, deterministic generation, handshake,
-and local promotion primitives. The Code-side release-event boundary is
-[`docs/contracts/release-event-v1.schema.json`](contracts/release-event-v1.schema.json).
-`SignedReleaseEvent` verifies an Ed25519 signature over canonical payload bytes
-using only caller-provided trusted keys, then checks the event id, producer
-sequence, manifest compatibility, and manifest digest. `BundleStore::ingest_release_event`
-persists event ids, rejects conflicting or stale events, checks active-receipt
-drift, and invokes the existing stage/canary/active/previous promotion path.
-Duplicate delivery is a no-op and never runs the canary again.
-
-This is a Code-side ingestion boundary, not an external release publisher. It
-does not fabricate events, fetch `latest`, publish artifacts, or claim installed
-Windows/Linux/macOS E2E. External ecosystem event delivery, signed provenance
-publication, an observed production bump within the 15-minute budget, and
-installed cross-platform evidence remain dependencies of issue #110.
-
-Authenticated ecosystem producers deliver `simplicio.release-event/v1` through
-the `simplicio-component-release-v1` repository-dispatch event. The 15-minute
-workflow budget validates the canonical bundle digest and generated-client
-digest, regenerates the client, and updates a single deduplicated PR branch.
-`scripts/release/apply_component_release.py` is offline by design: it cannot
-resolve or download `latest`. Protocol-range changes are recorded as
-`migration_required` in the release receipt so promotion cannot silently mix
-contracts. Re-running the same event with `--check` proves byte reproducibility.
-
-The signed-event workflow additionally materializes the operator trust root and
-four immutable HTTPS artifacts, verifies their digests and compatibility before
-writing the manifest, replay state, and a `release-bump-receipt/v1` containing
-the signing key, producer sequence, canonical bundle digest, and independently
-recomputed artifact digests. It requires the Runtime pin to attest the digest of bindings
-reproduced from the repository schema, and uses an event-id branch/PR with
-durable replay protection.
-Missing or revoked keys, malformed events, stale sequences, incompatible
-protocols, and incorrect artifacts fail closed; the workflow only prepares a
-Code bump and never becomes a Runtime/map/queue authority.
-
-The platform-neutral promotion harness consumes those already downloaded,
-verified inputs without network discovery. It copies all four pins to a private
-inactive slot, recomputes their digests after copying, exposes only that slot to
-the caller's canary through `SIMPLICIO_BUNDLE_SLOT`, and changes `active` only
-after a successful canary:
-
-```text
-PYTHONPATH=. python3 scripts/release/promote_component_bundle.py promote \
-  --manifest config/component-bundle.json --artifacts /path/to/artifacts \
-  --slots /path/to/component-slots --canary-command /path/to/installed-e2e
-PYTHONPATH=. python3 scripts/release/promote_component_bundle.py rollback \
-  --slots /path/to/component-slots
-```
-
-The harness itself starts no component authority. A failed digest, concurrent
-promotion, or failed canary removes the inactive slot and preserves `active`;
-rollback swaps the complete `active` and `previous` directories. Real publisher
-endpoints and clean installed Windows/Linux/macOS executables are intentionally
-not inferred from repository fixtures and remain external evidence blockers for
-issues #57 and #110.
-
-After promotion, the offline installed-evidence verifier replays the signature
-and artifact validation and requires the bump receipt, promotion receipt, active
-manifest, and every installed artifact to resolve to the same signed payload:
-
-```text
-PYTHONPATH=. python3 scripts/release/verify_installed_promotion.py \
-  --event /path/to/event.json --trust-dir /path/to/trust \
-  --artifacts-dir /path/to/artifacts --active-slot /path/to/slots/active \
-  --bump-receipt /path/to/bump-receipt.json \
-  --promotion-receipt /path/to/promotion-receipt.json \
-  --out /path/to/installed-release-evidence.json
-```
-
-The evidence contains no clock, host, or network fields, so replay with the
-same immutable inputs is byte deterministic. Synthetic signed fixtures test
-this local verifier but are explicitly not external publication evidence.
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×®6N‹Z–‹­¦ëeŠw¬ÔŒ½µÁ½¹•¹ĞÉ•±•…Í”µ…¹¥™•ÍĞ()½µÁ½¹•¹ĞµÉ•±•…Í”½ØÅ€¥ÌÑ¡”ÁÉ½Ù•¹…¹”‰½Õ¹‘…Éä™½ÈÑ¡”É•±•…Í”ÑÉ…¥¸¥¸)¥ÍÍÕ”€ŒÔÜ¸Q¡”¹½Éµ…Ñ¥Ù”Í¡…Á”¥Ì)m‘½Ì½½¹ÑÉ…ÑÌ½½µÁ½¹•¹ĞµÉ•±•…Í”µØÄ¹Í¡•µ„¹©Í½¹t¡½¹ÑÉ…ÑÌ½½µÁ½¹•¹ĞµÉ•±•…Í”µØÄ¹Í¡•µ„¹©Í½¸¤¸)%ĞÉ•ÅÕ¥É•Ì½¹”Á¥¹¹••¹ÑÉä™½È½‘”°IÕ¹Ñ¥µ”°1½½À!Õˆ°…¹•¹Ğ½¹ÑÉ…ÑÌ°)•… İ¥Ñ Ù•ÉÍ¥½¸°½µµ¥Ğ°ÁÉ½Ñ½½°°…¹„M!´ÈÔØ…ÉÑ¥™…Ğ‘¥•ÍĞ¸±½…Ñ¥¹œ)±…Ñ•ÍÑ€°µ…¥¹€°…¹‘•Ù€É•™•É•¹•Ì…É”É•©•Ñ•¸()Q¡”µ…¹¥™•ÍĞ‘¥•ÍĞ¥Ì‘•Ñ•Éµ¥¹¥ÍÑ¥Œ…¹…¸‰”…ÑÑ…¡•Ñ¼„‰Õ¹‘±”É••¥ÁĞ¸)Q¡”•¹•É…Ñ•IÕ¹Ñ¥µ”±¥•¹Ğ™¥¹•ÉÁÉ¥¹Ğ¥ÌÁÉ½‘Õ•İ¥Ñ è()Ñ•áĞ)ÁåÑ¡½¸ÌÍÉ¥ÁÑÌ½É•±•…Í”½•¹•É…Ñ•}½µÁ½¹•¹Ñ}±¥•¹Ğ¹Áäp(€€´µÍ¡•µ„‘½Ì½½¹ÑÉ…ÑÌ½½µÁ½¹•¹ĞµÉ•±•…Í”µØÄ¹Í¡•µ„¹©Í½¸p(€€´µ½ÕĞÉ…Ñ•Ì½½‘••¸½Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”µ±¥•¹Ğ½ÍÉŒ½•¹•É…Ñ•¹ÉÌ)€()IÕ¹Ñ¥µ•±¥•¹ĞèéÍÁ…İ¹}¥¹}İ¥Ñ¡}µ…¹¥™•ÍÑ€Á•É™½ÉµÌÑ¡”½µÁ…Ñ¥‰¥±¥Ñä¡…¹‘Í¡…­”è)Ñ¡”¥¹ÍÑ…±±•IÕ¹Ñ¥µ”µÕÍĞ…¹¹½Õ¹”Ñ¡”•á…ĞÁ¥¹¹•Ù•ÉÍ¥½¸°½µµ¥Ğ°…ÉÑ¥™…Ğ)‘¥•ÍĞ°…¹ÍÕÁÁ½ÉÑ•ÁÉ½Ñ½½°É…¹”¸5¥ÍÍ¥¹œÁÉ½Ù•¹…¹”¥Ì„¡…É™…¥±ÕÉ”¸()	Õ¹‘±•MÑ½É•€ÍÑ…•Ì¥¹Ñ¼„‘¥•ÍĞµ¹…µ•¥¹…Ñ¥Ù”Í±½Ğ°ÉÕ¹Ì„…±±•ÈµÍÕÁÁ±¥•)…¹…Éä°Ñ¡•¸Íİ…ÁÌ…Ñ¥Ù•€½ÁÉ•Ù¥½ÕÍ€ÕÍ¥¹œ™¥±•ÍåÍÑ•´É•¹…µ•Ì¸É•©•Ñ•)…¹…Éä‘½•Ì¹½Ğ¡…¹”Ñ¡”…Ñ¥Ù”‰Õ¹‘±”°…¹É½±±‰…¬¹•Ù•ÈÑ½Õ¡•ÌÑ¡”)Í•ÍÍ¥½¸½½¹™¥œ‘¥É•Ñ½Éä¸Q¡”ÕÁ‘…Ñ”±½¬ÁÉ•Ù•¹ÑÌÑİ¼ÁÉ½µ½Ñ•ÉÌ™É½´)ÍÑ…ÉÑ¥¹œÑ¡”ÕÁ‘…Ñ”…Ğ½¹”ìÑ¡”ÍÑ½É”‘½•Ì¹½ĞÍÑ…ÉĞIÕ¹Ñ¥µ”½Èµ…À½ÅÕ•Õ”)…ÕÑ¡½É¥Ñ¥•Ì¸()Q¡¥ÌÉ•Á½Í¥Ñ½ÉäÁÉ½Ù¥‘•ÌÑ¡”½¹ÑÉ…Ğ°‘•Ñ•Éµ¥¹¥ÍÑ¥Œ•¹•É…Ñ¥½¸°¡…¹‘Í¡…­”°)…¹±½…°ÁÉ½µ½Ñ¥½¸ÁÉ¥µ§®6¶‰ËkºwµçH\Y˜XİYÙ\İËˆ]™\]Z\™\ÈH[[YH[ˆÈ]\İHYÙ\İÙˆš[™[™ÜÂœ™\›ÙXÙYœ›ÛHH™\ÜÚ]ÜHØÚ[XK[™\Ù\È[ˆ]™[ZYœ˜[˜ÚÔˆÚ]™\˜X›H™\^H›İXİ[Û‹‚“Z\ÜÚ[™ÈÜˆ™]›ÚÙYÙ^\ËX[›Ü›YY]™[Ëİ[HÙ\]Y[˜Ù\Ë[˜ÛÛ\]X›Bœ›İØÛÛË[™[˜ÛÜœ™Xİ\Y˜XİÈ˜Z[ÛÜÙYÈHÛÜšÙ›İÈÛ›H™\\™\ÈBÛÙH[\[™™]™\ˆ™XÛÛY\ÈH[[YKÛX\Ü]Y]YH]]Üš]K‚‚•H]›Ü›K[™]]˜[›Û[İ[Ûˆ\›™\ÜÈÛÛœİ[Y\ÈÜÙH[™XYHİÛ›ØYY™\šYšYY[œ]ÈÚ]İ]™]ÛÜšÈ\ØÛİ™\Kˆ]ÛÜY\È[›İ\ˆ[œÈÈHš]˜]Bš[˜Xİ]™HÛİ™XÛÛ\]\ÈZ\ˆYÙ\İÈY\ˆÛÜZ[™Ë^ÜÙ\ÈÛ›H]ÛİÂHØ[\‰ÜÈØ[˜\H›İYÚÒSTPÒS×Ğ•S‘WÔÓÕ[™Ú[™Ù\ÈXİ]™XÛ›B˜Y\ˆHİXØÙ\ÜÙ[Ø[˜\N‚‚˜^”UÓ”UKˆ]ÛŒÈØÜš\ËÜ™[X\ÙKÜ›Û[İWØÛÛ\Û™[Ø[™KœH›Û[İHˆK[X[šY™\İÛÛ™šYËØÛÛ\Û™[X[™KšœÛÛˆKX\Y˜XİÈÜ]İËØ\Y˜XİÈˆK\ÛİÈÜ]İËØÛÛ\Û™[\ÛİÈKXØ[˜\KXÛÛ[X[™Ü]İËÚ[œİ[YYL™B”UÓ”UKˆ]ÛŒÈØÜš\ËÜ™[X\ÙKÜ›Û[İWØÛÛ\Û™[Ø[™KœH›Û˜XÚÈˆK\ÛİÈÜ]İËØÛÛ\Û™[\ÛİÂ˜‚•H\›™\ÜÈ]Ù[ˆİ\È›ÈÛÛ\Û™[]]Üš]KˆH˜Z[YYÙ\İÛÛ˜İ\œ™[œ›Û[İ[Û‹Üˆ˜Z[YØ[˜\H™[[İ™\ÈH[˜Xİ]™HÛİ[™™\Ù\™\ÈXİ]™XÂœ›Û˜XÚÈİØ\ÈHÛÛ\]HXİ]™X[™™]š[İ\Ø\™XİÜšY\Ëˆ™X[X›\Ú\‚™[™Ú[È[™ÛX[ˆ[œİ[YÚ[™İÜËÓ[^ÛXXÓÔÈ^Xİ]X›\È\™H[[[Û˜[B››İ[™™\œ™Yœ›ÛH™\ÜÚ]ÜHš^\™\È[™™[XZ[ˆ^\›˜[]šY[˜ÙH›ØÚÙ\œÈ›Ü‚š\ÜİY\ÈÍMÈ[™ÌLL‚
