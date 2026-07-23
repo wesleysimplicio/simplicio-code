@@ -1,196 +1,1 @@
-{
-  "schema": "simplicio.workspace-access-manifest/v1",
-  "scopes": [
-    "crates/codegen/simplicio-runtime-client",
-    "crates/codegen/xai-grok-workspace/src/file_system"
-  ],
-  "rules": [
-    {
-      "path": "crates/codegen/simplicio-runtime-client/src/**",
-      "kind": "process",
-      "classification": "runtime-governed",
-      "owner": "simplicio-runtime-client",
-      "rationale": "The client launches only the negotiated Runtime MCP boundary."
-    },
-    {
-      "path": "crates/codegen/simplicio-runtime-client/src/**",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "owner": "simplicio-runtime-client",
-      "rationale": "Fixture setup is contained in cfg(test) code and is never a production path."
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/*status.rs",
-      "kind": "process",
-      "classification": "bootstrap-allowlisted",
-      "owner": "workspace-bootstrap",
-      "rationale": "Git/JJ status is bootstrap metadata and cannot read workspace content through a fallback."
-    },
-    {
-      "path": "crates/codegen/**/tests/**",
-      "kind": "*",
-      "classification": "test-fixture",
-      "owner": "test-suite",
-      "rationale": "Test fixture I/O is not a production workspace path."
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/**",
-      "kind": "*",
-      "classification": "violation",
-      "owner": "runtime-wiring",
-      "rationale": "Existing direct workspace access remains an explicit migration finding until #49 wiring lands."
-    }
-  ],
-  "baseline": [
-    {
-      "path": "crates/codegen/simplicio-runtime-client/src/lib.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 2
-    },
-    {
-      "path": "crates/codegen/simplicio-runtime-client/src/lib.rs",
-      "kind": "process",
-      "classification": "runtime-governed",
-      "max_count": 4
-    },
-    {
-      "path": "crates/codegen/simplicio-runtime-client/src/loop_hub_transport.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 2
-    },
-    {
-      "path": "crates/codegen/simplicio-runtime-client/src/map_cache.rs",
-      "kind": "process",
-      "classification": "runtime-governed",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/simplicio-runtime-client/tests/fake_server_search.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 7
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 7
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
-      "kind": "process",
-      "classification": "violation",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
-      "kind": "process",
-      "classification": "test-fixture",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 5
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 2
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 0
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/file_tree.rs",
-      "kind": "walk",
-      "classification": "violation",
-      "max_count": 2
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/fuzzy.rs",
-      "kind": "walk",
-      "classification": "violation",
-      "max_count": 3
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/git_status.rs",
-      "kind": "process",
-      "classification": "bootstrap-allowlisted",
-      "max_count": 4
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 16
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
-      "kind": "filesystem",
-      "classification": "test-fixture",
-      "max_count": 16
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
-      "kind": "walk",
-      "classification": "violation",
-      "max_count": 2
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/jj_status.rs",
-      "kind": "process",
-      "classification": "bootstrap-allowlisted",
-      "max_count": 5
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/local_fs.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 1
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/walk.rs",
-      "kind": "filesystem",
-      "classification": "violation",
-      "max_count": 5
-    },
-    {
-      "path": "crates/codegen/xai-grok-workspace/src/file_system/walk.rs",
-      "kind": "walk",
-      "classification": "violation",
-      "max_count": 3
-    }
-  ]
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éí×Ş|N‹Z–‹­¦ëeŠw¬Õì(€€‰Í¡•µ„ˆè€‰Í¥µÁ±¥¥¼¹İ½É­ÍÁ…”µ…•ÍÌµµ…¹¥™•ÍĞ½ØÄˆ°(€€‰Í½Á•Ìˆèl(€€€€‰É…Ñ•Ì½½‘••¸½Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”µ±¥•¹Ğˆ°(€€€€‰É…Ñ•Ì½½‘••¸½á…¤µÉ½¬µİ½É­ÍÁ…”½ÍÉŒ½™¥±•}ÍåÍÑ•´ˆ(€t°(€€‰ÉÕ±•Ìˆèl(€€€ì(€€€€€€‰Á…Ñ ˆè€‰É…Ñ•Ì½½‘••¸½Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”µ±¥•¹Ğ½ÍÉŒ¼¨¨ˆ°(€€€€€€‰­¥¹ˆè€‰ÁÉ½•ÍÌˆ°(€€€€€€‰±…ÍÍ¥™¥…Ñ¥½¸ˆè€‰ÉÕ¹Ñ¥µ”µ½Ù•É¹•ˆ°(€€€€€€‰½İ¹•Èˆè€‰Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”µ±¥•¹Ğˆ°(€€€€€€‰É…Ñ¥½¹…±”ˆè€‰Q¡”±¥•¹Ğ±…Õ¹¡•Ì½¹±äÑ¡”¹•½Ñ¥…Ñ•IÕ¹Ñ¥µ”5@‰½Õ¹‘…Éä¸ˆ(€€€ô°(€€€ì(€€€€€€‰Á…Ñ ˆè€‰É…Ñ•Ì½½‘••¸½Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”µ±¥•¹Ğ½ÍÉŒ¼¨¨ˆ°(€€€€€€‰­¥¹ˆè€‰™¥±•ÍåÍÑ•´ˆ°(€€€€€€‰±…ÍÍ¥™¥…Ñ¥½¸ˆè€‰Ñ•ÍĞµ™¥áÑÕÉ”ˆ°(€€€€€€‰½İ¹•Èˆè€‰Í¥µÁ±¥¥¼µÉÕ¹Ñ¥µ”µ±¥•¹Ğˆ°(€€€€€€‰É…Ñ¥½¹…±”ˆè€‰¥áÑÕÉ”Í•ÑÕÀ¥Ì½¹Ñ…¥¹•¥¸™œ¡Ñ•ÍĞ¤½‘”…¹¥Ì¹•Ù•È„ÁÉ½‘ÕÑ¥½¸Á…Ñ ¸ˆ(€€€ô°(€€€ì(€€€€€€‰Á…Ñ ˆè€‰É…Ñ•Ì½½‘••¸½á…¤µÉ½¬µİ½É­ÍÁ…”½ÍÉŒ½™¥±•}ÍåÍÑ•´¼©ÍÑ…ÑÕÌ¹ÉÌˆ°(€€€€€€‰­¥¹ˆè€‰ÁÉ½•ÍÌˆ°(€€€€€€‰±…ÍÍ¥™¥…Ñ¥½¸ˆè€‰‰½½ÑÍÑÉ…Àµ…±±½İ±¥ÍÑ•ˆ°(€€€€€€‰½İ¹•Èˆè€‰İ½É­ÍÁ…”µ‰½½ÑÍÑÉ…Àˆ°(€€€€€€‰É…Ñ¥½¹…±”ˆè€‰¥Ğ½)(ÍÑ…ÑÕÌ¥Ì‰½½ÑÍÑÉ…Àµ•Ñ…‘…Ñ„…¹…¹¹½ĞÉ•…İ½É­ÍÁ…”½¹Ñ•¹ĞÑ¡É½Õ „™…±±‰…¬¸ˆ(€€€ô°(€€€ì(€€€€€€‰Á…Ñ ˆè€‰É…Ñ•Ì½½‘••¸¼¨¨½Ñ•ÍÑÌ¼¨¨ˆ°(€€€€€€‰­¥¹ˆè€ˆ¨ˆ°(€€€€€€‰±…ÍÍ¥™¥…Ñ¥½¸ˆè€‰Ñ•ÍĞµ™¥áÑÕÉ”ˆ°(€€€€€€‰½İ¹•Èˆè€‰Ñ•ÍĞµÍÕ¥Ñ”ˆ°(€€€€€€‰É…Ñ¥½¹…±”ˆè€‰Q•ÍĞ™¥áÑÕÉ”$½<¥Ì¹½Ğ„ÁÉ½‘ÕÑ¥½¸İ½É­ÍÁ…”Á…Ñ ¸ˆ(€€€ô°(€€€ì(€€€€€€‰Á…Ñ ˆè€‰É…Ñ•Ì½½‘••¸½á…¤µÉ½¬µİ½É­ÍÁ…”½ÍÉŒ½™¥±•}ÍåÍÑ•´¼¨¨ˆ°(€€€€€€‰­¥¹ˆè€ˆ¨ˆ°(€€€€€€‰±…ÍÍ¥™¥…Ñ¥½¸ˆè€‰Ù¥½±…Ñ¥½¸ˆ°(€€€€€€‰½İ¹•Èˆè€‰ÉÕ¹Ñ¥µ”µİ¥É¥¹œˆ°(€€€€€€‰É…Ñ¥½¹…±”ˆè€‰á¥ÍÑ¥¹œ‘¥É•Ğİ½É­ÍÁ…”…•ÍÌƒŞ|¶‰Ëkºwµç]Ø[È‹ˆ˜Û\ÜÚYšXØ][Ûˆˆš[Û][Ûˆ‹ˆ›X^ØÛİ[ˆÂˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KÙÚ]Üİ]\ËœœÈ‹ˆšÚ[™ˆœ›ØÙ\ÜÈ‹ˆ˜Û\ÜÚYšXØ][Ûˆˆ˜›Ûİİ˜\X[İÛ\İY‹ˆ›X^ØÛİ[ˆˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KÚ[™^œœÈ‹ˆšÚ[™ˆ™š[\Ş\İ[H‹ˆ˜Û\ÜÚYšXØ][Ûˆˆš[Û][Ûˆ‹ˆ›X^ØÛİ[ˆM‚ˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KÚ[™^œœÈ‹ˆšÚ[™ˆ™š[\Ş\İ[H‹ˆ˜Û\ÜÚYšXØ][Ûˆˆ\İYš^\™H‹ˆ›X^ØÛİ[ˆM‚ˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KÚ[™^œœÈ‹ˆšÚ[™ˆØ[È‹ˆ˜Û\ÜÚYšXØ][Ûˆˆš[Û][Ûˆ‹ˆ›X^ØÛİ[ˆ‚ˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KÚš—Üİ]\ËœœÈ‹ˆšÚ[™ˆœ›ØÙ\ÜÈ‹ˆ˜Û\ÜÚYšXØ][Ûˆˆ˜›Ûİİ˜\X[İÛ\İY‹ˆ›X^ØÛİ[ˆBˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KÛØØ[ÙœËœœÈ‹ˆšÚ[™ˆ™š[\Ş\İ[H‹ˆ˜Û\ÜÚYšXØ][Ûˆˆš[Û][Ûˆ‹ˆ›X^ØÛİ[ˆBˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KİØ[ËœœÈ‹ˆšÚ[™ˆ™š[\Ş\İ[H‹ˆ˜Û\ÜÚYšXØ][Ûˆˆš[Û][Ûˆ‹ˆ›X^ØÛİ[ˆBˆKˆÂˆœ]ˆ˜Ü˜]\ËØÛÙYÙ[‹ŞZKYÜ›ÚË]ÛÜšÜÜXÙKÜÜ˜ËÙš[WÜŞ\İ[KİØ[ËœœÈ‹ˆšÚ[™ˆØ[È‹ˆ˜Û\ÜÚYšXØ][Ûˆˆš[Û][Ûˆ‹ˆ›X^ØÛİ[ˆÂˆBˆBŸB
