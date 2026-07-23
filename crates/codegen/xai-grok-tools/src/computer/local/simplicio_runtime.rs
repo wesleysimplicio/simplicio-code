@@ -1205,6 +1205,11 @@ mod tests {
                     "encoding": "base64",
                     "truncated": false,
                 }),
+                "simplicio_fs_search" => json!({
+                    "schema": "simplicio.search-result/v1",
+                    "matches": [{"path": "read.txt", "line": 1, "text": "needle"}],
+                    "truncated": false,
+                }),
                 _ => json!({"schema": "simplicio.fake-result/v1", "tool": tool}),
             };
             Ok(RuntimeCallResponse {
@@ -1277,17 +1282,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn hub_runtime_call_keeps_search_out_when_no_search_contract_exists() {
+    async fn hub_runtime_call_routes_search_through_versioned_contract() {
         let workspace = tempfile::tempdir().unwrap();
         let fake = Arc::new(FakeRuntimeCallTransport::default());
         let fs = SimplicioRuntimeFs::with_hub_transport(workspace.path(), fake.clone());
 
-        let error = fs
+        let result = fs
             .search("needle", None, &[], false, false, 100, 100)
             .await
-            .expect_err("search must not be guessed as a runtime_call operation");
-        assert!(error.to_string().contains("has no search contract"));
-        assert!(fake.calls.lock().unwrap().is_empty());
+            .expect("search must use the Runtime contract");
+        assert_eq!(result.matches.len(), 1);
+        assert_eq!(result.matches[0].path, "read.txt");
+        assert_eq!(fake.calls.lock().unwrap()[0].tool, "simplicio_fs_search");
     }
 
     #[cfg(unix)]
