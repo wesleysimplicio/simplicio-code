@@ -12,7 +12,7 @@ from typing import Any
 SCHEMA = "simplicio.component-release/v1"
 COMPONENTS = {"code", "runtime", "loop-hub", "agent-contracts"}
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
-COMMIT = re.compile(r"^[0-9a-f]{7,40}$")
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
 HANDSHAKE_SCHEMA = "simplicio.compatibility-handshake/v1"
 
 
@@ -66,7 +66,9 @@ def validate(manifest: dict[str, Any]) -> dict[str, Any]:
         else:
             protocols[str(name)] = protocol
         generated_digest = item.get("generated_client_digest")
-        if generated_digest is not None and (
+        if name == "runtime" and generated_digest is None:
+            errors.append("runtime must have a sha256 generated_client_digest")
+        elif generated_digest is not None and (
             not isinstance(generated_digest, str) or not HEX64.fullmatch(generated_digest)
         ):
             errors.append(f"{name} must have a sha256 generated_client_digest")

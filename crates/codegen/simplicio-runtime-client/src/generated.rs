@@ -4,7 +4,7 @@
 //! fork generated protocol bindings by hand.
 
 pub const SCHEMA: &str = "simplicio.component-release/v1";
-pub const SCHEMA_SHA256: &str = "1c904fa03ed6a7c3d9a25f74b719616b9b1fbecff0636eb704b3e2bfef1cf093";
+pub const SCHEMA_SHA256: &str = "a1e967982e9ffa6a8eff827a3d1329d90fc56fa1ea285fa25862763b0694dc82";
 pub const REQUIRED_COMPONENTS: &[&str] = &["agent-contracts", "code", "loop-hub", "runtime"];
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
