@@ -416,6 +416,27 @@ pub struct ExternalWorkerRun {
 }
 
 impl ExternalWorkerRun {
+    /// Re-attach to an already delegated Hub workflow after a process restart.
+    ///
+    /// The first poll deliberately replays from sequence zero so the caller
+    /// can rebuild its reduced view from the durable Hub event log. Code does
+    /// not reconstruct or execute worker state locally.
+    pub fn attach(
+        transport: Arc<dyn WorkerHubTransport>,
+        workflow_id: impl Into<String>,
+    ) -> Result<Self, WorkerError> {
+        let workflow_id = workflow_id.into();
+        if workflow_id.trim().is_empty() {
+            return Err(WorkerError::Invalid("workflow_id must not be empty".into()));
+        }
+        Ok(Self {
+            transport,
+            workflow_id,
+            next_sequence: 0,
+            statuses: BTreeMap::new(),
+        })
+    }
+
     pub fn delegate(
         transport: Arc<dyn WorkerHubTransport>,
         request: DelegateRequest,
