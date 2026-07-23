@@ -16,6 +16,8 @@ PROVENANCE = "simplicio-code"
 GENESIS = "genesis"
 MAX_FIELD_BYTES = 4 * 1024 * 1024
 MAX_RECORD_BYTES = 16 * 1024 * 1024
+MAX_RECORDS = 100_000
+MAX_LEDGER_BYTES = 64 * 1024 * 1024
 
 
 def _field(value: str) -> bytes:
@@ -54,12 +56,68 @@ def _encode_record(sequence: int, previous: str, payload: bytes) -> tuple[bytes,
 
 def encode_records(payloads: list[bytes]) -> bytes:
     """Encode a bounded genesis-linked HBP v1 ledger."""
+    if len(payloads) > MAX_RECORDS:
+        raise ValueError("HBP ledger exceeds the record limit")
     output = bytearray(MAGIC)
     previous = GENESIS
     for sequence, payload in enumerate(payloads):
         record, previous = _encode_record(sequence, previous, payload)
         output.extend(record)
     return bytes(output)
+
+
+def decode_records(data: bytes) -> list[bytes]:
+    """Validate a Runtime HBP v1 ledger and return its opaque payloads."""
+    if len(data) > MAX_LEDGER_BYTES or not data.startswith(MAGIC):
+        raise ValueError("invalid HBP header or ledger size")
+    offset = len(MAGIC)
+    payloads: list[bytes] = []
+    previous = GENESIS
+    while offset < len(data):
+        if len(payloads) >= MAX_RECORDS or offset + 4 > len(data):
+            raise ValueError("invalid HBP record count or truncated length")
+        length = struct.unpack_from("<I", data, offset)[0]
+        offset += 4
+        if length < 16 or length > MAX_RECORD_BYTES or offset + length > len(data):
+            raise ValueError("invalid HBP record length")
+        body = memoryview(data)[offset:offset + length]
+        offset += length
+        sequence, _timestamp = struct.unpack_from("<QQ", body, 0)
+        if sequence != len(payloads):
+            raise ValueError("non-contiguous HBP sequence")
+        cursor = 16
+
+        def field() -> str:
+            nonlocal cursor
+            if cursor + 4 > len(body):
+                raise ValueError("truncated HBP field")
+            size = struct.unpack_from("<I", body, cursor)[0]
+            cursor += 4
+            if size > MAX_FIELD_BYTES or cursor + size > len(body):
+                raise ValueError("invalid HBP field length")
+            try:
+                value = bytes(body[cursor:cursor + size]).decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise ValueError("invalid HBP UTF-8 field") from exc
+            cursor += size
+            return value
+
+        topic, payload_hex, provenance = field(), field(), field()
+        if cursor >= len(body) or body[cursor] != 0:
+            raise ValueError("invalid HBP optional marker")
+        cursor += 1
+        actual_previous, content_hash = field(), field()
+        if cursor != len(body) or topic != TOPIC or provenance != PROVENANCE:
+            raise ValueError("unsupported HBP record domain")
+        try:
+            payload = bytes.fromhex(payload_hex)
+        except ValueError as exc:
+            raise ValueError("invalid HBP payload") from exc
+        if actual_previous != previous or content_hash != _content_hash(sequence, actual_previous, payload_hex):
+            raise ValueError("HBP content hash mismatch")
+        payloads.append(payload)
+        previous = content_hash
+    return payloads
 
 
 def encode_record(payload: bytes) -> bytes:

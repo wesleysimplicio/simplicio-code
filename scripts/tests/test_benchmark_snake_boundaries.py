@@ -9,7 +9,7 @@ ROOT = Path(__file__).parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from benchmark_snake import receipt_payload  # noqa: E402
-from hbp_receipt import _content_hash, write_ledger_atomic  # noqa: E402
+from hbp_receipt import _content_hash, decode_records, write_ledger_atomic  # noqa: E402
 
 
 def _records(data: bytes) -> list[tuple[int, str, str, str, str]]:
@@ -53,3 +53,17 @@ def test_benchmark_receipts_are_hbp_and_hash_chained(tmp_path: Path) -> None:
     assert records[0][4] == _content_hash(0, records[0][3], records[0][2])
     assert records[1][3] == records[0][4]
     assert records[1][4] == _content_hash(1, records[1][3], records[1][2])
+    assert len(decode_records(path.read_bytes())) == 2
+
+
+def test_benchmark_reader_rejects_tampering(tmp_path: Path) -> None:
+    path = tmp_path / "events.hbp"
+    write_ledger_atomic(path, [receipt_payload({"status": "PASS"})])
+    tampered = bytearray(path.read_bytes())
+    tampered[-1] ^= 1
+    try:
+        decode_records(bytes(tampered))
+    except ValueError as error:
+        assert "hash" in str(error)
+    else:
+        raise AssertionError("tampered HBP ledger was accepted")
