@@ -130,6 +130,42 @@ def runtime_call(
     return response["result"]
 
 
+def effect_arguments(
+    capability: str, arguments: dict[str, object], *, transaction_id: str
+) -> dict[str, object]:
+    """Attach the Runtime's causal effect envelope to a mutating call."""
+    return {
+        **arguments,
+        "__runtime_effect_transaction": {
+            "schema": "simplicio.effect-transaction/v1",
+            "executor": "simplicio-runtime",
+            "request": {
+                "schema": "simplicio.effect-request/v1",
+                "capability": capability,
+                "identity": {
+                    "session": "code-installed-e2e",
+                    "turn": transaction_id,
+                    "tool_call": transaction_id,
+                    "attempt": "0",
+                    "transaction": transaction_id,
+                },
+                "authority": "code-installed-e2e",
+                "policy_receipt": "code-installed-e2e-policy",
+                "idempotency_key": transaction_id,
+                "action_digest": f"sha256:{transaction_id}",
+                "write_set": [f"repo:{transaction_id}"],
+                "preconditions": ["workspace:prepared"],
+                "lease": {"id": f"lease-{transaction_id}", "fence": 1},
+                "deadline_ms": int(time.time() * 1000) + 60_000,
+                "cancellation": "safe_boundary_only",
+                "validation_plan": "installed-e2e-validation",
+                "rollback_plan": "installed-e2e-rollback",
+                "redaction_plan": "installed-e2e-redaction",
+            },
+        },
+    }
+
+
 def _external_dependencies() -> tuple[list[str], list[str]]:
     """Resolve independently installed executors without inventing a fallback."""
     encoded = os.environ.get("SIMPLICIO_AGENT_HOST_E2E_COMMAND")
@@ -233,6 +269,7 @@ def run(
                 for surface in SURFACES:
                     turn_id = f"e2e-{surface}-turn"
                     identity = {
+                        "host_instance_id": status["host_instance_id"],
                         "workspace_id": "fixture-workspace",
                         "session_id": f"fixture-{surface}",
                         "turn_id": turn_id,
@@ -247,13 +284,13 @@ def run(
                         agent_socket,
                         {
                             "op": "turn.start",
-                            "profile": surface,
+                            "profile": status["profile"],
                             "message": "contract probe",
                             **identity,
                         },
                     )
                     if not result.get("result", {}).get("completed"):
-                        raise RuntimeError(f"{surface} turn did not complete")
+                        raise RuntimeError(f"{surface} turn did not complete: {result}")
                     surfaces.append(
                         {
                             "surface": surface,
@@ -268,6 +305,10 @@ def run(
                         "op": "turn.cancel",
                         "turn_id": "e2e-tui-turn",
                         "host_instance_id": status["host_instance_id"],
+                        "profile": status["profile"],
+                        "session_id": "fixture-tui",
+                        "incarnation": "default",
+                        "revision": 7,
                     },
                 )
                 reconcile = request(
@@ -276,6 +317,10 @@ def run(
                         "op": "turn.reconcile",
                         "turn_id": "e2e-tui-turn",
                         "host_instance_id": status["host_instance_id"],
+                        "profile": status["profile"],
+                        "session_id": "fixture-tui",
+                        "incarnation": "default",
+                        "revision": 7,
                     },
                 )
                 first = request(
@@ -300,22 +345,26 @@ def run(
                     "tools/call",
                     {
                         "name": "simplicio_edit",
-                        "arguments": {
-                            "repo": str(temp),
-                            "plan": json.dumps(
-                                {
-                                    "files": [
-                                        {
-                                            "file": "result.txt",
-                                            "operation": "update",
-                                            "content": "runtime-owned\n",
-                                        }
-                                    ]
-                                }
-                            ),
-                            "atomic": True,
-                            "rollback": True,
-                        },
+                        "arguments": effect_arguments(
+                            "simplicio_edit",
+                            {
+                                "repo": str(temp),
+                                "plan": json.dumps(
+                                    {
+                                        "file": str(temp / "result.txt"),
+                                        "operations": [
+                                            {
+                                                "op": "create",
+                                                "text": "runtime-owned\n",
+                                            }
+                                        ],
+                                    }
+                                ),
+                                "atomic": True,
+                                "rollback": True,
+                            },
+                            transaction_id="e2e-edit",
+                        ),
                     },
                 )
                 listing = runtime_call(
@@ -346,16 +395,20 @@ def run(
                     "tools/call",
                     {
                         "name": "simplicio_exec",
-                        "arguments": {
-                            "repo": str(temp),
-                            "cwd": ".",
-                            "argv": [sys.executable, "-c", "print('argv-safe')"],
-                            "env": {},
-                            "timeout_ms": 5000,
-                            "max_output_bytes": 4096,
-                            "shell": False,
-                            "idempotency_key": "e2e-exec",
-                        },
+                        "arguments": effect_arguments(
+                            "simplicio_exec",
+                            {
+                                "repo": str(temp),
+                                "cwd": ".",
+                                "argv": [sys.executable, "-c", "print('argv-safe')"],
+                                "env": {},
+                                "timeout_ms": 5000,
+                                "max_output_bytes": 4096,
+                                "shell": False,
+                                "idempotency_key": "e2e-exec",
+                            },
+                            transaction_id="e2e-exec",
+                        ),
                     },
                 )
             finally:
@@ -369,17 +422,16 @@ def run(
             list_payload = json.loads(listing["content"][0]["text"])
             stat_payload = json.loads(stat["content"][0]["text"])
             exec_payload = json.loads(execution["content"][0]["text"])
-            if (
-                temp / "result.txt"
-            ).read_text() != "runtime-owned\n" or exec_payload.get(
-                "stdout"
-            ) != "argv-safe\n":
+            exec_stdout = exec_payload.get("stdout")
+            if isinstance(exec_stdout, dict):
+                exec_stdout = exec_stdout.get("data")
+            if (temp / "result.txt").read_text() != "runtime-owned\n" or exec_stdout != "argv-safe\n":
                 raise RuntimeError("Runtime effects did not match receipts")
             listed_paths = {node.get("path") for node in list_payload.get("nodes", list_payload.get("entries", []))}
             stat_exists = stat_payload.get("exists", stat_payload.get("kind") is not None or stat_payload.get("type") is not None)
             if "result.txt" not in listed_paths or not stat_exists:
                 raise RuntimeError("Runtime list/stat did not observe the Runtime edit")
-            if exec_payload.get("effect_state") != "completed":
+            if exec_payload.get("success") is not True:
                 raise RuntimeError("Runtime exec did not return an authoritative completed effect")
             if first["advisories"] != replay["advisories"]:
                 raise RuntimeError("advisory replay is not deterministic")
@@ -418,8 +470,8 @@ def run(
                     "protocol": status["protocol_schema"],
                     "host_instance_id": status["host_instance_id"],
                     "restarted_host_instance_id": restarted["host_instance_id"],
-                    "cancel": cancel["status"],
-                    "reconcile": reconcile["status"],
+                    "cancel": cancel.get("turn", {}).get("state", cancel.get("status")),
+                    "reconcile": reconcile.get("turn", {}).get("state", reconcile.get("status")),
                     "advisory_replay_equal": True,
                     "restart_reconnected": True,
                 },
@@ -430,7 +482,7 @@ def run(
                     "stat": stat_payload["schema"],
                     "edit": edit_payload["schema"],
                     "exec": exec_payload["schema"],
-                    "effect_state": exec_payload["effect_state"],
+                    "effect_state": "completed" if exec_payload.get("success") else "failed",
                 },
                 "surfaces": surfaces,
                 "profile_isolation": len({item["session_id"] for item in surfaces})

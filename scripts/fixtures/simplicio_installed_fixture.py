@@ -77,10 +77,28 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
     repo = Path(str(arguments.get("repo", "."))).resolve()
     if name == "simplicio_edit":
         plan = json.loads(str(arguments["plan"]))
-        for item in plan.get("files", []):
-            target = _safe_path(repo, item["file"])
+        if isinstance(plan.get("file"), str):
+            target = _safe_path(repo, plan["file"])
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(item.get("content", ""), encoding="utf-8")
+            current = target.read_text(encoding="utf-8") if target.exists() else ""
+            for operation in plan.get("operations", []):
+                if operation.get("op") == "create":
+                    current = str(operation.get("text", ""))
+                elif operation.get("op") == "append":
+                    current += str(operation.get("text", ""))
+                elif operation.get("op") == "replace":
+                    current = current.replace(
+                        str(operation.get("find", "")),
+                        str(operation.get("with", "")),
+                    )
+                else:
+                    raise ValueError("unsupported edit operation")
+            target.write_text(current, encoding="utf-8")
+        else:
+            for item in plan.get("files", []):
+                target = _safe_path(repo, item["file"])
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(item.get("content", ""), encoding="utf-8")
         payload = {"schema": "simplicio.edit-result/v1", "accepted": True, "plan": plan, "rolled_back": False}
     elif name == "simplicio_fs_list":
         target = _safe_path(repo, str(arguments.get("path", ".")))
@@ -91,7 +109,7 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
     elif name == "simplicio_exec":
         cwd = _safe_path(repo, str(arguments.get("cwd", ".")))
         completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)
-        payload = {"schema": "simplicio.exec-result/v1", "stdout": completed.stdout, "stderr": completed.stderr, "exit_code": completed.returncode, "timed_out": False, "truncated": False, "effect_state": "completed"}
+        payload = {"schema": "simplicio.exec-result/v1", "success": completed.returncode == 0, "stdout": completed.stdout, "stderr": completed.stderr, "exit_code": completed.returncode, "timed_out": False, "truncated": False, "effect_state": "completed"}
     else:
         payload = {"schema": "simplicio.fixture-result/v1", "accepted": True}
     return {"isError": False, "content": [{"type": "text", "text": json.dumps(payload, sort_keys=True)}]}
