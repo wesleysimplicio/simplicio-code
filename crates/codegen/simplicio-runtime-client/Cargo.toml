@@ -24,6 +24,10 @@ criterion = { workspace = true }
 proptest = { workspace = true }
 
 [[bench]]
+name = "session_registry"
+harness = false
+
+[[bench]]
 name = "loop_hub_idempotency"
 harness = false
 

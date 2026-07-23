@@ -12,6 +12,7 @@ pub mod external_routing;
 pub mod loop_hub;
 pub mod loop_hub_transport;
 pub mod map_cache;
+pub mod session_registry;
 
 pub use loop_hub_transport::{
     HubAttachReceipt, HubAttachRequest, HubCursor, SocketPipeHubTransport,
