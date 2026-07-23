@@ -8,7 +8,6 @@ the initial and final disk observations and never performs cleanup itself.
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
@@ -18,17 +17,39 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 import check_disk_budget as disk  # noqa: E402
+from hbp_receipt import write_atomic  # noqa: E402
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def receipt_payload(receipt: dict[str, object]) -> bytes:
+    """Render the bounded receipt domain as deterministic UTF-8 HBP payload."""
+    command = receipt["command"]
+    initial = receipt["initial"]
+    final = receipt["final"]
+    assert isinstance(command, list) and isinstance(initial, dict) and isinstance(final, dict)
+    fields = {
+        "schema": receipt["schema"],
+        "command": "\x1f".join(str(value) for value in command),
+        "root": receipt["root"],
+        "started_at": receipt["started_at"],
+        "completed_at": receipt["completed_at"],
+        "decision": receipt["decision"],
+        "exit_code": receipt["exit_code"],
+        "initial_free_bytes": initial["free_bytes"],
+        "initial_required_bytes": initial["required_bytes"],
+        "initial_status": initial["status"],
+        "final_free_bytes": final["free_bytes"],
+        "final_required_bytes": final["required_bytes"],
+        "final_status": final["status"],
+    }
+    return "".join(f"{key}={fields[key]}\n" for key in sorted(fields)).encode("utf-8")
+
+
 def write_receipt(path: Path, receipt: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(temporary, path)
+    write_atomic(path, receipt_payload(receipt))
 
 
 def run(command: list[str], root: str, min_free_bytes: int, receipt_path: Path) -> int:

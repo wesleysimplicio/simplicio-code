@@ -1336,8 +1336,8 @@ producer = "disk preflight wrapper"
 consumer = "performance and build evidence reader"
 lifecycle = "atomically replaced execution receipt"
 target_format = "HBP"
-status = "migration_pending"
-reason = "The wrapper persists an internal receipt as JSON today. Migration uses the published Runtime HBP writer/conformance contract; JSON remains only at the explicit edge adapter until the producer is migrated."
+status = "migrated"
+reason = "The wrapper persists its bounded receipt as an atomically published Runtime-compatible HBP v1 record; focused E2E verifies the binary header, framing, and payload observations."
 expires = "2026-12-31"
 
 [[boundary]]
