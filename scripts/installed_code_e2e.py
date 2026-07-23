@@ -104,8 +104,17 @@ def negative_dependency_gates() -> list[dict[str, object]]:
 
 
 def request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]:
-    with socket.socket(socket.AF_UNIX) as client:
+    endpoint = socket_path.read_text(encoding="ascii").strip() if socket_path.is_file() else ""
+    if endpoint.startswith("tcp://"):
+        host, port_text = endpoint.removeprefix("tcp://").rsplit(":", 1)
+        client = socket.create_connection((host, int(port_text)))
+    else:
+        family = getattr(socket, "AF_UNIX", None)
+        if family is None:
+            raise RuntimeError("agent_transport_unavailable")
+        client = socket.socket(family)
         client.connect(str(socket_path))
+    with client:
         client.sendall(json.dumps(payload).encode())
         client.shutdown(socket.SHUT_WR)
         chunks = []
@@ -265,6 +274,7 @@ def run(
         agent = subprocess.Popen(
             agent_command,
             env=env,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
