@@ -54,6 +54,7 @@ xai-acp-lib = { workspace = true }
 xai-codebase-graph = { path = "../xai-codebase-graph" }
 xai-grok-paths = { path = "../xai-grok-paths" }
 base64 = { workspace = true }
+bincode = "1.3.3"
 infer = { workspace = true }
 sha2 = { workspace = true, features = ["force-soft"] }
 bstr = "1.12.1"
@@ -82,6 +83,7 @@ xai-grok-mcp = { path = "../xai-grok-mcp" }
 xai-file-utils = { path = "../xai-file-utils" }
 xai-grok-auth = { path = "../xai-grok-auth" }
 xai-grok-telemetry = { workspace = true }
+simplicio-code-formats = { path = "../simplicio-code-formats" }
 xai-tty-utils = { workspace = true }
 xai-sqlite-journal = { workspace = true }
 reqwest = { workspace = true }

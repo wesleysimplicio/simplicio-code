@@ -12,6 +12,7 @@ JSON](https://github.com/wesleysimplicio/simplicio-runtime/blob/main/docs/ADR-20
 | Managed configuration sync marker | managed-config sync | staleness and policy gates | HBI, `simplicio.managed-config-marker/v1` | Old JSON marker is not read as live state |
 | Append-only migration/evidence records | Code migration and audit tools | release/evidence readers | HBP v1 | Hash-chain verification is fail-closed |
 | Disk-preflight execution receipt | disk-budget wrapper | build/performance evidence reader | HBP v1, `code.record` | Atomic single-record publication; no JSON fallback |
+| Durable rewind checkpoint | `xai-grok-workspace::CheckpointStore` | workspace rewind and sandbox restore | HBP v1, `simplicio.code-rewind/v1` payload | Legacy `checkpoint-<n>.json` is read only during bounded startup migration, then moved to `.legacy.bak`; no normal JSON fallback |
 | Human Code runtime configuration | operator | Runtime client | strict typed TOML | Unknown keys and unsupported schema versions fail |
 | Runtime MCP / provider JSON | external Runtime/provider | boundary adapter | external protocol only | Raw JSON terminates at the adapter |
 
@@ -31,9 +32,12 @@ and the target is published through a same-directory synced temp file and
 rename. A failed or truncated conversion leaves the legacy source untouched.
 `MapCache::load` only reads HBI; it never silently falls back to JSON.
 
-The legacy reader in `MapCache::migrate_legacy` is scheduled for removal after
-2026-12-31. It is classified in `config/json-boundaries.toml` as an exact,
-owned migration boundary.
+The legacy readers in `MapCache::migrate_legacy` and
+`CheckpointStore::migrate_legacy_checkpoint` are scheduled for removal after
+2026-12-31. They are classified in `config/json-boundaries.toml` as exact,
+owned migration boundaries. Checkpoint migration validates the filename index,
+publishes the HBP target through a synced same-directory temp file, and leaves
+corrupt or mismatched input untouched.
 
 ## Runtime dependency
 
