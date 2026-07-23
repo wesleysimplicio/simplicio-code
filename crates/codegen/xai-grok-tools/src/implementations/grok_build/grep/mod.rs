@@ -803,7 +803,8 @@ async fn runtime_search(
                     params
                         .max_chars_per_line
                         .unwrap_or(DEFAULT_MAX_CHARS_PER_LINE),
-                ),
+                )
+                .into_owned(),
             });
         }
     }

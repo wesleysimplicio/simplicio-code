@@ -4,6 +4,7 @@ pub mod embedded_search_tools;
 pub mod file_system;
 pub mod mock_fs;
 pub mod preflight;
+pub(crate) mod runtime_directory;
 #[cfg(unix)]
 pub mod shell_state;
 pub mod simplicio_runtime;

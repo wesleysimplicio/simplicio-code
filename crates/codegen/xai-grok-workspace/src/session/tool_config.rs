@@ -404,6 +404,8 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
         let simplicio_runtime_fs = Arc::new(
             xai_grok_tools::computer::local::SimplicioRuntimeFs::new(cwd.clone()),
         );
+        let directory = Some(simplicio_runtime_fs.clone()
+            as Arc<dyn xai_grok_tools::types::resources::AsyncDirectoryListing>);
         let fs = simplicio_runtime_fs.clone()
             as Arc<dyn xai_grok_tools::computer::types::AsyncFileSystem>;
         let search =
@@ -461,6 +463,7 @@ impl SessionContextFactory for WorkspaceSessionContextFactory {
             backend,
             fs,
             search,
+            directory,
             cwd,
             session_folder: Self::resolve_session_folder(session_id),
             session_env,
