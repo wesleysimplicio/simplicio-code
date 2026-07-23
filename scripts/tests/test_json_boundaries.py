@@ -17,6 +17,11 @@ def test_scans_extensionless_embedded_and_artifact_boundaries(tmp_path: pathlib.
     assert any(path == "renamed.data" and token == "JSON.parse" for path, _, token in findings)
 
 
+def test_ignores_non_code_logs_from_boundary_inventory(tmp_path: pathlib.Path) -> None:
+    (tmp_path / "error.log").write_text("json.dumps({})\n", encoding="utf-8")
+    assert MODULE.findings(tmp_path) == []
+
+
 def test_scans_generated_output_only_when_requested(tmp_path: pathlib.Path) -> None:
     generated = tmp_path / "target" / "package"
     generated.mkdir(parents=True)
