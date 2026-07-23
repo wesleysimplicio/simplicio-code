@@ -76,15 +76,13 @@ Runtime, Mapper, scheduler, and inference, exposes bounded
 interactive/background capacity, and declares one active inference slot. A
 handshake or attach mismatch blocks the client.
 
-This completes the Code-side transport boundary for #55/#106. The opt-in
-`scripts/code_loop_hub_e2e.py` proof uses a separately checked-out, external
-Loop daemon, rotates its PID after the first progress cursor, and requires the
-Code client to handshake, reattach, and replay that cursor. Its JSON receipt
-records observed restart downtime and process identity; no provider or local
-LLM is used. Hermetic contract tests still use an in-process Unix socket
-fixture and do not pretend to be external evidence. Queue/fairness enforcement,
-Runtime/Mapper restart, installed surfaces, and goal-to-remotely-confirmed-PR
-proof remain ecosystem acceptance work outside this client-only slice.
+This completes the Code-side transport boundary for #55/#106. The external
+Loop Hub daemon/endpoint provider, Mapper service, queue/fairness enforcement,
+and real multi-surface evidence remain outside this repository. The acceptance
+issues must stay open until two TUIs plus headless and ACP attach to the same
+running Hub and receipts/process counts prove the no-duplication invariant.
+The contract tests use an in-process Unix socket fixture only; they do not
+pretend to be external Loop Hub evidence.
 
 Coordinated goals (waves, multiple issues, global queues, or parallel work)
 must use a ready Hub. The admission validator rejects `coordinated` scope when
@@ -92,30 +90,3 @@ the Hub is absent rather than falling back to Code-local fan-out. The natural
 request “finish all issues for project X” is therefore routed Code → Agent →
 Loop Hub → Runtime/Mapper/workers; completion still requires a remotely
 requeried delivery receipt from the external ecosystem.
-
-## External worker adapter
-
-`agent_workers` adds the Code-side contract for materialized agents without
-turning Code into a second scheduler. Code submits a bounded task DAG as one
-`DelegateRequest`; the external Loop Hub owns wave admission, claims, leases,
-backpressure, retries, and worker creation. Task contracts remain opaque input
-for the external AgentHost. The adapter has no model/provider selection,
-process execution, worktree creation, or local scheduling API.
-
-Hub events carry stage/agent/worktree/attempt/fence identity. Code reduces the
-causal stream into `waiting`, `working`, `blocked`, `failed`, `done`, or
-`cancelled` UI state while rejecting stale fences, invalid transitions,
-duplicate events, and simultaneous worktree/branch/path-token ownership. A
-`done` state needs a receipt; a live worker alone is never success. STOP/cancel
-always asks the Hub to revoke mutation authority.
-
-Delivery is a separate, replay-safe request. An implementer cannot issue it:
-the observed worker must have the `delivery` role, be terminal with a valid
-receipt, and present an independent review receipt. Code accepts completion
-only when the Hub's response includes a non-empty remote reference and
-`remotely_confirmed=true`. The adapter does not merge or close an issue.
-
-`WorkerHubTransport` is the external seam. Production binaries must bind it to
-the installed Loop Hub transport; unit tests use a fake only to exercise the
-Code-side validator and reducer. Absence of that binding fails closed and must
-never activate a local worker, provider, or embedded LLM.
