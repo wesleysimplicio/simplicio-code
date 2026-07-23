@@ -17,7 +17,7 @@ use xai_grok_sampling_types::ConversationItem;
 /// (which only needs `&self` to send, but `&mut self` is still correct
 /// because the actor is the sole owner).
 pub trait ChatPersistence: Send + 'static {
-    /// Persist a single conversation item (append to chat_history.jsonl).
+    /// Persist a single conversation item through the selected storage adapter.
     fn persist_message(&mut self, item: &ConversationItem);
 
     /// Replace the entire chat history (compaction / rewind).
