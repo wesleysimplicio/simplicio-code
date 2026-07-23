@@ -31,6 +31,7 @@ REQUIRED_RUNTIME_TOOLS = frozenset(
         "simplicio_prototype_artifact_write",
     )
 )
+AGENT_STARTUP_TIMEOUT_S = 30.0
 REQUIRED_AGENT_CAPABILITIES = frozenset(
     ("host.advisories", "host.status", "turn.cancel", "turn.reconcile", "turn.start")
 )
@@ -111,6 +112,31 @@ def request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]:
         while chunk := client.recv(65536):
             chunks.append(chunk)
     return json.loads(b"".join(chunks))
+
+
+def wait_for_agent_socket(
+    process: subprocess.Popen[str], socket_path: Path, *, timeout_s: float = AGENT_STARTUP_TIMEOUT_S
+) -> None:
+    """Wait for a real AgentHost endpoint and report early process failure clearly."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if socket_path.exists():
+            return
+        return_code = process.poll()
+        if return_code is not None:
+            stderr = ""
+            if process.stderr is not None:
+                stderr = process.stderr.read().strip()[-2000:]
+            detail = f": {stderr}" if stderr else ""
+            raise RuntimeError(f"agent_host_exited:{return_code}{detail}")
+        time.sleep(0.02)
+    raise RuntimeError(f"agent_host_start_timeout:{timeout_s:.1f}s")
+
+
+def close_process_pipes(process: subprocess.Popen[str]) -> None:
+    for stream in (process.stdin, process.stdout, process.stderr):
+        if stream is not None:
+            stream.close()
 
 
 def runtime_call(
@@ -236,12 +262,15 @@ def run(
         agent_command = [
             item.replace("{socket}", str(agent_socket)) for item in agent_template
         ]
-        agent = subprocess.Popen(agent_command, env=env)
+        agent = subprocess.Popen(
+            agent_command,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
         try:
-            for _ in range(100):
-                if agent_socket.exists():
-                    break
-                time.sleep(0.01)
+            wait_for_agent_socket(agent, agent_socket)
             status = request(agent_socket, {"op": "host.status"})
             validate_agent_status(status)
 
@@ -488,16 +517,17 @@ def run(
                 raise RuntimeError("advisory replay is not deterministic")
             agent.terminate()
             agent.wait(timeout=2)
+            close_process_pipes(agent)
             agent_socket.unlink(missing_ok=True)
-            agent = subprocess.Popen(agent_command, env=env)
-            for _ in range(100):
-                try:
-                    restarted = request(agent_socket, {"op": "host.status"})
-                    break
-                except (ConnectionRefusedError, FileNotFoundError):
-                    time.sleep(0.01)
-            else:
-                raise RuntimeError("AgentHost did not reconnect after restart")
+            agent = subprocess.Popen(
+                agent_command,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            wait_for_agent_socket(agent, agent_socket)
+            restarted = request(agent_socket, {"op": "host.status"})
             if (
                 not fixture_mode
                 and restarted["host_instance_id"] == status["host_instance_id"]
@@ -567,6 +597,7 @@ def run(
         finally:
             agent.terminate()
             agent.wait(timeout=2)
+            close_process_pipes(agent)
 
 
 def main() -> None:  # pragma: no cover - exercised by the documented system command
