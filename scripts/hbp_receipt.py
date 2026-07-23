@@ -34,30 +34,51 @@ def _content_hash(sequence: int, previous: str, payload: str) -> str:
     return digest.hexdigest()
 
 
-def encode_record(payload: bytes) -> bytes:
-    """Encode one genesis-linked ``code.record`` in Runtime's HBP v1 layout."""
+def _encode_record(sequence: int, previous: str, payload: bytes) -> tuple[bytes, str]:
+    """Encode one HBP record and return its hash for the next chain link."""
     payload_hex = payload.hex()
-    content_hash = _content_hash(0, GENESIS, payload_hex)
+    content_hash = _content_hash(sequence, previous, payload_hex)
     body = (
-        struct.pack("<QQ", 0, 0)
+        struct.pack("<QQ", sequence, 0)
         + _field(TOPIC)
         + _field(payload_hex)
         + _field(PROVENANCE)
         + b"\x00"
-        + _field(GENESIS)
+        + _field(previous)
         + _field(content_hash)
     )
     if len(body) > MAX_RECORD_BYTES:
         raise ValueError("HBP record exceeds the safety limit")
-    return MAGIC + struct.pack("<I", len(body)) + body
+    return struct.pack("<I", len(body)) + body, content_hash
+
+
+def encode_records(payloads: list[bytes]) -> bytes:
+    """Encode a bounded genesis-linked HBP v1 ledger."""
+    output = bytearray(MAGIC)
+    previous = GENESIS
+    for sequence, payload in enumerate(payloads):
+        record, previous = _encode_record(sequence, previous, payload)
+        output.extend(record)
+    return bytes(output)
+
+
+def encode_record(payload: bytes) -> bytes:
+    """Encode one genesis-linked ``code.record`` in Runtime's HBP v1 layout."""
+    return encode_records([payload])
+
+
+def write_ledger_atomic(path: Path, payloads: list[bytes]) -> None:
+    """Publish a complete HBP ledger without exposing a partial file."""
+    encoded = encode_records(payloads)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.tmp")
+    with temporary.open("wb") as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
 
 
 def write_atomic(path: Path, payload: bytes) -> None:
     """Publish a single-record receipt without exposing a partial ledger."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    with temporary.open("wb") as stream:
-        stream.write(encode_record(payload))
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temporary, path)
+    write_ledger_atomic(path, [payload])

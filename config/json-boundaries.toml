@@ -1288,8 +1288,8 @@ producer = "benchmark harness"
 consumer = "performance evidence reader"
 lifecycle = "append-only measurement record"
 target_format = "HBP"
-status = "migration_pending"
-reason = "Benchmark state, events and receipts are internal evidence and must use HBP/Markdown."
+status = "migrated"
+reason = "Benchmark evidence is published as HBP ledgers plus Markdown; JSON remains only for explicitly consumed external package/provider protocols."
 expires = "2026-12-31"
 
 [[boundary]]

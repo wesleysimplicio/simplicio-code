@@ -22,9 +22,9 @@ Both agents receive the same prompt and model value.
 
 ## Output
 
-- benchmark-result.json: raw run result and status.
-- events.jsonl: lifecycle events.
-- cost-ledger.json: measured token usage only.
+- benchmark-result.hbp: Runtime-compatible raw run result and status ledger.
+- events.hbp: Runtime-compatible lifecycle event ledger.
+- cost-ledger.hbp: Runtime-compatible measured token-usage ledger.
 - benchmark-report.md: compact comparison.
 
 Statuses are:
@@ -40,9 +40,10 @@ Browser behavior remains UNVERIFIED until a browser validator writes evidence.
 
 ## Pure Runtime gate
 
-For a Simplicio result to be marked as pure Runtime, provide
-runtime-receipt.json in the agent workspace or pass --runtime-receipt.
-The receipt must contain:
+For a Simplicio result to be marked as pure Runtime, provide an external
+Runtime receipt in the agent workspace or pass --runtime-receipt. The input
+adapter accepts the provider's JSON protocol, but the benchmark's persisted
+evidence is always HBP. The receipt must contain:
 
     {
       "server_name": "simplicio",

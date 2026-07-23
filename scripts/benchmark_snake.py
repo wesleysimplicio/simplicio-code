@@ -4,6 +4,11 @@ from __future__ import annotations
 import argparse, json, os, platform, re, shlex, shutil, subprocess, sys, tempfile, time
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+from hbp_receipt import write_ledger_atomic  # noqa: E402
 
 PROMPT = """Create a complete Snake game in React 18 + TypeScript + Vite.
 Requirements: arrow-key controls, collisions and game-over; score and
@@ -19,9 +24,30 @@ ALIASES = {
 def ms() -> int:
     return time.monotonic_ns() // 1_000_000
 
-def write_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+def _flatten_receipt(value: Any, prefix: str = "receipt") -> list[str]:
+    """Render evidence as deterministic key/value lines, never as JSON state."""
+    if isinstance(value, dict):
+        lines: list[str] = []
+        for key in sorted(value):
+            lines.extend(_flatten_receipt(value[key], f"{prefix}.{key}"))
+        return lines
+    if isinstance(value, list):
+        lines = []
+        for index, item in enumerate(value):
+            lines.extend(_flatten_receipt(item, f"{prefix}[{index}]"))
+        return lines
+    if value is None:
+        encoded = "null"
+    elif isinstance(value, bool):
+        encoded = "true" if value else "false"
+    else:
+        encoded = str(value)
+    return [f"{prefix}={quote(encoded, safe='-_.:/@')}"]
+
+
+def receipt_payload(value: Any) -> bytes:
+    """Encode one benchmark receipt payload for the Runtime HBP writer."""
+    return ("\n".join(_flatten_receipt(value)) + "\n").encode("utf-8")
 
 def command(template: str, workspace: Path, model: str) -> list[str]:
     return [x.format(workspace=str(workspace), model=model, prompt=PROMPT)
@@ -199,17 +225,16 @@ def main() -> int:
             "Pure Runtime is UNVERIFIED without a valid runtime-receipt.json.",
         ],
     }
-    write_json(output / "benchmark-result.json", report)
-    (output / "events.jsonl").write_text(
-        "\n".join(json.dumps(x, sort_keys=True) for x in events) + "\n", encoding="utf-8")
-    write_json(output / "cost-ledger.json", {
+    write_ledger_atomic(output / "benchmark-result.hbp", [receipt_payload(report)])
+    write_ledger_atomic(output / "events.hbp", [receipt_payload(x) for x in events])
+    write_ledger_atomic(output / "cost-ledger.hbp", [receipt_payload({
         "schema": "simplicio.cost-ledger/v1", "model": args.model,
         "rows": [{"agent": r["agent"], "tokens": r.get("tokens"),
                   "token_status": r.get("token_usage_status"),
                   "wall_ms": r.get("wall_ms"), "rss_peak_bytes": r.get("rss_peak_bytes")}
-                 for r in runs],
+                  for r in runs],
         "paid_tokens_claimable": all(r.get("token_usage_status") == "MEASURED" for r in runs),
-    })
+    })])
     lines = ["# Snake benchmark", "", f"- status: {status}",
              f"- model: {args.model}", "", "| Agent | Status | Wall ms | RSS | Tokens | Runtime |",
              "|---|---|---:|---:|---:|---|"]
