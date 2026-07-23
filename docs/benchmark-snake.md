@@ -22,9 +22,10 @@ Both agents receive the same prompt and model value.
 
 ## Output
 
-- benchmark-result.hbp: Runtime-compatible raw run result and status ledger.
-- events.hbp: Runtime-compatible lifecycle event ledger.
-- cost-ledger.hbp: Runtime-compatible measured token-usage ledger.
+- benchmark-result.json: raw run result and status.
+- events.hbp: lifecycle events as Runtime-compatible HBP records whose bounded,
+  typed TOML payloads are read back and verified before the run is reported.
+- cost-ledger.json: measured token usage only.
 - benchmark-report.md: compact comparison.
 
 Statuses are:
