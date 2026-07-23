@@ -21,7 +21,7 @@ TOKENS = re.compile(
     r"JSON\.(?:parse|stringify)|serde_json|\.jsonl?\b|\.ndjson\b|jsonrpc)",
     re.IGNORECASE,
 )
-SKIP = {".git", "node_modules", "target", "dist", "build", ".venv", "__pycache__", ".orchestrator"}
+SKIP = {".git", "node_modules", "target", "dist", "build", ".simplicio", ".venv", "__pycache__", ".orchestrator"}
 SOURCE_SUFFIXES = {".py", ".mjs", ".js", ".ts", ".tsx", ".rs", ".go", ".java", ".cs", ".toml", ".yaml", ".yml"}
 ARTIFACT_SUFFIXES = {".json", ".jsonl", ".ndjson"}
 BUILD_MANIFESTS = {"Cargo.toml", "Cargo.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}
@@ -77,8 +77,8 @@ def findings(root: pathlib.Path, include_generated: bool = False) -> list[tuple[
     out: list[tuple[str, int, str]] = []
     for path in root.rglob("*"):
         rel_path = path.relative_to(root)
-        skipped_generated = any(part in {"target", "dist", "build"} for part in rel_path.parts)
-        if (not path.is_file() or any(part in (SKIP - {"target", "dist", "build"}) for part in rel_path.parts)
+        skipped_generated = any(part in {"target", "dist", "build", ".simplicio"} for part in rel_path.parts)
+        if (not path.is_file() or any(part in (SKIP - {"target", "dist", "build", ".simplicio"}) for part in rel_path.parts)
                 or (skipped_generated and not include_generated)
                 or rel_path.as_posix() == "scripts/check_json_boundaries.py"):
             continue

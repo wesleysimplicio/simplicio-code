@@ -1,0 +1,24 @@
+# Exact wire/schema lane reviewed for issue #100.
+# These paths are protocol adapters, not Code-owned persistence.
+crates/common/xai-computer-hub-sdk/src/admission.rs
+crates/common/xai-computer-hub-sdk/src/connection_borrow.rs
+crates/common/xai-computer-hub-sdk/src/demux.rs
+crates/common/xai-computer-hub-sdk/src/error.rs
+crates/common/xai-computer-hub-sdk/src/handshake.rs
+crates/common/xai-computer-hub-sdk/src/harness.rs
+crates/common/xai-computer-hub-sdk/src/notification.rs
+crates/common/xai-computer-hub-sdk/src/observability.rs
+crates/common/xai-computer-hub-sdk/src/pool.rs
+crates/common/xai-computer-hub-sdk/src/server.rs
+crates/common/xai-tool-runtime/src/context.rs
+crates/common/xai-tool-runtime/src/dispatch.rs
+crates/common/xai-tool-runtime/src/error.rs
+crates/common/xai-tool-runtime/src/notification.rs
+crates/common/xai-tool-runtime/src/render.rs
+crates/common/xai-tool-runtime/src/search.rs
+crates/common/xai-tool-runtime/src/streaming.rs
+crates/common/xai-tool-runtime/src/tool.rs
+crates/common/xai-tool-types/src/schema_utils.rs
+crates/common/xai-tool-types/src/serde_lenient.rs
+crates/common/xai-tool-types/src/task.rs
+crates/common/xai-tool-types/src/types.rs
