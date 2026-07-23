@@ -37,9 +37,7 @@ def test_provenance_chain_fails_closed(tmp_path, broken_link):
     bump_receipt = copy.deepcopy(bump_receipt)
     promotion_receipt = copy.deepcopy(promotion_receipt)
     if broken_link == "installed":
-        installed = slots / "active" / "runtime"
-        installed.chmod(0o600)
-        installed.write_bytes(b"modified after promotion")
+        (slots / "active" / "runtime").write_bytes(b"modified after promotion")
     elif broken_link == "bump":
         bump_receipt["signing_key_id"] = "unrelated-key"
     else:
