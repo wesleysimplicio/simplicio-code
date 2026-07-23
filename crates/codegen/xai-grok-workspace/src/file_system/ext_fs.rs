@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use crate::error::{WorkspaceError, WorkspaceResult};
 use crate::handle::WorkspaceHandle;
 use crate::workspace_ops::WorkspaceOp;
-use xai_grok_tools::computer::local::SimplicioRuntimeFs;
+use xai_grok_tools::computer::{local::SimplicioRuntimeFs, types::AsyncFileSystem};
 
 // Canonical in xai-grok-workspace-types; re-exported for existing paths.
 use xai_grok_workspace_types::rpc::fs::FsReadEncoding;

@@ -22,9 +22,8 @@ pub(crate) fn runtime_payload(value: Value) -> Result<Value, String> {
     else {
         return Ok(value);
     };
-    serde_json::from_str(text).map_err(|error| {
-        format!("Simplicio Runtime returned invalid filesystem JSON: {error}")
-    })
+    serde_json::from_str(text)
+        .map_err(|error| format!("Simplicio Runtime returned invalid filesystem JSON: {error}"))
 }
 
 #[async_trait::async_trait]
