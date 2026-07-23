@@ -11,6 +11,7 @@ JSON](https://github.com/wesleysimplicio/simplicio-runtime/blob/main/docs/ADR-20
 | Runtime repository-map cache | Runtime map adapter / Code cache | mapper-context consumer | HBI adapter, `simplicio.map-result/v1` | Explicit JSON upgrade reader only; no normal JSON fallback |
 | Managed configuration sync marker | managed-config sync | staleness and policy gates | HBI, `simplicio.managed-config-marker/v1` | Old JSON marker is not read as live state |
 | Append-only migration/evidence records | Code migration and audit tools | release/evidence readers | HBP v1 | Hash-chain verification is fail-closed |
+| Disk-preflight execution receipt | disk-budget wrapper | build/performance evidence reader | HBP v1, `code.record` | Atomic single-record publication; no JSON fallback |
 | Human Code runtime configuration | operator | Runtime client | strict typed TOML | Unknown keys and unsupported schema versions fail |
 | Runtime MCP / provider JSON | external Runtime/provider | boundary adapter | external protocol only | Raw JSON terminates at the adapter |
 
