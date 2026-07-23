@@ -1,0 +1,7 @@
+#!/bin/sh
+set -eu
+case "${1:-}" in
+  --version) printf '%s\n' 'simplicio-code 0.1.0-fixture' ;;
+  probe) printf '%s\n' 'lifecycle-fixture-v1' ;;
+  *) printf '%s\n' 'usage: simplicio-code --version|probe' >&2; exit 64 ;;
+esac

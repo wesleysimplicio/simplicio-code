@@ -93,6 +93,12 @@ jobs:
           python3 scripts/tests/test_ci_diagnostics.py
       - name: Run gate self-tests
         run: python3 scripts/tests/test_issue_68_gates.py
+      - name: Prove reproducible offline install lifecycle
+        run: |
+          python3 -m pytest scripts/tests/test_installed_lifecycle_e2e.py -q
+          python3 scripts/release/installed_lifecycle_e2e.py --fixture > /tmp/lifecycle-a.json
+          python3 scripts/release/installed_lifecycle_e2e.py --fixture > /tmp/lifecycle-b.json
+          cmp /tmp/lifecycle-a.json /tmp/lifecycle-b.json
       - name: Verify reproducible issue meta-audit
         run: |
           python3 -m pytest scripts/tests/test_issue_meta_audit.py -q

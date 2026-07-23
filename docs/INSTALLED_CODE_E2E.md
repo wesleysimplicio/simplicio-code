@@ -1,5 +1,30 @@
 # Installed AgentHost + Runtime Code E2E fixture
 
+## Bounded install lifecycle harness
+
+The offline lifecycle harness creates a new private prefix, copies and hashes
+an old executable, observes `--version` and `probe`, canaries and atomically
+upgrades to a new executable, then swaps back and proves the original digest
+and observations. It never downloads or resolves `latest`, and it refuses a
+pre-existing prefix, a missing/non-executable artifact, or a digest/command
+mismatch. Run its deterministic, explicitly non-release fixture with:
+
+```text
+python3 scripts/release/installed_lifecycle_e2e.py --fixture \
+  --prefix /tmp/simplicio-clean-install --output /tmp/lifecycle-receipt.json
+```
+
+Without `--fixture`, pass both immutable artifacts with `--old` and `--new`.
+When neither is passed the runner prefers an actual `simplicio-code` found on
+`PATH` (or `SIMPLICIO_CODE_INSTALLED_BIN`) and requires
+`SIMPLICIO_CODE_UPGRADE_BIN`; it never substitutes a repository fixture.
+Delete the chosen prefix before every run. The receipt omits host paths and
+clocks so identical inputs produce identical bytes, records unavailable
+platform/production evidence as `null` with reasons, and always leaves the
+issue-closure claim false. Thus one local fixture run advances regression
+coverage for #100/#57 but does **not** prove clean Windows/macOS installs,
+publisher provenance, production rollout, or all acceptance criteria.
+
 Run against independently installed executors from the repository root:
 
 ```console
