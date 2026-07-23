@@ -827,7 +827,6 @@ paths = [
   'crates/codegen/xai-grok-shell/src/agent/chat_modes.rs',
   'crates/codegen/xai-grok-shell/src/agent/config.rs',
   'crates/codegen/xai-grok-shell/src/agent/ext_parsers.rs',
-  'crates/codegen/xai-grok-shell/src/agent/feedback_client.rs',
   'crates/codegen/xai-grok-shell/src/agent/folder_trust.rs',
   'crates/codegen/xai-grok-shell/src/agent/handlers/model_switch.rs',
   'crates/codegen/xai-grok-shell/src/agent/handlers/session.rs',
@@ -1576,4 +1575,16 @@ lifecycle = "ephemeral hook event/result HTTP payloads; no Code-owned persistenc
 target_format = "versioned external hook JSON contract"
 status = "exception"
 reason = "This runner serializes hook event envelopes to configured HTTPS endpoints and parses the optional blocking decision response. The JSON terminates at the explicit hook protocol boundary; SSRF validation and fail-closed handling remain local policy, not persisted session state."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-shell/src/agent/feedback_client.rs"
+category = "external_feedback_protocol_adapter"
+owner = "code-feedback"
+producer = "cli-chat-proxy feedback and session-signals APIs"
+consumer = "authenticated Code feedback client"
+lifecycle = "ephemeral authenticated feedback/session-signal HTTP payloads; records remain server-owned"
+target_format = "versioned external feedback JSON contract"
+status = "exception"
+reason = "This module is the REST adapter for cli-chat-proxy feedback, session events, turn deltas, and heuristic configuration. Its JSON is sent to and received from the external service; it does not persist Code-owned workspace/session state or provide local model execution."
 expires = "2099-12-31"
