@@ -205,8 +205,23 @@ def validate(
     }
 
 
-def render(receipt: dict[str, Any], *, surface: str, current_source_revision: str | None = None) -> str:
-    result = validate(receipt, current_source_revision=current_source_revision)
+def render(
+    receipt: dict[str, Any],
+    *,
+    surface: str,
+    current_source_revision: str | None = None,
+    build_requested: bool = False,
+) -> str:
+    """Render a surface, optionally evaluating the explicit Build request.
+
+    The default remains fail-closed (no Build authorization is exposed unless
+    the caller explicitly asks for the Build gate to be evaluated).
+    """
+    result = validate(
+        receipt,
+        build_requested=build_requested,
+        current_source_revision=current_source_revision,
+    )
     if surface == "tui":
         decision = _decision_name(receipt.get("decision")) or "invalid"
         lines = [

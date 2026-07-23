@@ -65,6 +65,27 @@ python3 scripts/validate_prototype_acceptance.py \
   --loop /path/loop.json --runtime /path/runtime.json --e2e /path/e2e.json
 ```
 
+For a real installed integration proof, run the provider-free harness below.
+It starts the supplied Runtime binary over MCP stdio, writes and reads
+Runtime-owned artifacts, injects an unsafe artifact ID, exercises Loop #568,
+validates Code's decision gate, renders TUI/UI/headless/ACP, and writes a
+single acceptance receipt. The command must receive a real Loop checkout and a
+real executable Runtime binary; it does not use mocks, a local filesystem
+fallback, DeepSeek, or any local LLM.
+
+```bash
+PYTHONPATH=/path/to/simplicio-loop \
+python3 scripts/prototype_product_e2e.py \
+  --repo /path/to/simplicio-code \
+  --loop-root /path/to/simplicio-loop \
+  --runtime /path/to/simplicio-runtime \
+  --output /tmp/simplicio-prototype-product-e2e.json
+```
+
+The resulting `simplicio.prototype-product-e2e/v1` receipt is the evidence
+used to close the Prototype-First acceptance issue. A passing validator-only
+fixture is not a substitute for this installed binary run.
+
 Use `--benchmark 10000` to measure the receipt-validation hot path. Timing is
 otherwise `null` with a reason so a deterministic receipt never estimates an
 unobserved metric.
