@@ -26,7 +26,14 @@ jobs:
         run: >-
           python scripts/check_json_boundaries.py --mode strict --max-findings 100
           --scope-file config/json-boundaries-binary-formats.txt
+      - name: Runtime-contract no-internal-JSON scanner (fail closed)
+        run: >-
+          python tools/policy_scan.py
+          --repo crates/codegen/simplicio-code-formats
+          --policy policy/no-internal-json.toml --mode strict
       - name: Scanner and package-policy regression tests
-        run: python -m pytest scripts/tests/test_json_boundaries.py scripts/tests/test_package_contents.py
+        run: >-
+          python -m pytest scripts/tests/test_json_boundaries.py
+          scripts/tests/test_package_contents.py scripts/tests/test_policy_scan.py
       - if: ${{ inputs.strict == true }}
         run: python scripts/check_json_boundaries.py --mode strict --max-findings 100

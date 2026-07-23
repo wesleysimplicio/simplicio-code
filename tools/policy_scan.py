@@ -8,6 +8,7 @@ library. Output is Markdown plus one HBP evidence row; no JSON report exists.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import os
 import re
@@ -103,7 +104,13 @@ def main() -> int:
     parser.add_argument("--markdown", type=Path)
     parser.add_argument("--hbp", type=Path)
     args = parser.parse_args()
-    today = os.environ.get("SIMPLICIO_POLICY_SCAN_DATE", "2099-01-01")
+    # Use the real UTC date by default. A far-future default made every
+    # realistically dated exception look expired and divorced CI results from
+    # the policy's actual review clock.
+    today = os.environ.get(
+        "SIMPLICIO_POLICY_SCAN_DATE",
+        datetime.datetime.now(datetime.UTC).date().isoformat(),
+    )
     policy_path = args.policy or args.repo / "policy/no-internal-json.toml"
     policy = load_policy(policy_path, today)
     markdown, hbp, code = render(scan(args.repo, policy), policy, args.mode)

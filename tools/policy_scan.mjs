@@ -99,7 +99,7 @@ const root = path.resolve(value("--repo", "."));
 const policyPath = path.resolve(value("--policy", path.join(root, "policy/no-internal-json.toml")));
 const mode = value("--mode", "baseline");
 if (!["baseline", "strict"].includes(mode)) throw new Error("--mode must be baseline or strict");
-const today = process.env.SIMPLICIO_POLICY_SCAN_DATE ?? "2099-01-01";
+const today = process.env.SIMPLICIO_POLICY_SCAN_DATE ?? new Date().toISOString().slice(0, 10);
 const policy = policyFromToml(fs.readFileSync(policyPath, "utf8"), today);
 const [markdown, hbp, code] = render(scan(root, policy), policy, mode);
 const markdownPath = value("--markdown", null);
