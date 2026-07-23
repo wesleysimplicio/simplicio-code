@@ -789,7 +789,6 @@ paths = [
   'crates/codegen/xai-grok-pager/src/views/question_view.rs',
   'crates/codegen/xai-grok-pager/src/views/suggestion_controller/mod.rs',
   'crates/codegen/xai-grok-pager/src/views/suggestion_controller/tests.rs',
-  'crates/codegen/xai-grok-pager/src/voice/auth.rs',
   'crates/codegen/xai-grok-pager/src/worktree_cmd/display.rs',
   'crates/codegen/xai-grok-pager/src/worktree_cmd/mod.rs',
   'crates/codegen/xai-grok-paths/src/lib.rs',
@@ -1088,7 +1087,6 @@ paths = [
   'crates/codegen/xai-grok-update/src/auto_update.rs',
   'crates/codegen/xai-grok-update/src/manifest_verify.rs',
   'crates/codegen/xai-grok-update/src/version.rs',
-  'crates/codegen/xai-grok-workspace-client/src/lib.rs',
   'crates/codegen/xai-grok-workspace-types/src/chunks/mod.rs',
   'crates/codegen/xai-grok-workspace-types/src/chunks/ops.rs',
   'crates/codegen/xai-grok-workspace-types/src/chunks/session.rs',
@@ -1105,7 +1103,6 @@ paths = [
   'crates/codegen/xai-grok-workspace-types/src/requests/session.rs',
   'crates/codegen/xai-grok-workspace-types/src/requests/tool.rs',
   'crates/codegen/xai-grok-workspace-types/src/rpc/agents_md.rs',
-  'crates/codegen/xai-grok-workspace-types/src/rpc/envelope.rs',
   'crates/codegen/xai-grok-workspace-types/src/rpc/fs.rs',
   'crates/codegen/xai-grok-workspace-types/src/rpc/git.rs',
   'crates/codegen/xai-grok-workspace-types/src/rpc/hooks.rs',
@@ -1134,9 +1131,7 @@ paths = [
   'crates/codegen/xai-grok-workspace/src/foreign_sessions/codex/files.rs',
   'crates/codegen/xai-grok-workspace/src/foreign_sessions/codex/mod.rs',
   'crates/codegen/xai-grok-workspace/src/handle.rs',
-  'crates/codegen/xai-grok-workspace/src/hub.rs',
   'crates/codegen/xai-grok-workspace/src/hub_auth.rs',
-  'crates/codegen/xai-grok-workspace/src/hub_channel.rs',
   'crates/codegen/xai-grok-workspace/src/hub_server.rs',
   'crates/codegen/xai-grok-workspace/src/permission/auto_mode.rs',
   'crates/codegen/xai-grok-workspace/src/permission/claude_settings.rs',
@@ -1173,7 +1168,6 @@ paths = [
   'crates/common/xai-computer-hub-core/src/resolver.rs',
   'crates/common/xai-computer-hub-core/src/transport.rs',
   'crates/common/xai-computer-hub-sdk/src/admission.rs',
-  'crates/common/xai-computer-hub-sdk/src/connection.rs',
   'crates/common/xai-computer-hub-sdk/src/connection_borrow.rs',
   'crates/common/xai-computer-hub-sdk/src/demux.rs',
   'crates/common/xai-computer-hub-sdk/src/error.rs',
@@ -1600,4 +1594,76 @@ lifecycle = "ephemeral authenticated binary audio and JSON transcript WebSocket 
 target_format = "versioned external STT WebSocket contract"
 status = "exception"
 reason = "These exact paths implement and type the wss://api.x.ai/v1/stt protocol: PCM frames go out and transcript events come back. JSON is confined to the external STT wire contract; the runtime does not start a local speech or language model."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-pager/src/voice/auth.rs"
+category = "external_voice_auth_adapter"
+owner = "code-voice"
+producer = "Code AuthManager bearer provider"
+consumer = "external xAI voice API client"
+lifecycle = "ephemeral bearer resolution; auth.json is referenced only as the upstream token source"
+target_format = "external voice authentication contract"
+status = "exception"
+reason = "This bridge adapts the existing Code AuthManager to the external voice API and does not parse, write, or persist JSON itself. The auth.json mention is documentation for the upstream token source, not a Code-owned JSON boundary."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-workspace-client/src/lib.rs"
+category = "external_workspace_rpc_adapter"
+owner = "code-workspace"
+producer = "versioned workspace RPC request/response protocol"
+consumer = "external workspace service peer"
+lifecycle = "ephemeral typed RPC envelopes; no local persistence"
+target_format = "versioned external workspace JSON-RPC contract"
+status = "exception"
+reason = "rpc_raw and rpc serialize requests and decode RpcEnvelope at the workspace service boundary. The client is transport-only and does not use JSON for workspace/session persistence."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-workspace/src/hub.rs"
+category = "external_tool_server_adapter"
+owner = "code-workspace"
+producer = "external ToolServer/Hub frames"
+consumer = "workspace runtime session handlers"
+lifecycle = "ephemeral in-memory tool-call dispatch; no durable JSON state"
+target_format = "versioned external ToolServer JSON contract"
+status = "exception"
+reason = "The workspace Hub receives remote tool_call_request frames and routes them to in-memory session handlers. JSON terminates at the external ToolServer boundary; Hub state is runtime-owned memory, not persistence."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-workspace/src/hub_channel.rs"
+category = "external_tool_notification_adapter"
+owner = "code-workspace"
+producer = "external ToolNotificationFrame protocol"
+consumer = "workspace notification channel"
+lifecycle = "ephemeral in-memory notification frames; no durable JSON state"
+target_format = "versioned external tool notification JSON contract"
+status = "exception"
+reason = "This channel decodes ToolNotificationFrame and WireToolNotification::Custom from the external Hub protocol and forwards them in memory. It does not serialize or persist Code-owned session/workspace state."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-workspace-types/src/rpc/envelope.rs"
+category = "external_workspace_rpc_contract"
+owner = "code-workspace"
+producer = "versioned workspace RPC protocol"
+consumer = "workspace RPC client and server peers"
+lifecycle = "versioned typed RPC envelope; no persistence"
+target_format = "versioned external workspace JSON-RPC contract"
+status = "exception"
+reason = "This file defines the explicit ok/err RPC envelope with Serialize/Deserialize for workspace peers. It is a protocol contract, not a workspace/session storage format."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/common/xai-computer-hub-sdk/src/connection.rs"
+category = "external_hub_rpc_adapter"
+owner = "code-hub-sdk"
+producer = "typed JSON-RPC over WebSocket Hub protocol"
+consumer = "external Hub peer"
+lifecycle = "ephemeral authenticated WebSocket frames and reconnect state; no JSON persistence"
+target_format = "versioned external JSON-RPC 2.0 contract"
+status = "exception"
+reason = "The SDK connection serializes requests and validates JsonRpcVersion 2.0 over the external Hub WebSocket. Reconnect/demux state is in memory; JSON is not used as workspace, session, cache, queue, or execution persistence."
 expires = "2099-12-31"
