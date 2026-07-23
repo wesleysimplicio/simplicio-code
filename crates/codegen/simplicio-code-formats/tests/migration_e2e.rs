@@ -36,7 +36,7 @@ fn upgrade_restart_receipt_and_idempotent_resume() {
     assert!(first.migrated);
     let reopened = std::fs::read(&current).unwrap();
     let state = HbiReader::open(&reopened).unwrap();
-    assert_eq!(state.schema(), "simplicio.workspace-state/v1");
+    assert!(state.schema_matches("simplicio.workspace-state/v1"));
     assert_eq!(state.section(0).unwrap().1, b"demo");
     assert_eq!(state.section(1).unwrap().1, b"abc123");
     assert_eq!(std::fs::read(&backup).unwrap(), b"demo|abc123\n");

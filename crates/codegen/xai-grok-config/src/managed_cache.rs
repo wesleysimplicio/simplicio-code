@@ -68,7 +68,7 @@ fn encode_marker(cache: &ManagedConfigCache) -> std::io::Result<Vec<u8>> {
 fn decode_marker(bytes: &[u8]) -> std::io::Result<ManagedConfigCache> {
     let reader = HbiReader::open(bytes)
         .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    if reader.schema() != MANAGED_CONFIG_CACHE_SCHEMA || reader.section_count() != 1 {
+    if !reader.schema_matches(MANAGED_CONFIG_CACHE_SCHEMA) || reader.section_count() != 1 {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "managed config marker schema mismatch",

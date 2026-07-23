@@ -352,7 +352,7 @@ impl MapCache {
             Ok(reader) => reader,
             Err(_) => return Ok(None),
         };
-        if reader.schema() != MAP_RESULT_SCHEMA_V1 || reader.section_count() != 1 {
+        if !reader.schema_matches(MAP_RESULT_SCHEMA_V1) || reader.section_count() != 1 {
             return Ok(None);
         }
         let result: MapResult = match reader.section(0).and_then(|(kind, payload)| {
