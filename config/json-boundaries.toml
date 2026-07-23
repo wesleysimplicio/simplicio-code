@@ -1066,7 +1066,6 @@ paths = [
   'crates/codegen/xai-grok-tools/src/implementations/skills/discovery.rs',
   'crates/codegen/xai-grok-tools/src/implementations/skills/skill.rs',
   'crates/codegen/xai-grok-tools/src/implementations/use_tool/mod.rs',
-  'crates/codegen/xai-grok-tools/src/implementations/web_search/client.rs',
   'crates/codegen/xai-grok-tools/src/implementations/web_search/types.rs',
   'crates/codegen/xai-grok-tools/src/normalization.rs',
   'crates/codegen/xai-grok-tools/src/notification/types.rs',
@@ -1543,4 +1542,16 @@ lifecycle = "ephemeral authenticated HTTP request/response payloads; remote sess
 target_format = "versioned external JSON HTTP contract"
 status = "exception"
 reason = "This module is the authenticated HTTP adapter for external backend/session, subagent-bundle, settings, login-config, and model-list endpoints. Its JSON is serialized/deserialized only at those remote API boundaries; it does not implement local workspace/session persistence or an execution fallback."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "crates/codegen/xai-grok-tools/src/implementations/web_search/client.rs"
+category = "external_http_protocol_adapter"
+owner = "code-web-search"
+producer = "provider Responses API web-search contract"
+consumer = "Code WebSearch tool"
+lifecycle = "ephemeral authenticated provider request/response payloads; citations are returned as tool output"
+target_format = "versioned external Responses API JSON contract"
+status = "exception"
+reason = "This module is a provider-facing Responses API adapter for web search. JSON is confined to request/response serialization, error details, and response citation extraction; it does not persist workspace/session state or start a local inference authority."
 expires = "2099-12-31"
