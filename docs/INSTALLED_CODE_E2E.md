@@ -20,13 +20,12 @@ profiles, cancellation/reconciliation, deterministic restart and advisory replay
 Runtime atomic edit, and argv-safe execution. Runtime compatibility is proven
 before the first Agent turn. Missing and incompatible AgentHost/Runtime cases
 are then exercised for every surface and recorded with `effect_attempted: false`,
-proving that dependency failure cannot silently become a productive turn.
-
-The repository-owned no-network fixture remains available for regression tests:
-
-```console
-python3 scripts/installed_code_e2e.py --fixture --output fixture-receipt.json
-```
+proving that dependency failure cannot silently become a productive turn. The
+JSON receipt includes the fixture SHA-256, a deterministic `evidence_sha256`
+over all non-timing evidence, the requested atomic/rollback policy and resulting
+effect state, and measured fixture throughput. Repeating the command must produce
+the same `evidence_sha256` even though elapsed time differs. Unobservable
+production latency is explicitly `null`-equivalent with a reason.
 
 This fixture is external to Code's productive process, but it is **not** a
 replacement implementation of AgentHost or Runtime. It refuses to start
@@ -41,16 +40,8 @@ The regression suite is also standalone and requires no paid Actions:
 ```console
 python3 -m unittest scripts.tests.test_installed_code_e2e
 ```
-To exercise the independently installed product binaries rather than the
-hermetic contract fixture, pass the installed launcher explicitly:
 
-```bash
-python3 scripts/installed_code_e2e.py --installed /path/to/simplicio
-```
-
-This mode is deliberately fail-closed: the executable must exist and advertise
-`simplicio_fs_list`, `simplicio_fs_stat`, `simplicio_edit`, and
-`simplicio_exec`. The E2E edits a file, observes it through list/stat, then
-executes an argv-safe command and requires an authoritative `completed` effect
-receipt. It never substitutes the fixture when the installed binary is absent
-or incompatible.
+CI runs this command in the secret-free `simplicio-owned-reports` job and
+uploads the receipt. The suite includes a missing-capability failure injection,
+invalid causal identity and path traversal rejection, deterministic replay,
+restart/reconnect, cancellation/reconciliation, and two-run evidence comparison.
