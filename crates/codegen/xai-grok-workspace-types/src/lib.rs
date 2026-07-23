@@ -84,6 +84,10 @@ pub mod requests;
 pub mod rpc;
 pub mod types;
 
+// Keep the prototype-first wire types available at the crate root for the
+// pager/runtime client facades that consume this namespace directly.
+pub use crate::types::prototype_first;
+
 /// MCP tool name delimiter: server names are qualified as `"server__tool"`.
 ///
 /// Lives in `xai-grok-workspace-types` (instead of `xai-grok-workspace` or
