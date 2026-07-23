@@ -40,8 +40,8 @@ Duplicate delivery is a no-op and never runs the canary again.
 This is a Code-side ingestion boundary, not an external release publisher. It
 does not fabricate events, fetch `latest`, publish artifacts, or claim installed
 Windows/Linux/macOS E2E. External ecosystem event delivery, signed provenance
-publication, generated bump PR automation, and installed cross-platform evidence
-remain dependencies of issue #110.
+publication, an observed production bump within the 15-minute budget, and
+installed cross-platform evidence remain dependencies of issue #110.
 
 Authenticated ecosystem producers deliver `simplicio.release-event/v1` through
 the `simplicio-component-release-v1` repository-dispatch event. The 15-minute
@@ -83,3 +83,20 @@ rollback swaps the complete `active` and `previous` directories. Real publisher
 endpoints and clean installed Windows/Linux/macOS executables are intentionally
 not inferred from repository fixtures and remain external evidence blockers for
 issues #57 and #110.
+
+After promotion, the offline installed-evidence verifier replays the signature
+and artifact validation and requires the bump receipt, promotion receipt, active
+manifest, and every installed artifact to resolve to the same signed payload:
+
+```text
+PYTHONPATH=. python3 scripts/release/verify_installed_promotion.py \
+  --event /path/to/event.json --trust-dir /path/to/trust \
+  --artifacts-dir /path/to/artifacts --active-slot /path/to/slots/active \
+  --bump-receipt /path/to/bump-receipt.json \
+  --promotion-receipt /path/to/promotion-receipt.json \
+  --out /path/to/installed-release-evidence.json
+```
+
+The evidence contains no clock, host, or network fields, so replay with the
+same immutable inputs is byte deterministic. Synthetic signed fixtures test
+this local verifier but are explicitly not external publication evidence.

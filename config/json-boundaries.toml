@@ -86,8 +86,10 @@ paths = [
   '.github/workflows/component-release-event.yml',
   'scripts/release/apply_component_release.py',
   'scripts/release/prepare_component_bump.py',
+  'scripts/release/verify_installed_promotion.py',
   'scripts/tests/test_apply_component_release.py',
   'scripts/tests/test_prepare_component_bump.py',
+  'scripts/tests/test_verify_installed_promotion.py',
 ]
 category = "external_release_protocol"
 owner = "code-release"
