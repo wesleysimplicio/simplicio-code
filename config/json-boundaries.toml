@@ -1207,7 +1207,6 @@ paths = [
   'scripts/validate_component_release.py',
   'scripts/validate_loop_contract.py',
   'scripts/validate_loop_hub_client.py',
-  'scripts/validate_prototype_decision.py',
 ]
 category = "internal_fixture_or_evidence"
 owner = "code-runtime"
@@ -1229,6 +1228,18 @@ lifecycle = "source-controlled governance metadata; never workspace, session, qu
 target_format = "TOML policy registry"
 status = "exception"
 reason = "The registry describes and classifies JSON boundaries for the scanner itself. Its JSON vocabulary is policy metadata, not an application persistence format; the exact self-reference is excluded to prevent a self-scanning loop."
+expires = "2099-12-31"
+
+[[boundary]]
+path = "scripts/validate_prototype_decision.py"
+category = "external_protocol_acceptance_adapter"
+owner = "code-runtime"
+producer = "Runtime Prototype-First decision receipt"
+consumer = "Code preview and Build authorization gate"
+lifecycle = "explicit external receipt validation and human-readable preview; never workspace/session persistence"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "This validator terminates the external Prototype-First receipt at a fail-closed typed decision boundary; it does not write or restore Code-owned session state."
 expires = "2099-12-31"
 
 
