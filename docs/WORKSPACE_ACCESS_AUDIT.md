@@ -10,10 +10,8 @@ rationale, and classification. `violation` and unclassified findings fail the
 gate; test fixtures and the short bootstrap allowlist remain explicit. The
 manifest intentionally records the current `xai-grok-workspace` bypasses as
 violations so the audit cannot be mistaken for proof that the migration is
-complete. Content search is now routed through the Agent-gated Runtime search
-adapter and fails closed without it. The remaining findings include auxiliary
-attachment, indexing, tree, fuzzy-search and walk paths even though the
-productive agent tools (`grep`, `hashline_grep`,
+complete. The client and ACP extension filesystem surfaces now route list/stat/read/write/delete through the Agent-gated Runtime adapters; their remaining direct calls are explicit `cfg(test)` fixtures. This includes the still-pending auxiliary attachment, indexing, tree, fuzzy-search and
+walk paths even though the productive agent tools (`grep`, `hashline_grep`,
 `grep_files`, `list_dir`, apply/edit and terminal execution) are Runtime-wired.
 Consequently, a failing audit is expected evidence of the remaining in-repo
 work, not an external dependency failure and not a releasable acceptance
