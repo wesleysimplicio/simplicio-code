@@ -34,6 +34,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
+    ffi::OsStr,
     io::{BufRead, BufReader, Write},
     path::{Component, Path, PathBuf},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -72,6 +73,7 @@ pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
 /// Bound on how many raw bytes of an unparsable handshake response are
 /// surfaced in [`Error::InvalidResponse`] diagnostics.
 const RAW_SNIPPET_MAX_BYTES: usize = 200;
+const LOOP_HUB_ENDPOINT_ENV: &str = "SIMPLICIO_LOOP_HUB_ENDPOINT";
 static MAPPED_WORKSPACES: LazyLock<Mutex<HashSet<PathBuf>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
 static SHARED_RUNTIME_CLIENTS: LazyLock<Mutex<HashMap<PathBuf, Weak<SharedRuntimeSession>>>> =
@@ -145,6 +147,13 @@ impl RuntimeCapabilities {
 /// Starts the Runtime-owned repository map once per workspace and process.
 /// Mapping runs in the background so selecting a large folder never blocks the UI.
 pub fn start_workspace_map(workspace: &Path) -> Result<bool, Error> {
+    // A discovered Hub is the mapper authority.  Do not silently start the
+    // legacy process-local mapper when Code is attached to that Hub: doing so
+    // creates a second map authority and can return a different overlay.  The
+    // caller must use the negotiated Hub map handle instead.
+    if loop_hub_endpoint_configured(std::env::var_os(LOOP_HUB_ENDPOINT_ENV).as_deref()) {
+        return Ok(false);
+    }
     let workspace = workspace
         .canonicalize()
         .unwrap_or_else(|_| workspace.to_path_buf());
@@ -178,6 +187,10 @@ pub fn start_workspace_map(workspace: &Path) -> Result<bool, Error> {
         let _ = child.wait();
     });
     Ok(true)
+}
+
+fn loop_hub_endpoint_configured(endpoint: Option<&OsStr>) -> bool {
+    endpoint.is_some_and(|value| !value.to_string_lossy().trim().is_empty())
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -1162,6 +1175,15 @@ mod tests {
         let second = SharedRuntimeClient::connect_in(workspace.path()).unwrap();
         assert!(Arc::ptr_eq(&first.session, &second.session));
         assert!(first.session.client.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn hub_endpoint_suppresses_process_local_mapper_bootstrap() {
+        assert!(!loop_hub_endpoint_configured(None));
+        assert!(!loop_hub_endpoint_configured(Some(OsStr::new("  "))));
+        assert!(loop_hub_endpoint_configured(Some(OsStr::new(
+            "unix:///tmp/loop-hub"
+        ))));
     }
 
     #[test]
