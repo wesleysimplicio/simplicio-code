@@ -299,7 +299,9 @@ impl OperationalInbox {
                     .items
                     .get_mut(&decision.intent.session_id)
                     .ok_or(InboxError::UnknownIntent)?;
-                if item.intent_id.as_deref() != Some(intent_id.as_str()) || item.receipt_id.is_some() {
+                if item.intent_id.as_deref() != Some(intent_id.as_str())
+                    || item.receipt_id.is_some()
+                {
                     return Err(InboxError::StaleEvent);
                 }
                 item.receipt_id = Some(receipt_id.clone());
@@ -453,7 +455,14 @@ fn sanitize_text(value: &str) -> Result<String, InboxError> {
 
 fn redact_sensitive(value: &str) -> String {
     let mut redacted = value.to_owned();
-    for marker in ["Bearer ", "api_key=", "apikey=", "password=", "secret=", "token="] {
+    for marker in [
+        "Bearer ",
+        "api_key=",
+        "apikey=",
+        "password=",
+        "secret=",
+        "token=",
+    ] {
         let lower = redacted.to_ascii_lowercase();
         let Some(start) = lower.find(&marker.to_ascii_lowercase()) else {
             continue;
@@ -595,9 +604,14 @@ mod tests {
     #[test]
     fn duplicate_intents_and_receipts_cannot_replace_decisions() {
         let mut inbox = OperationalInbox::default();
-        inbox.apply(attention("event-1", "s1", Risk::Low, 1)).unwrap();
+        inbox
+            .apply(attention("event-1", "s1", Risk::Low, 1))
+            .unwrap();
         inbox.record_intent(intent("s1")).unwrap();
-        assert_eq!(inbox.record_intent(intent("s1")), Err(InboxError::StaleEvent));
+        assert_eq!(
+            inbox.record_intent(intent("s1")),
+            Err(InboxError::StaleEvent)
+        );
         inbox
             .apply(CanonicalEvent::Authorization {
                 event_id: "event-2".into(),
@@ -628,13 +642,18 @@ mod tests {
             Err(InboxError::StaleEvent)
         );
         assert_eq!(inbox.ordered_items()[0].status, ItemStatus::Applied);
-        assert_eq!(inbox.ordered_items()[0].receipt_id.as_deref(), Some("receipt-1"));
+        assert_eq!(
+            inbox.ordered_items()[0].receipt_id.as_deref(),
+            Some("receipt-1")
+        );
     }
 
     #[test]
     fn newer_attention_invalidates_old_authorization_and_receipt() {
         let mut inbox = OperationalInbox::default();
-        inbox.apply(attention("event-1", "s1", Risk::Low, 1)).unwrap();
+        inbox
+            .apply(attention("event-1", "s1", Risk::Low, 1))
+            .unwrap();
         inbox.record_intent(intent("s1")).unwrap();
         inbox
             .apply(CanonicalEvent::Authorization {
@@ -651,7 +670,9 @@ mod tests {
             .unwrap();
         inbox.confirm("intent-s1").unwrap();
         inbox.take_dispatch("intent-s1").unwrap();
-        inbox.apply(attention("event-3", "s1", Risk::Low, 2)).unwrap();
+        inbox
+            .apply(attention("event-3", "s1", Risk::Low, 2))
+            .unwrap();
         assert_eq!(
             inbox.apply(CanonicalEvent::Receipt {
                 event_id: "event-4".into(),
