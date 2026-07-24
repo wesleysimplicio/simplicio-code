@@ -292,6 +292,7 @@ def run(
                 env=env,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
             )
             try:
@@ -476,9 +477,30 @@ def run(
                         ),
                     },
                 )
-                prototype_read = runtime_call(
+                prototype_write_retry = runtime_call(
                     runtime,
                     8,
+                    "tools/call",
+                    {
+                        "name": "simplicio_prototype_artifact_write",
+                        "arguments": effect_arguments(
+                            "simplicio_prototype_artifact_write",
+                            {
+                                "repo": str(temp),
+                                "artifact_id": prototype_id,
+                                "path": f".simplicio/artifacts/prototype-first/{prototype_id}.json",
+                                "content_base64": base64.b64encode(prototype_bytes).decode("ascii"),
+                                "encoding": "base64",
+                                "atomic": True,
+                                "rollback": True,
+                            },
+                            transaction_id="e2e-prototype-write",
+                        ),
+                    },
+                )
+                prototype_read = runtime_call(
+                    runtime,
+                    9,
                     "tools/call",
                     {
                         "name": "simplicio_prototype_artifact_read",
@@ -501,6 +523,9 @@ def run(
             stat_payload = json.loads(stat["content"][0]["text"])
             exec_payload = json.loads(execution["content"][0]["text"])
             prototype_write_payload = json.loads(prototype_write["content"][0]["text"])
+            prototype_write_retry_payload = json.loads(
+                prototype_write_retry["content"][0]["text"]
+            )
             prototype_read_payload = json.loads(prototype_read["content"][0]["text"])
             exec_stdout = exec_payload.get("stdout")
             if isinstance(exec_stdout, dict):
@@ -520,6 +545,8 @@ def run(
                 != "simplicio.prototype-artifact/v1"
                 or prototype_read_payload.get("content_base64")
                 != base64.b64encode(prototype_bytes).decode("ascii")
+                or prototype_write_retry_payload.get("schema")
+                != "simplicio.prototype-artifact/v1"
                 or not (temp / ".simplicio/artifacts/prototype-first/installed-preview.json").is_file()
             ):
                 raise RuntimeError("Runtime Prototype-First artifact round trip did not match receipts")
@@ -529,15 +556,21 @@ def run(
             agent.wait(timeout=2)
             close_process_pipes(agent)
             agent_socket.unlink(missing_ok=True)
+            restarted_socket = temp / "agent-restarted.sock"
+            restarted_command = [
+                item.replace(str(agent_socket), str(restarted_socket))
+                for item in agent_command
+            ]
             agent = subprocess.Popen(
-                agent_command,
+                restarted_command,
                 env=env,
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            wait_for_agent_socket(agent, agent_socket)
-            restarted = request(agent_socket, {"op": "host.status"})
+            wait_for_agent_socket(agent, restarted_socket)
+            restarted = request(restarted_socket, {"op": "host.status"})
             if (
                 not fixture_mode
                 and restarted["host_instance_id"] == status["host_instance_id"]
@@ -547,7 +580,7 @@ def run(
                 )
             elapsed = time.perf_counter_ns() - started
             negative_gates = negative_dependency_gates()
-            scenario_count = len(surfaces) + len(negative_gates) + 7
+            scenario_count = len(surfaces) + len(negative_gates) + 8
             return {
                 "schema": "simplicio.code-installed-e2e-receipt/v1",
                 "proof_kind": (
@@ -575,6 +608,7 @@ def run(
                     "exec": exec_payload["schema"],
                     "prototype_artifact_write": prototype_write_payload["schema"],
                     "prototype_artifact_read": prototype_read_payload["receipt"]["schema"],
+                    "prototype_artifact_idempotent_retry": True,
                     "effect_state": "completed" if exec_payload.get("success") else "failed",
                 },
                 "surfaces": surfaces,

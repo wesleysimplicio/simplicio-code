@@ -48,6 +48,30 @@ class InstalledLifecycleE2ETest(unittest.TestCase):
             with self.assertRaisesRegex(MODULE.LifecycleRejected, "installed_artifact_missing"):
                 MODULE.discover(None, None)
 
+    def test_interrupted_upgrade_is_cleaned_and_retry_succeeds(self):
+        with tempfile.TemporaryDirectory() as parent:
+            prefix = Path(parent) / "install"
+            real_replace = MODULE.os.replace
+            calls = 0
+
+            def fail_on_activation(source, destination):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected activation interruption")
+                real_replace(source, destination)
+
+            with patch.object(MODULE.os, "replace", side_effect=fail_on_activation):
+                with self.assertRaisesRegex(OSError, "activation interruption"):
+                    MODULE.run(prefix, OLD, NEW, "fixture")
+            self.assertFalse(prefix.exists())
+
+            receipt = MODULE.run(prefix, OLD, NEW, "fixture")
+            self.assertEqual(receipt["status"], "passed")
+            self.assertEqual(
+                receipt["rollback"]["digest"], receipt["clean_install"]["digest"]
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

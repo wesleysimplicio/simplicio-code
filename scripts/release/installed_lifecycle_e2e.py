@@ -10,11 +10,53 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 
 
 class LifecycleRejected(RuntimeError):
     """The lifecycle proof cannot safely continue."""
+
+
+def _script_header(path: Path) -> bytes:
+    with path.open("rb") as source:
+        return source.readline(256)
+
+
+def _windows_runnable(path: Path) -> bool:
+    """Accept native PE files and explicitly interpreted test fixtures."""
+    header = _script_header(path)
+    return header.startswith(b"MZ") or header.startswith(b"#!")
+
+
+def _shell_interpreter() -> str | None:
+    candidates = [
+        shutil.which("sh"),
+        os.environ.get("ProgramFiles", "") + r"\Git\usr\bin\sh.exe",
+        os.environ.get("ProgramFiles", "") + r"\Git\bin\sh.exe",
+    ]
+    return next(
+        (candidate for candidate in candidates if candidate and Path(candidate).is_file()),
+        None,
+    )
+
+
+def _command_for_artifact(path: Path) -> list[str]:
+    """Run native artifacts directly and shebang fixtures through their interpreter."""
+    if os.name != "nt":
+        return [str(path)]
+    header = _script_header(path)
+    if header.startswith(b"MZ"):
+        return [str(path)]
+    if header.startswith(b"#!"):
+        shebang = header[2:].decode("utf-8", errors="replace").lower()
+        if "sh" in shebang:
+            interpreter = _shell_interpreter()
+            if interpreter:
+                return [interpreter, str(path)]
+        if "python" in shebang:
+            return [sys.executable, str(path)]
+    raise LifecycleRejected("artifact_interpreter_unavailable")
 
 
 def _sha256(path: Path) -> str:
@@ -29,6 +71,8 @@ def _artifact(path: Path, label: str) -> dict[str, str]:
     resolved = path.resolve()
     if not resolved.is_file():
         raise LifecycleRejected(f"{label}_artifact_missing")
+    if os.name == "nt" and not _windows_runnable(resolved):
+        raise LifecycleRejected(f"{label}_artifact_not_executable")
     if not os.access(resolved, os.X_OK):
         raise LifecycleRejected(f"{label}_artifact_not_executable")
     return {"path": str(resolved), "digest": _sha256(resolved)}
@@ -55,8 +99,13 @@ def _observe(binary: Path) -> dict[str, object]:
     observations: dict[str, object] = {}
     for name, arguments in (("version", ["--version"]), ("probe", ["probe"])):
         completed = subprocess.run(
-            [str(binary), *arguments], capture_output=True, text=True, timeout=10,
-            check=False, env={"PATH": os.environ.get("PATH", "")},
+            [*_command_for_artifact(binary), *arguments],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env={"PATH": os.environ.get("PATH", "")},
+            stdin=subprocess.DEVNULL,
         )
         if completed.returncode != 0:
             raise LifecycleRejected(f"{name}_failed_exit_{completed.returncode}")
@@ -70,6 +119,21 @@ def _install(source: Path, target: Path) -> None:
     (target / "simplicio-code").chmod(0o500)
     if _sha256(source) != _sha256(target / "simplicio-code"):
         raise LifecycleRejected("installed_digest_mismatch")
+
+
+def _cleanup_prefix(prefix: Path) -> None:
+    """Remove failed staging even when Windows marks copied artifacts read-only."""
+    def onerror(function, path, _exc_info):
+        try:
+            Path(path).chmod(0o700)
+            function(path)
+        except OSError:
+            pass
+
+    try:
+        shutil.rmtree(prefix, onerror=onerror)
+    except OSError:
+        pass
 
 
 def run(prefix: Path, old_path: Path, new_path: Path, source: str) -> dict[str, object]:
@@ -131,7 +195,7 @@ def run(prefix: Path, old_path: Path, new_path: Path, source: str) -> dict[str, 
             "issue_closure_claimed": False,
         }
     except BaseException:
-        shutil.rmtree(prefix, ignore_errors=True)
+        _cleanup_prefix(prefix)
         raise
 
 
