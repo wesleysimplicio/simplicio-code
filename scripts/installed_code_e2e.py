@@ -129,7 +129,14 @@ def wait_for_agent_socket(
     """Wait for a real AgentHost endpoint and report early process failure clearly."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        if socket_path.exists():
+        if socket_path.is_file():
+            try:
+                endpoint = socket_path.read_text(encoding="ascii").strip()
+            except OSError:
+                endpoint = ""
+            if endpoint.startswith("tcp://"):
+                return
+        elif socket_path.exists() and getattr(socket, "AF_UNIX", None) is not None:
             return
         return_code = process.poll()
         if return_code is not None:

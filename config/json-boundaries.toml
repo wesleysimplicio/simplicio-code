@@ -174,6 +174,118 @@ expires = "2099-12-31"
 
 [[boundary]]
 paths = [
+  'Cargo.lock',
+  'Cargo.toml',
+  'crates/codegen/ptyctl-cli/Cargo.toml',
+  'crates/codegen/ptyctl/Cargo.toml',
+  'crates/codegen/simplicio-account-client/Cargo.toml',
+  'crates/codegen/simplicio-agent-client/Cargo.toml',
+  'crates/codegen/simplicio-agent-native/Cargo.toml',
+  'crates/codegen/simplicio-code-gateway/Cargo.toml',
+  'crates/codegen/simplicio-perf-bench/Cargo.toml',
+  'crates/codegen/simplicio-runtime-client/Cargo.toml',
+  'crates/codegen/xai-acp-lib/Cargo.toml',
+  'crates/codegen/xai-chat-state/Cargo.toml',
+  'crates/codegen/xai-codebase-graph/Cargo.toml',
+  'crates/codegen/xai-fast-worktree/Cargo.toml',
+  'crates/codegen/xai-file-utils/Cargo.toml',
+  'crates/codegen/xai-grok-agent/Cargo.toml',
+  'crates/codegen/xai-grok-announcements/Cargo.toml',
+  'crates/codegen/xai-grok-config-types/Cargo.toml',
+  'crates/codegen/xai-grok-config/Cargo.toml',
+  'crates/codegen/xai-grok-hooks/Cargo.toml',
+  'crates/codegen/xai-grok-http/Cargo.toml',
+  'crates/codegen/xai-grok-markdown/fuzz/Cargo.lock',
+  'crates/codegen/xai-grok-mcp/Cargo.toml',
+  'crates/codegen/xai-grok-memory/Cargo.toml',
+  'crates/codegen/xai-grok-models/Cargo.toml',
+  'crates/codegen/xai-grok-pager-bin/Cargo.toml',
+  'crates/codegen/xai-grok-pager-pty-harness/Cargo.toml',
+  'crates/codegen/xai-grok-pager/Cargo.toml',
+  'crates/codegen/xai-grok-paths/Cargo.toml',
+  'crates/codegen/xai-grok-plugin-marketplace/Cargo.toml',
+  'crates/codegen/xai-grok-sampler/Cargo.toml',
+  'crates/codegen/xai-grok-sampling-types/Cargo.toml',
+  'crates/codegen/xai-grok-sandbox/Cargo.toml',
+  'crates/codegen/xai-grok-secrets/Cargo.toml',
+  'crates/codegen/xai-grok-shared/Cargo.toml',
+  'crates/codegen/xai-grok-shell-base/Cargo.toml',
+  'crates/codegen/xai-grok-shell-session-support/Cargo.toml',
+  'crates/codegen/xai-grok-shell/Cargo.toml',
+  'crates/codegen/xai-grok-subagent-resolution/Cargo.toml',
+  'crates/codegen/xai-grok-telemetry/Cargo.toml',
+  'crates/codegen/xai-grok-test-support/Cargo.toml',
+  'crates/codegen/xai-grok-tools-api/Cargo.toml',
+  'crates/codegen/xai-grok-tools/Cargo.toml',
+  'crates/codegen/xai-grok-update/Cargo.toml',
+  'crates/codegen/xai-grok-voice/Cargo.toml',
+  'crates/codegen/xai-grok-workspace-client/Cargo.toml',
+  'crates/codegen/xai-grok-workspace-types/Cargo.toml',
+  'crates/codegen/xai-grok-workspace/Cargo.toml',
+  'crates/codegen/xai-hooks-plugins-types/Cargo.toml',
+  'crates/codegen/xai-hunk-tracker/Cargo.toml',
+  'crates/codegen/xai-mixpanel/Cargo.toml',
+  'crates/codegen/xai-prompt-queue/Cargo.toml',
+  'crates/codegen/xai-ratatui-inline/Cargo.toml',
+  'crates/common/xai-computer-hub-core/Cargo.toml',
+  'crates/common/xai-computer-hub-mcp-adapter/Cargo.toml',
+  'crates/common/xai-computer-hub-sdk/Cargo.toml',
+  'crates/common/xai-grok-compaction/Cargo.toml',
+  'crates/common/xai-tool-protocol/Cargo.toml',
+  'crates/common/xai-tool-runtime/Cargo.toml',
+  'crates/common/xai-tool-types/Cargo.toml',
+  'prod/mc/cli-chat-proxy-types/Cargo.toml',
+  'THIRD-PARTY-NOTICES',
+]
+category = "external_dependency_metadata"
+owner = "code-build"
+producer = "Cargo dependency declarations, lockfiles, and third-party notices"
+consumer = "Cargo resolver, package builder, and human dependency review"
+lifecycle = "source-controlled build metadata; never Code-owned workspace, session, cache, queue, or execution state"
+target_format = "versioned external dependency metadata"
+status = "exception"
+reason = "These exact paths record dependency metadata or third-party notices. serde_json appears as a dependency name; no JSON is serialized or persisted by the metadata itself."
+expires = "2099-12-31"
+
+[[boundary]]
+paths = [
+  'DOD.md',
+  'docs/perf/token-latency-benchmark.md',
+  'crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md',
+  'crates/codegen/xai-grok-pager/docs/user-guide/15-agent-mode.md',
+  'crates/codegen/xai-grok-shell/README.md',
+]
+category = "external_protocol_documentation"
+owner = "code-documentation"
+producer = "versioned protocol documentation and examples"
+consumer = "human readers and external integration authors"
+lifecycle = "source-controlled documentation; examples are not runtime state"
+target_format = "documented external JSON/JSON-RPC protocol"
+status = "exception"
+reason = "These exact documentation paths describe external JSON/JSON-RPC contracts or benchmark terminology; they do not create package outputs or persist internal Code state."
+expires = "2099-12-31"
+
+[[boundary]]
+paths = [
+  'crates/codegen/simplicio-runtime-client/tests/fake_server_malformed_handshake.rs',
+  'crates/codegen/xai-acp-lib/src/stdin_reader.rs',
+  'crates/codegen/xai-grok-mcp/src/wire.rs',
+  'crates/codegen/xai-grok-shell/src/extensions/session_search.rs',
+  'crates/common/xai-tool-protocol/src/ids.rs',
+  'crates/common/xai-tool-protocol/src/registry_error.rs',
+]
+category = "external_protocol_adapter"
+owner = "code-protocol"
+producer = "typed external JSON-RPC/ACP/MCP protocol peer"
+consumer = "protocol adapter and integration test peer"
+lifecycle = "ephemeral wire frames and test fixtures; no Code-owned JSON persistence"
+target_format = "versioned external JSON-RPC protocol"
+status = "exception"
+reason = "These exact source paths terminate JSON at explicit external protocol or test-peer boundaries. They do not serialize workspace, session, cache, queue, or execution state as an internal fallback."
+expires = "2099-12-31"
+
+[[boundary]]
+paths = [
   'scripts/release/promote_component_bundle.py',
   'scripts/tests/test_promote_component_bundle.py',
 ]

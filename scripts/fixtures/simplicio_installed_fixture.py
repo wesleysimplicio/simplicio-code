@@ -54,7 +54,7 @@ def serve_agent(socket_path: Path) -> None:  # pragma: no cover - system subproc
     socket_path.unlink(missing_ok=True)
     state: dict[str, object] = {}
     family = getattr(socket, "AF_UNIX", None)
-    if family is not None:
+    if family is not None and os.name != "nt":
         server = socket.socket(family)
         server.bind(str(socket_path))
         os.chmod(socket_path, 0o600)
