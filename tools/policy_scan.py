@@ -12,9 +12,8 @@ import datetime
 import hashlib
 import os
 import re
-import sys
 import tomllib
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 PATTERNS = (
     ("serialization-library", "serde_json"),
@@ -28,6 +27,7 @@ PATTERNS = (
 )
 IGNORED = {".git", "target", "node_modules", "vendor", ".venv", ".simplicio"}
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+BOUNDARY_STATUSES = {"exception", "migration_pending", "migrated"}
 
 
 def load_policy(path: Path, today: str) -> dict:
@@ -49,18 +49,91 @@ def load_policy(path: Path, today: str) -> dict:
             raise ValueError(f"invalid exception dates: {path_value}")
         if exception["removal_date"] < today:
             raise ValueError(f"expired exception: {path_value}")
+    policy["scan_date"] = today
     return policy
 
 
-def scan(root: Path, policy: dict) -> list[tuple[str, int, str, str, str]]:
-    exceptions = {item["path"]: item["category"] for item in policy.get("exceptions", [])}
+def load_boundaries(path: Path) -> dict[str, dict]:
+    """Load the exact path classifications from the repository inventory."""
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    if raw.get("schema") != "simplicio.json-boundaries/v1":
+        raise ValueError("unsupported JSON-boundaries schema")
+
+    entries: dict[str, dict] = {}
+    groups = [*raw.get("boundary", []), *raw.get("audit", [])]
+    for group in groups:
+        names = group.get("paths") or ([group["path"]] if group.get("path") else [])
+        target = group.get("target_format", "")
+        status = group.get("status") or (
+            "exception"
+            if target.lower().startswith(("preserve", "json-rpc", "external", "signed", "cyclonedx"))
+            else "migration_pending"
+        )
+        entry = {
+            **group,
+            "status": status,
+            "reason": group.get("reason") or group.get("rationale") or group.get("lifecycle", ""),
+            "expires": group.get("expires") or ("2099-12-31" if status == "exception" else "2026-12-31"),
+        }
+        if status not in BOUNDARY_STATUSES:
+            raise ValueError(f"invalid boundary status: {status}")
+        for name in names:
+            candidate = PurePosixPath(name)
+            if (
+                not name
+                or candidate.is_absolute()
+                or any(part in {"", ".", ".."} for part in candidate.parts)
+                or candidate.as_posix() != name
+                or any(char in name for char in "*?[]")
+            ):
+                raise ValueError(f"boundary path is not exact: {name!r}")
+            if name in entries:
+                raise ValueError(f"duplicate boundary path: {name}")
+            for field in ("owner", "reason", "expires", "category", "target_format", "status", "producer", "consumer", "lifecycle"):
+                if not entry.get(field):
+                    raise ValueError(f"{name}: missing {field}")
+            if not DATE.fullmatch(entry["expires"]):
+                raise ValueError(f"invalid boundary expiry date: {name}")
+            entries[name] = entry
+    return entries
+
+
+def _classification(
+    relative: str,
+    policy: dict,
+    boundaries: dict[str, dict] | None,
+    today: str,
+) -> tuple[str, str]:
+    """Return (category, state), preserving unknown and pending separately."""
+    if boundaries is not None:
+        entry = boundaries.get(relative)
+        if entry is None:
+            return "unclassified", "unknown"
+        if entry["expires"] < today:
+            return entry["category"], "expired"
+        if entry["status"] == "migration_pending":
+            return entry["category"], "pending"
+        return entry["category"], "classified"
+
+    for exception in policy.get("exceptions", []):
+        if exception["path"] == relative:
+            return exception["category"], "classified"
+    return "unclassified", "unknown"
+
+
+def scan(
+    root: Path,
+    policy: dict,
+    boundaries: dict[str, dict] | None = None,
+) -> list[tuple[str, int, str, str, str]]:
+    today = policy.get("scan_date", "9999-12-31")
     findings = []
     for directory, names, files in os.walk(root):
         names[:] = sorted(name for name in names if name not in IGNORED and not name.startswith("."))
         for name in sorted(files):
             path = Path(directory) / name
             relative = path.relative_to(root).as_posix()
-            category = exceptions.get(relative, "unclassified")
+            category, _ = _classification(relative, policy, boundaries, today)
             suffix = path.suffix.lower()
             if suffix in {".json", ".jsonl", ".ndjson"}:
                 findings.append((relative, 1, "artifact-extension", suffix[1:], category))
@@ -83,13 +156,45 @@ def scan(root: Path, policy: dict) -> list[tuple[str, int, str, str, str]]:
     return sorted(set(findings))
 
 
-def render(findings: list[tuple[str, int, str, str, str]], policy: dict, mode: str) -> tuple[str, str, int]:
-    unclassified = sum(item[4] == "unclassified" for item in findings)
-    status = "FAIL" if mode == "strict" and unclassified else ("UNVERIFIED" if unclassified else "PASS")
-    lines = ["# No-internal-JSON policy scan", "", f"- status: `{status}`", f"- mode: `{mode}`", f"- scanner_version: `{policy['scanner_version']}`", f"- findings: `{len(findings)}`", f"- unclassified: `{unclassified}`", "", "## Findings", "", "| Path | Line | Kind | Classification | Evidence |", "| --- | ---: | --- | --- | --- |"]
-    lines.extend(f"| `{path}` | {line} | `{kind}` | `{category}` | `{evidence}` |" for path, line, kind, evidence, category in findings)
+def render(
+    findings: list[tuple[str, int, str, str, str]],
+    policy: dict,
+    mode: str,
+    boundaries: dict[str, dict] | None = None,
+) -> tuple[str, str, int]:
+    today = policy.get("scan_date", "9999-12-31")
+    states = [
+        _classification(path, policy, boundaries, today)[1]
+        for path, _, _, _, _ in findings
+    ]
+    unknown = states.count("unknown")
+    pending = states.count("pending")
+    expired = states.count("expired")
+    blocking = unknown + pending + expired
+    status = "FAIL" if mode == "strict" and blocking else ("UNVERIFIED" if blocking else "PASS")
+    lines = [
+        "# No-internal-JSON policy scan",
+        "",
+        f"- status: `{status}`",
+        f"- mode: `{mode}`",
+        f"- scanner_version: `{policy['scanner_version']}`",
+        f"- findings: `{len(findings)}`",
+        f"- unknown: `{unknown}`",
+        f"- unclassified: `{unknown}`",
+        f"- pending: `{pending}`",
+        f"- expired: `{expired}`",
+        "",
+        "## Findings",
+        "",
+        "| Path | Line | Kind | Classification | State | Evidence |",
+        "| --- | ---: | --- | --- | --- | --- |",
+    ]
+    lines.extend(
+        f"| `{path}` | {line} | `{kind}` | `{category}` | `{_classification(path, policy, boundaries, today)[1]}` | `{evidence}` |"
+        for path, line, kind, evidence, category in findings
+    )
     markdown = "\n".join(lines) + "\n"
-    payload = f"mode={mode};status={status};policy_version={policy['version']};scanner_version={policy['scanner_version']};findings={len(findings)};unclassified={unclassified}"
+    payload = f"mode={mode};status={status};policy_version={policy['version']};scanner_version={policy['scanner_version']};findings={len(findings)};unknown={unknown};pending={pending};expired={expired}"
     fields = ("0", "genesis", "policy-scan", payload, "policy-scanner:" + policy["scanner_version"])
     digest = hashlib.sha256(b"".join(len(field).to_bytes(8, "little") + field.encode() for field in fields) + (0).to_bytes(8, "little")).hexdigest()
     hbp = f"schema=simplicio.hbp/v1\nversion=1.0.0\nseq=0\nprev_hash=genesis\ntopic=policy-scan\npayload={payload}\nprovenance={fields[-1]}\nhash={digest}\n"
@@ -100,6 +205,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", type=Path, default=Path("."))
     parser.add_argument("--policy", type=Path)
+    parser.add_argument("--boundaries", type=Path)
     parser.add_argument("--mode", choices=("baseline", "strict"), default="baseline")
     parser.add_argument("--markdown", type=Path)
     parser.add_argument("--hbp", type=Path)
@@ -112,8 +218,10 @@ def main() -> int:
         datetime.datetime.now(datetime.UTC).date().isoformat(),
     )
     policy_path = args.policy or args.repo / "policy/no-internal-json.toml"
+    boundaries_path = args.boundaries or args.repo / "config/json-boundaries.toml"
     policy = load_policy(policy_path, today)
-    markdown, hbp, code = render(scan(args.repo, policy), policy, args.mode)
+    boundaries = load_boundaries(boundaries_path) if boundaries_path.is_file() else None
+    markdown, hbp, code = render(scan(args.repo, policy, boundaries), policy, args.mode, boundaries)
     (args.markdown.write_text(markdown, encoding="utf-8") if args.markdown else print(markdown, end=""))
     if args.hbp:
         args.hbp.write_text(hbp, encoding="utf-8")

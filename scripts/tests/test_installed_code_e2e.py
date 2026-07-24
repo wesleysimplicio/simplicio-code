@@ -36,6 +36,7 @@ class InstalledCodeE2ETest(unittest.TestCase):
         self.assertEqual(receipt["runtime"]["edit"], "simplicio.edit-result/v1")
         self.assertEqual(receipt["runtime"]["exec"], "simplicio.exec-result/v1")
         self.assertEqual(receipt["runtime"]["effect_state"], "completed")
+        self.assertTrue(receipt["runtime"]["prototype_artifact_idempotent_retry"])
         gates = receipt["negative_dependency_gates"]
         self.assertEqual(len(gates), len(MODULE.SURFACES) * 4)
         self.assertTrue(all(gate["blocked"] for gate in gates))
@@ -78,6 +79,8 @@ class InstalledCodeE2ETest(unittest.TestCase):
         encoded = json.dumps(receipt)
         self.assertNotIn("HOME", encoded)
         self.assertNotIn("TOKEN", encoded)
+        self.assertNotIn("Authorization", encoded)
+        self.assertNotIn("Bearer ", encoded)
         metric = receipt["metrics_unavailable"]["production_latency_ns"]
         self.assertIsNone(metric["value"])
         self.assertEqual(
