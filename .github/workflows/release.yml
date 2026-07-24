@@ -14,7 +14,7 @@ name: release
 #     them.
 #   - Signing uses a keypair generated fresh in this workflow run — a
 #     placeholder for real key management (see scripts/release/sign_manifest.sh
-#     header and RELEASE_NOTES_0.3.0-beta.2.md). It demonstrates the
+#     header and RELEASE_NOTES_0.3.0-beta.3.md). It demonstrates the
 #     manifest -> signature -> verification mechanism end-to-end; it is not
 #     a production trust root.
 
@@ -25,7 +25,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to build (e.g. 0.3.0-beta.2), without the leading v"
+        description: "Version to build (e.g. 0.3.0-beta.3), without the leading v"
         required: true
       channel:
         description: "Release channel"
@@ -210,6 +210,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: "simplicio-code ${{ github.ref_name }}"
           prerelease: true
-          body_path: RELEASE_NOTES_0.3.0-beta.2.md
+          body_path: RELEASE_NOTES_0.3.0-beta.3.md
           files: |
             dist/*

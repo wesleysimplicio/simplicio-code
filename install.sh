@@ -12,7 +12,7 @@
 #
 # Usage:
 #   curl -fsSL https://raw.githubusercontent.com/wesleysimplicio/simplicio-code/main/install.sh | bash
-#   curl -fsSL .../install.sh | bash -s 0.3.0-beta.2   # specific version
+#   curl -fsSL .../install.sh | bash -s 0.3.0-beta.3   # specific version
 #
 # Env:
 #   SIMPLICIO_BIN_DIR   install dir (default: $HOME/.simplicio-code/bin)
@@ -28,7 +28,7 @@
 #      `openssl pkeyutl -verify` when openssl is available. Note: the
 #      signing key used by that workflow today is generated fresh per CI
 #      run — a placeholder, not a real distributed trust root. See
-#      RELEASE_NOTES_0.3.0-beta.2.md.
+#      RELEASE_NOTES_0.3.0-beta.3.md.
 
 set -euo pipefail
 
