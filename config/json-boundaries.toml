@@ -170,6 +170,7 @@ lifecycle = "ephemeral versioned protocol envelope; never Code-owned persistent 
 target_format = "versioned external JSON contract"
 status = "exception"
 reason = "These paths terminate JSON at the external AgentHost/Runtime protocol boundary and do not persist workspace, session, cache, IPC, queue, or execution state in Code."
+expires = "2099-12-31"
 
 [[boundary]]
 paths = [

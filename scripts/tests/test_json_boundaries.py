@@ -1,5 +1,6 @@
 import importlib.util
 import pathlib
+import tomllib
 
 
 ROOT = pathlib.Path(__file__).parents[2]
@@ -70,6 +71,35 @@ def test_every_repository_json_finding_has_an_exact_inventory_owner() -> None:
     inventory = MODULE.load_inventory(ROOT / "config" / "json-boundaries.toml")
     unclassified = sorted({path for path, _, _ in MODULE.findings(ROOT) if path not in inventory})
     assert unclassified == []
+
+
+def test_inventory_requires_explicit_expiry_and_protects_internal_statuses() -> None:
+    raw = tomllib.loads((ROOT / "config" / "json-boundaries.toml").read_text(encoding="utf-8"))
+    groups = raw.get("boundary", []) + raw.get("audit", [])
+    assert groups
+    assert all(group.get("expires") for group in groups)
+
+    inventory = MODULE.load_inventory(ROOT / "config" / "json-boundaries.toml")
+    internal_categories = {
+        "internal-evidence",
+        "internal_cache",
+        "internal_fixture_or_evidence",
+        "internal_session_state",
+        "internal_state_migration",
+    }
+    for path, entry in inventory.items():
+        if entry["category"] in internal_categories:
+            assert entry["status"] != "exception", path
+
+
+def test_pending_findings_are_explicit_internal_migrations() -> None:
+    inventory = MODULE.load_inventory(ROOT / "config" / "json-boundaries.toml")
+    pending_paths = {
+        path for path, _, _ in MODULE.findings(ROOT) if inventory[path]["status"] == "migration_pending"
+    }
+    assert pending_paths
+    assert all(inventory[path]["category"].startswith("internal") for path in pending_paths)
+    assert inventory["scripts/audit_workspace_access.py"]["status"] == "migration_pending"
 
 
 def test_scope_validation_rejects_missing_or_directory_entries(tmp_path: pathlib.Path) -> None:
