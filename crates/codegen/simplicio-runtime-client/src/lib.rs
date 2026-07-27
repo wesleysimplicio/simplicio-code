@@ -9,6 +9,7 @@
 pub mod agent_workers;
 pub mod component_release;
 pub mod external_routing;
+pub mod fast_read_model;
 pub mod fast_surface;
 pub mod loop_hub;
 pub mod loop_hub_transport;
