@@ -1,18 +1,22 @@
-use crate::file_system::RuntimeFs;
-use crate::file_system::{AsyncFileSystem, FsError};
+use std::sync::Arc;
+
+use crate::file_system::{AsyncFileSystem, FsError, RuntimeFs};
 use std::path::{Path, PathBuf};
 
 pub struct LocalFs {
     root: PathBuf,
-    runtime: RuntimeFs,
+    backend: Arc<dyn AsyncFileSystem>,
 }
 
 impl LocalFs {
     pub fn new(root: PathBuf) -> Self {
-        Self {
-            runtime: RuntimeFs::new(root.clone()),
-            root,
-        }
+        let backend = Arc::new(RuntimeFs::new(root.clone()));
+        Self { root, backend }
+    }
+
+    #[cfg(test)]
+    fn with_backend(root: PathBuf, backend: Arc<dyn AsyncFileSystem>) -> Self {
+        Self { root, backend }
     }
 }
 
@@ -23,19 +27,19 @@ impl AsyncFileSystem for LocalFs {
     }
 
     async fn exists(&self, path: &Path) -> Result<bool, FsError> {
-        self.runtime.exists(path).await
+        self.backend.exists(path).await
     }
 
     async fn read_file(&self, path: &Path) -> Result<Vec<u8>, FsError> {
-        self.runtime.read_file(path).await
+        self.backend.read_file(path).await
     }
 
     async fn try_read_file(&self, path: &Path) -> Result<Option<Vec<u8>>, FsError> {
-        self.runtime.try_read_file(path).await
+        self.backend.try_read_file(path).await
     }
 
     async fn write_file(&self, path: &Path, data: &[u8]) -> Result<(), FsError> {
-        self.runtime.write_file(path, data).await
+        self.backend.write_file(path, data).await
     }
 
     async fn delete_file(&self, path: &Path) -> Result<(), FsError> {
