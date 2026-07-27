@@ -55,6 +55,65 @@ pub const DEFAULT_EXEC_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_MAX_SEARCH_FILES: usize = 2_000;
 pub const DEFAULT_MAX_SEARCH_MATCHES: usize = 10_000;
 pub const EXEC_RESULT_SCHEMA_V1: &str = "simplicio.exec-result/v1";
+pub const FAST_CONTEXT_SCHEMA_V1: &str = "simplicio.context-packet/v1";
+pub const FAST_CONTEXT_TOOL: &str = "simplicio_context";
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FastContextProvenance {
+    pub provider: String,
+    pub engine: String,
+    pub local_llm_started: bool,
+    #[serde(default)]
+    pub snapshot_generation: Option<String>,
+    #[serde(default)]
+    pub snapshot_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct FastContextPacket {
+    pub schema: String,
+    pub source: String,
+    pub generation: String,
+    pub fidelity: String,
+    pub complete: bool,
+    pub provenance: FastContextProvenance,
+    #[serde(default)]
+    pub spans: Vec<Value>,
+    pub content_sha256: String,
+    #[serde(default)]
+    pub fast_receipt: Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FastContextStatus {
+    pub schema: String,
+    pub source: String,
+    pub generation: String,
+    pub fidelity: String,
+    pub complete: bool,
+    pub provider: String,
+    pub engine: String,
+    pub local_llm_started: bool,
+    pub span_count: usize,
+    pub content_sha256: String,
+}
+
+impl FastContextPacket {
+    pub fn status(&self) -> FastContextStatus {
+        FastContextStatus {
+            schema: self.schema.clone(),
+            source: self.source.clone(),
+            generation: self.generation.clone(),
+            fidelity: self.fidelity.clone(),
+            complete: self.complete,
+            provider: self.provenance.provider.clone(),
+            engine: self.provenance.engine.clone(),
+            local_llm_started: self.provenance.local_llm_started,
+            span_count: self.spans.len(),
+            content_sha256: self.content_sha256.clone(),
+        }
+    }
+}
 /// Runtime-owned namespace for Prototype-First receipts and candidate
 /// artifacts. Callers must use [`RuntimeClient::write_prototype_artifact`]
 /// instead of writing this directory directly.
@@ -70,7 +129,7 @@ pub const PROTOTYPE_ARTIFACT_READ_TOOL: &str = "simplicio_prototype_artifact_rea
 /// Bound on the handshake (`initialize` / `tools/list`) round trip, distinct
 /// from [`DEFAULT_EXEC_TIMEOUT_MS`]: a broken or hung Runtime must fail fast
 /// during connection negotiation instead of hanging for tens of seconds.
-pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 2_000;
+pub const DEFAULT_HANDSHAKE_TIMEOUT_MS: u64 = 5_000;
 /// Bound on how many raw bytes of an unparsable handshake response are
 /// surfaced in [`Error::InvalidResponse`] diagnostics.
 const RAW_SNIPPET_MAX_BYTES: usize = 200;
@@ -715,6 +774,34 @@ impl RuntimeClient {
         )
     }
 
+    pub fn fast_context(
+        &mut self,
+        repo: &Path,
+        term: &str,
+        snapshot: Option<&Path>,
+        max_bytes: usize,
+    ) -> Result<FastContextPacket, Error> {
+        if term.trim().is_empty() {
+            return Err(Error::InvalidResponse(
+                "context term must not be empty".into(),
+            ));
+        }
+        let repo = canonical_repo(repo)?;
+        let snapshot = snapshot
+            .map(|path| secure_relative_path(&repo, path))
+            .transpose()?;
+        let mut args = json!({
+            "repo": repo,
+            "term": term,
+            "max_bytes": max_bytes.min(2_000_000),
+        });
+        if let Some(snapshot) = snapshot {
+            args["snapshot"] = json!(snapshot);
+        }
+        let result = self.call_tool("fast_context", FAST_CONTEXT_TOOL, args)?;
+        parse_fast_context_packet(&tool_text_or_json(&result))
+    }
+
     fn call_tool(&mut self, operation: &str, tool: &str, args: Value) -> Result<Value, Error> {
         if !self.capabilities.supports(tool) {
             return Err(Error::CapabilityMismatch {
@@ -1120,6 +1207,54 @@ pub fn parse_exec_result(result: &Value) -> Result<ExecResult, Error> {
     Ok(parsed)
 }
 
+pub fn parse_fast_context_packet(text: &str) -> Result<FastContextPacket, Error> {
+    let result: FastContextPacket = serde_json::from_str(text)
+        .map_err(|error| Error::InvalidResponse(format!("invalid fast context packet: {error}")))?;
+    if result.schema != FAST_CONTEXT_SCHEMA_V1 {
+        return Err(Error::InvalidResponse(format!(
+            "unsupported fast context schema {}",
+            result.schema
+        )));
+    }
+    if result.source != "runtime-fast" {
+        return Err(Error::InvalidResponse(format!(
+            "unsupported fast context source {}",
+            result.source
+        )));
+    }
+    if result.provenance.provider != "simplicio-fast" {
+        return Err(Error::InvalidResponse(
+            "fast context provider is not simplicio-fast".into(),
+        ));
+    }
+    if result.provenance.engine.trim().is_empty() {
+        return Err(Error::InvalidResponse(
+            "fast context engine must not be empty".into(),
+        ));
+    }
+    if result.provenance.local_llm_started {
+        return Err(Error::InvalidResponse(
+            "local LLM provenance is forbidden".into(),
+        ));
+    }
+    if result.generation.trim().is_empty() {
+        return Err(Error::InvalidResponse(
+            "fast context generation must not be empty".into(),
+        ));
+    }
+    if result.content_sha256.len() != 64
+        || !result
+            .content_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(Error::InvalidResponse(
+            "fast context content_sha256 must be a 64-character hex digest".into(),
+        ));
+    }
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1352,5 +1487,81 @@ mod tests {
             .unwrap();
         assert_eq!(result.schema, "simplicio.read-result/v1");
         assert!(!result.content.trim().is_empty());
+    }
+    #[test]
+    fn parses_fast_context_packet_and_redacts_runtime_paths() {
+        let packet = json!({
+            "schema": FAST_CONTEXT_SCHEMA_V1,
+            "source": "runtime-fast",
+            "generation": "generation-294",
+            "fidelity": "summary",
+            "complete": true,
+            "provenance": {
+                "provider": "simplicio-fast",
+                "engine": "rust-fast",
+                "local_llm_started": false,
+                "repository_root": "C:/private/repository",
+                "snapshot_path": "C:/private/snapshot.sfast"
+            },
+            "spans": [{"path": "src/lib.rs", "start_line": 1}],
+            "content_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "fast_receipt": {"repository_root": "C:/private/repository"}
+        });
+        let parsed = parse_fast_context_packet(&packet.to_string()).unwrap();
+        let status = serde_json::to_string(&parsed.status()).unwrap();
+
+        assert_eq!(parsed.status().provider, "simplicio-fast");
+        assert_eq!(parsed.status().span_count, 1);
+        assert!(!status.contains("private"));
+        assert!(!status.contains("repository_root"));
+    }
+
+    #[test]
+    fn rejects_local_llm_and_non_runtime_fast_packets() {
+        let mut packet = json!({
+            "schema": FAST_CONTEXT_SCHEMA_V1,
+            "source": "runtime-fast",
+            "generation": "generation-294",
+            "fidelity": "summary",
+            "complete": true,
+            "provenance": {
+                "provider": "simplicio-fast",
+                "engine": "rust-fast",
+                "local_llm_started": true
+            },
+            "spans": [],
+            "content_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        });
+        let local_error = parse_fast_context_packet(&packet.to_string()).unwrap_err();
+        assert!(local_error.to_string().contains("local LLM"));
+
+        packet["provenance"]["local_llm_started"] = json!(false);
+        packet["source"] = json!("local-runtime");
+        let source_error = parse_fast_context_packet(&packet.to_string()).unwrap_err();
+        assert!(source_error.to_string().contains("source"));
+    }
+    #[test]
+    #[ignore = "requires the installed Simplicio Runtime and a Fast snapshot"]
+    fn reads_fast_context_through_runtime_mcp() {
+        let repo = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../..")
+            .canonicalize()
+            .unwrap();
+        let snapshot = repo.join(".simplicio/fast/project.sfast");
+        let mut client = RuntimeClient::spawn_in(&repo).unwrap();
+        let packet = client
+            .fast_context(
+                &repo,
+                "RuntimeClient",
+                Some(&snapshot),
+                DEFAULT_MAX_OUTPUT_BYTES,
+            )
+            .unwrap();
+
+        assert_eq!(packet.schema, FAST_CONTEXT_SCHEMA_V1);
+        assert_eq!(packet.source, "runtime-fast");
+        assert_eq!(packet.provenance.provider, "simplicio-fast");
+        assert!(!packet.provenance.local_llm_started);
+        assert!(!packet.generation.is_empty());
     }
 }
