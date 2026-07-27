@@ -13,7 +13,9 @@ use std::{
 
 use simplicio_agent_client::{AgentHostCoordinator, CausalIdentity, resolve_socket_path};
 use simplicio_runtime_client::{
-    DEFAULT_MAX_FILE_BYTES, FileReadResult, RuntimeClient, SearchResult, SharedRuntimeClient,
+    DEFAULT_MAX_FILE_BYTES, Error as RuntimeClientError, FastContextPacket, FileReadResult,
+    RuntimeClient, SearchResult, SharedRuntimeClient,
+    fast_surface::{FastSnapshotIdentity, FastSurfaceAction, FastSurfaceMode, FastSurfaceStatus},
     start_workspace_map,
 };
 use simplicio_runtime_client::{
@@ -900,8 +902,71 @@ impl SimplicioRuntimeFs {
         &self,
         plan: serde_json::Value,
     ) -> Result<serde_json::Value, ComputerError> {
+        let guard = plan.get("fast_guard");
+        let requested_engine = guard
+            .and_then(|value| value.get("requested_engine"))
+            .and_then(Value::as_str)
+            .unwrap_or("auto")
+            .to_owned();
+        let term = guard
+            .and_then(|value| value.get("term"))
+            .and_then(Value::as_str)
+            .or_else(|| plan.pointer("/files/0/file").and_then(Value::as_str))
+            .unwrap_or("workspace")
+            .to_owned();
+        let expected = guard
+            .and_then(|value| value.get("generation"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .map(|generation| FastSnapshotIdentity {
+                generation: generation.to_owned(),
+                snapshot_sha256: guard
+                    .and_then(|value| value.get("snapshot_sha256"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            });
+        let mut effect_plan = plan;
+        if let Some(object) = effect_plan.as_object_mut() {
+            object.remove("fast_guard");
+        }
+
         if self.hub_transport().is_some() {
-            let plan = serde_json::to_string(&plan)
+            let context = self
+                .call_hub(
+                    "simplicio_context",
+                    json!({
+                        "repo": self.hub_workspace(),
+                        "term": term,
+                        "max_bytes": 32_000,
+                    }),
+                )
+                .await?;
+            let packet: FastContextPacket = serde_json::from_value(context).map_err(|error| {
+                hub_runtime_error(format!("invalid Fast context packet before edit: {error}"))
+            })?;
+            let mode = if requested_engine == "off" {
+                FastSurfaceMode::Off
+            } else {
+                FastSurfaceMode::LoopStandalone
+            };
+            let fallback_reason = packet
+                .fast_receipt
+                .get("reason_code")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let status = FastSurfaceStatus::from_packet(
+                &packet,
+                mode,
+                requested_engine.clone(),
+                expected.as_ref(),
+                fallback_reason,
+            );
+            status
+                .authorize(FastSurfaceAction::Apply)
+                .map_err(|error| {
+                    hub_runtime_error(format!("Fast apply gate refused edit: {error}"))
+                })?;
+            let plan = serde_json::to_string(&effect_plan)
                 .map_err(|error| hub_runtime_error(format!("invalid edit plan: {error}")))?;
             return self
                 .call_hub(
@@ -915,10 +980,36 @@ impl SimplicioRuntimeFs {
                 )
                 .await;
         }
-        self.with_runtime(move |client, root| client.edit(root, plan))
-            .await
+        self.with_runtime(move |client, root| {
+            let packet = client.fast_context(root, &term, None, 32_000)?;
+            let mode = if requested_engine == "off" {
+                FastSurfaceMode::Off
+            } else {
+                FastSurfaceMode::Full
+            };
+            let fallback_reason = packet
+                .fast_receipt
+                .get("reason_code")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            let status = FastSurfaceStatus::from_packet(
+                &packet,
+                mode,
+                requested_engine,
+                expected.as_ref(),
+                fallback_reason,
+            );
+            status
+                .authorize(FastSurfaceAction::Apply)
+                .map_err(|error| {
+                    RuntimeClientError::OperationRejected(format!(
+                        "Fast apply gate refused edit: {error}"
+                    ))
+                })?;
+            client.edit(root, effect_plan)
+        })
+        .await
     }
-
     /// Executes argv through Runtime without accepting a shell string.
     pub async fn exec_workspace(
         &self,
@@ -1210,6 +1301,23 @@ mod tests {
                     "matches": [{"path": "read.txt", "line": 1, "text": "needle"}],
                     "truncated": false,
                 }),
+                "simplicio_context" => json!({
+                    "schema": "simplicio.context-packet/v1",
+                    "source": "runtime-fast",
+                    "generation": "SFAST001:fresh",
+                    "fidelity": "exact",
+                    "complete": true,
+                    "provenance": {
+                        "provider": "simplicio-fast",
+                        "engine": "rust",
+                        "local_llm_started": false,
+                        "snapshot_generation": "SFAST001:fresh",
+                        "snapshot_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                    },
+                    "spans": [{"file": "edited.txt", "content": "bounded"}],
+                    "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "fast_receipt": {"schema": "simplicio.fast.receipt/v1"}
+                }),
                 _ => json!({"schema": "simplicio.fake-result/v1", "tool": tool}),
             };
             Ok(RuntimeCallResponse {
@@ -1256,6 +1364,7 @@ mod tests {
                 "simplicio_file_read",
                 "simplicio_fs_write",
                 "simplicio_fs_delete",
+                "simplicio_context",
                 "simplicio_edit",
             ]
         );
@@ -1275,10 +1384,45 @@ mod tests {
             json!(base64::engine::general_purpose::STANDARD.encode(b"hub-write"))
         );
         assert_eq!(
-            calls[5].arguments["plan"],
+            calls[6].arguments["plan"],
             serde_json::to_string(&edit_plan).unwrap()
         );
         assert!(!workspace.path().join("write.txt").exists());
+    }
+
+    #[tokio::test]
+    async fn stale_fast_generation_blocks_hub_edit_before_productive_effect() {
+        let workspace = tempfile::tempdir().unwrap();
+        let fake = Arc::new(FakeRuntimeCallTransport::default());
+        let fs = SimplicioRuntimeFs::with_hub_transport(workspace.path(), fake.clone());
+        let plan = json!({
+            "fast_guard": {
+                "requested_engine": "auto",
+                "generation": "SFAST001:stale",
+                "snapshot_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                "term": "edited.txt"
+            },
+            "files": [{"file": "edited.txt", "operation": "update", "content": "blocked"}]
+        });
+
+        let error = fs
+            .apply_edit(plan)
+            .await
+            .expect_err("stale Fast identity must block the edit");
+
+        assert!(
+            error.to_string().contains("stale"),
+            "unexpected error: {error}"
+        );
+        let calls = fake.calls.lock().unwrap();
+        assert_eq!(
+            calls
+                .iter()
+                .map(|call| call.tool.as_str())
+                .collect::<Vec<_>>(),
+            vec!["simplicio_context"]
+        );
+        assert!(!workspace.path().join("edited.txt").exists());
     }
 
     #[tokio::test]
