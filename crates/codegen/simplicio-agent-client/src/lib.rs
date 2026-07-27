@@ -21,7 +21,10 @@ pub const HOST_PROTOCOL_SCHEMA: &str = "simplicio.agent-host/v1";
 pub const HOST_PROTOCOL_VERSION: u64 = 1;
 pub const AGENT_PROTOCOL_VERSION: &str = "agent/v1";
 pub const ADVISORY_SCHEMA: &str = "simplicio.agent-advisory/v1";
-pub const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 2_000;
+// AgentHost turns include a full provider round-trip. Two seconds is enough
+// for the handshake but truncates normal model responses, causing the client
+// to report EAGAIN while the host later hits BrokenPipe writing the result.
+pub const DEFAULT_REQUEST_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 512 * 1024;
 
 const REQUIRED_CAPABILITIES: [&str; 3] = ["host.advisories", "host.status", "turn.start"];
