@@ -18,6 +18,7 @@ use serde_json::Value;
 use std::{
     collections::BTreeMap,
     io::{self, BufRead, BufReader, Read, Write},
+    net::TcpStream,
     sync::{Arc, Mutex},
 };
 
@@ -169,8 +170,16 @@ impl Channel {
                 ));
             }
         }
+        if let Some(address) = endpoint.strip_prefix("tcp://") {
+            let stream = TcpStream::connect(address).map_err(io_error)?;
+            let reader_stream = stream.try_clone().map_err(io_error)?;
+            return Ok(Self {
+                reader: BufReader::new(Box::new(reader_stream)),
+                writer: Box::new(stream),
+            });
+        }
         Err(HubError::TransportUnavailable(
-            "Loop Hub endpoint must use unix:// or pipe://".into(),
+            "Loop Hub endpoint must use unix://, pipe://, or tcp://".into(),
         ))
     }
 

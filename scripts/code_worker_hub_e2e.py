@@ -14,7 +14,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import signal
 import socket
 import subprocess
 import sys
@@ -23,33 +22,40 @@ import time
 from typing import Any, Dict
 
 
-def launch(loop_root: Path, lock: Path, endpoint: Path) -> subprocess.Popen[str]:
+def launch(loop_root: Path, lock: Path, endpoint: str, transport: str, shutdown: Path) -> subprocess.Popen[str]:
     env = os.environ.copy()
     prior_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = str(loop_root) + (os.pathsep + prior_pythonpath if prior_pythonpath else "")
+    process_group = (
+        {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        if os.name == "nt"
+        else {"start_new_session": True}
+    )
     return subprocess.Popen(
         [sys.executable, "-c",
          "from simplicio_loop.hub_daemon import main; raise SystemExit(main())", "serve",
-         "--lock", str(lock), "--endpoint", str(endpoint), "--transport", "unix"],
+         "--lock", str(lock), "--endpoint", endpoint, "--transport", transport,
+         "--shutdown-file", str(shutdown)],
         cwd=loop_root,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        **process_group,
     )
 
-
-def wait_for_socket(process: subprocess.Popen[str], endpoint: Path) -> None:
+def wait_for_socket(process: subprocess.Popen[str], endpoint: str) -> None:
     deadline = time.monotonic() + 10
+    address = endpoint.removeprefix("tcp://")
+    host, port = address.rsplit(":", 1)
     while time.monotonic() < deadline:
-        if endpoint.exists():
-            try:
-                with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
-                    probe.settimeout(0.2)
-                    probe.connect(str(endpoint))
-                return
-            except OSError:
-                pass
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.settimeout(0.2)
+                probe.connect((host, int(port)))
+            return
+        except OSError:
+            pass
         if process.poll() is not None:
             stderr = process.stderr.read() if process.stderr else ""
             raise RuntimeError(f"Loop Hub exited before ready: {stderr[-2000:]}")
@@ -57,10 +63,10 @@ def wait_for_socket(process: subprocess.Popen[str], endpoint: Path) -> None:
     raise TimeoutError("timed out waiting for external Loop Hub socket")
 
 
-def stop(process: subprocess.Popen[str]) -> None:
+def stop(process: subprocess.Popen[str], shutdown: Path) -> None:
     if process.poll() is not None:
         return
-    process.send_signal(signal.SIGTERM)
+    shutdown.write_text("shutdown\n", encoding="utf-8")
     try:
         process.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -70,7 +76,7 @@ def stop(process: subprocess.Popen[str]) -> None:
 
 def run_adapter_test(
     code_root: Path,
-    endpoint: Path,
+    endpoint: str,
     phase: str,
     output: Path,
     workflow: str | None = None,
@@ -80,7 +86,7 @@ def run_adapter_test(
     env.update(
         {
             "SIMPLICIO_WORKER_E2E_PHASE": phase,
-            "SIMPLICIO_WORKER_E2E_ENDPOINT": f"unix://{endpoint}",
+            "SIMPLICIO_WORKER_E2E_ENDPOINT": endpoint,
             "SIMPLICIO_WORKER_E2E_OUTPUT": str(output),
         }
     )
@@ -137,8 +143,12 @@ def main(argv=None) -> int:
         with tempfile.TemporaryDirectory(prefix="simplicio-code-worker-e2e-") as directory:
             root = Path(directory)
             lock = root / "hub.lock"
-            endpoint = root / "hub.sock"
-            first = launch(loop_root, lock, endpoint)
+            shutdown = root / "shutdown"
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.bind(("127.0.0.1", 0))
+                endpoint = f"tcp://127.0.0.1:{probe.getsockname()[1]}"
+            transport = "tcp"
+            first = launch(loop_root, lock, endpoint, transport, shutdown)
             wait_for_socket(first, endpoint)
             initial_receipt = root / "initial.json"
             initial = run_adapter_test(code_root, endpoint, "initial", initial_receipt)
@@ -148,9 +158,10 @@ def main(argv=None) -> int:
                 "adapter_initial": initial,
                 "hub_pid_before_restart": first.pid,
             })
-            stop(first)
+            stop(first, shutdown)
             first = None
-            second = launch(loop_root, lock, endpoint)
+            shutdown.unlink(missing_ok=True)
+            second = launch(loop_root, lock, endpoint, transport, shutdown)
             wait_for_socket(second, endpoint)
             restart_receipt = root / "restart.json"
             restart = run_adapter_test(
@@ -161,7 +172,7 @@ def main(argv=None) -> int:
                 "restart_persisted": restart["restart_persisted"],
                 "hub_pid_after_restart": second.pid,
             })
-            stop(second)
+            stop(second, shutdown)
             second = None
         result["exit_code"] = 0
     except Exception as exc:  # pragma: no cover - exercised by the command gate
@@ -171,9 +182,9 @@ def main(argv=None) -> int:
         return_code = 0
     finally:
         if first is not None:
-            stop(first)
+            stop(first, shutdown)
         if second is not None:
-            stop(second)
+            stop(second, shutdown)
         result["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 3)
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)
