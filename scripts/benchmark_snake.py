@@ -56,6 +56,17 @@ def write_and_verify(path: Path, payloads: list[bytes]) -> None:
     if decode_records(path.read_bytes()) != payloads:
         raise ValueError(f"HBP read-back mismatch: {path}")
 
+def write_events(path: Path, events: list[dict[str, Any]]) -> None:
+    """Write validated benchmark events through the canonical HBP ledger."""
+    if not isinstance(events, list):
+        raise ValueError("events must be a list")
+    payloads: list[bytes] = []
+    for event in events:
+        if not isinstance(event, dict) or not isinstance(event.get("event"), str):
+            raise ValueError("each event must contain a string event name")
+        payloads.append(json.dumps(event, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    write_and_verify(path, payloads)
+
 def command(template: str, workspace: Path, model: str) -> list[str]:
     return [x.format(workspace=str(workspace), model=model, prompt=PROMPT)
             for x in shlex.split(template)]
