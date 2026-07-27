@@ -210,6 +210,6 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: "simplicio-code ${{ github.ref_name }}"
           prerelease: true
-          body_path: RELEASE_NOTES_0.3.0-beta.3.md
+          body_path: RELEASE_NOTES_${{ steps.ver.outputs.version }}.md
           files: |
             dist/*
