@@ -9,12 +9,21 @@
 pub mod agent_workers;
 pub mod component_release;
 pub mod external_routing;
+pub mod fast_doctor;
 pub mod fast_read_model;
 pub mod fast_surface;
 pub mod loop_hub;
 pub mod loop_hub_transport;
 pub mod map_cache;
 pub mod session_registry;
+
+
+pub use fast_doctor::{FAST_DOCTOR_SCHEMA_V1, FastDoctorReport};
+pub use fast_read_model::{FAST_READ_MODEL_SCHEMA_V1, FastSurfaceReadModel};
+pub use fast_surface::{
+    FAST_SURFACE_SCHEMA_V1, FastSnapshotIdentity, FastSurfaceAction, FastSurfaceError,
+    FastSurfaceMode, FastSurfaceStatus,
+};
 
 pub use loop_hub_transport::{
     HubAttachReceipt, HubAttachRequest, HubCursor, SocketPipeHubTransport,
