@@ -15,25 +15,11 @@ use tokio_util::sync::CancellationToken;
 use crate::client_identity::{HEADLESS_CLIENT_TYPE, PAGER_CLIENT_TYPE, PAGER_CLIENT_VERSION};
 use agent_client_protocol as acp;
 use xai_acp_lib::{AcpAgentTx, AcpClientRx, acp_send};
-use xai_grok_agent::SimplicioAgentCoordinator;
 use xai_grok_shell::agent::auth_method::AuthMethodKind;
 use xai_grok_shell::agent::config::Config as AgentConfig;
 use xai_grok_shell::sampling::types::ReasoningEffort;
 
 pub use model_state::ModelState;
-
-/// ACP uses the same single AgentHost coordinator as TUI, headless, and
-/// workspace. A missing or incompatible host blocks productive Code startup.
-pub async fn connect_code_coordinator() -> Result<SimplicioAgentCoordinator> {
-    let profile = std::env::var("SIMPLICIO_AGENT_PROFILE")
-        .ok()
-        .filter(|profile| !profile.trim().is_empty())
-        .unwrap_or_else(|| "desktop".into());
-    tokio::task::spawn_blocking(move || SimplicioAgentCoordinator::connect(profile))
-        .await
-        .map_err(|error| anyhow::anyhow!("AgentHost coordinator task failed: {error}"))?
-        .map_err(|error| anyhow::anyhow!("AgentHost coordinator unavailable: {error}"))
-}
 
 /// Construct a `METHOD_NOT_FOUND` error for `WaitForTerminalExit`.
 ///
@@ -119,8 +105,6 @@ pub struct AcpConnection {
     /// mode builds a dedicated one off the same local `auth.json`. Either way it
     /// resolves a fresh bearer per request via the refresh chain.
     pub auth_manager: std::sync::Arc<xai_grok_shell::auth::AuthManager>,
-    /// Connected AgentHost coordinator for this ACP surface.
-    pub coordinator: SimplicioAgentCoordinator,
 }
 
 /// CLI flags that affect agent configuration, threaded from PagerArgs.
@@ -252,7 +236,6 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
             .await
         };
 
-    let coordinator = connect_code_coordinator().await?;
     Ok(AcpConnection {
         tx,
         rx,
@@ -270,7 +253,6 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
         cancel_rewind_enabled,
         session_recap_available,
         auth_manager,
-        coordinator,
     })
 }
 
@@ -385,7 +367,6 @@ pub async fn connect_via_leader(
     // Leader has no in-process agent; init this process's product telemetry client.
     xai_grok_shell::agent::init::update_telemetry_config(&agent_config, &auth_manager);
 
-    let coordinator = connect_code_coordinator().await?;
     Ok(AcpConnection {
         tx,
         rx,
@@ -403,7 +384,6 @@ pub async fn connect_via_leader(
         cancel_rewind_enabled,
         session_recap_available,
         auth_manager,
-        coordinator,
     })
 }
 
