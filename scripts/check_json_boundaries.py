@@ -21,7 +21,19 @@ TOKENS = re.compile(
     r"JSON\.(?:parse|stringify)|serde_json|\.jsonl?\b|\.ndjson\b|jsonrpc)",
     re.IGNORECASE,
 )
-SKIP = {".git", "node_modules", "target", "dist", "build", ".simplicio", ".venv", "__pycache__", ".orchestrator"}
+SKIP = {
+    ".git",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".simplicio",
+    ".venv",
+    "__pycache__",
+    ".orchestrator",
+    ".turbo",
+    ".cache",
+}
 SOURCE_SUFFIXES = {".py", ".mjs", ".js", ".ts", ".tsx", ".rs", ".go", ".java", ".cs", ".toml", ".yaml", ".yml"}
 ARTIFACT_SUFFIXES = {".json", ".jsonl", ".ndjson"}
 BUILD_MANIFESTS = {"Cargo.toml", "Cargo.lock", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"}

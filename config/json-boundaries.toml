@@ -1853,3 +1853,54 @@ target_format = "versioned benchmark evidence artifact"
 status = "exception"
 reason = "This file is immutable issue evidence for session registry acceptance and is not read as workspace, session, queue, cache, or execution state by Code."
 expires = "2099-12-31"
+
+[[boundary]]
+paths = [
+  'hooks/action_gate.py',
+]
+category = "external_protocol_operator_hook"
+owner = "code-loop"
+producer = "simplicio-loop action gate adapter"
+consumer = "host stop/pretool hooks"
+lifecycle = "ephemeral stdin/stdout protocol; never Code workspace state"
+target_format = "versioned external JSON-RPC/hook contract"
+status = "exception"
+reason = "Host hooks exchange JSON with the coding agent runtime at the process boundary only."
+expires = "2027-07-28"
+
+[[boundary]]
+paths = [
+  'crates/codegen/simplicio-runtime-client/src/fast_surface.rs',
+  'crates/codegen/simplicio-runtime-client/src/fast_read_model.rs',
+  'crates/codegen/simplicio-runtime-client/src/fast_doctor.rs',
+  'crates/codegen/simplicio-runtime-client/src/agent_fabric_cockpit.rs',
+  'crates/codegen/simplicio-runtime-client/src/litert_provider.rs',
+]
+category = "external_protocol_surface_adapter"
+owner = "code-runtime"
+producer = "receipt-backed Fast/LiteRT/cockpit projections"
+consumer = "Code TUI/headless/ACP doctor surfaces"
+lifecycle = "in-memory serde adapters for external receipts; no .sfast or model path IO"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "Serde is used only at the Runtime/Loop receipt boundary; Code never persists internal session JSON and never opens .sfast or LiteRT model files."
+expires = "2027-07-28"
+
+[[boundary]]
+paths = [
+  'scripts/prove_binary_format_migration.py',
+  'pyproject.toml',
+  'python/simplicio_code_tools/__init__.py',
+  'python/simplicio_code_tools/onboarding_doctor.py',
+  'python/simplicio_code_tools/check_json_boundaries.py',
+  'python/simplicio_code_tools/prove_binary_format_migration.py',
+]
+category = "external_operator_packaging"
+owner = "code-onboarding"
+producer = "PyPI companion tooling and binary-format proof harness"
+consumer = "operators installing simplicio-code doctor from PyPI"
+lifecycle = "distribution and CI proof; never Code session state"
+target_format = "versioned external packaging and Markdown proof"
+status = "exception"
+reason = "PyPI companion package ships doctor/quality probes; internal domain state remains HBI/HBP."
+expires = "2027-07-28"
