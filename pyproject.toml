@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simplicio-code"
+version = "0.3.0b5"
+description = "Onboarding doctor, quality gates, and operator probes for Simplicio Code (binary agent is distributed via GitHub Releases)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Wesley Simplicio" }]
+dependencies = [
+  "simplicio-mapper>=0.26.0",
+  "simplicio-cli>=0.18.0",
+  "simplicio-loop>=3.38.6",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.scripts]
+simplicio-code-doctor = "simplicio_code_tools.onboarding_doctor:main"
+simplicio-code-json-boundaries = "simplicio_code_tools.check_json_boundaries:main"
+simplicio-code-binary-proof = "simplicio_code_tools.prove_binary_format_migration:main"
+
+[tool.setuptools.packages.find]
+where = ["python"]
+include = ["simplicio_code_tools*"]
