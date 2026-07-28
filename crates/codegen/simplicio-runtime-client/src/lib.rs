@@ -13,6 +13,7 @@ pub mod external_routing;
 pub mod fast_doctor;
 pub mod fast_read_model;
 pub mod fast_surface;
+pub mod litert_provider;
 pub mod loop_hub;
 pub mod loop_hub_transport;
 pub mod map_cache;
@@ -30,6 +31,12 @@ pub use fast_surface::{
     FastSurfaceMode, FastSurfaceStatus,
 };
 
+pub use litert_provider::{
+    FEATURE_FLAG_ENV, InferencePath, InferenceReceipt, InferenceRequest, LITERT_PROVIDER_SCHEMA_V1,
+    LiteRtError, ProviderCapability, ProviderHealth, ProviderSelection, authorize_request,
+    feature_enabled, feature_enabled_from_env, forbid_direct_backend, receipt_for, select_provider,
+    validate_attachment_handle,
+};
 pub use loop_hub_transport::{
     HubAttachReceipt, HubAttachRequest, HubCursor, SocketPipeHubTransport,
     SocketPipeHubTransportFactory,
