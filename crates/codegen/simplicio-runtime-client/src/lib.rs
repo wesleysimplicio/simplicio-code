@@ -6,6 +6,7 @@
 //! request. This lets older Runtimes keep the already-supported read path
 //! while rejecting newer operations with an actionable incompatibility error.
 
+pub mod agent_fabric_cockpit;
 pub mod agent_workers;
 pub mod component_release;
 pub mod external_routing;
@@ -18,6 +19,10 @@ pub mod map_cache;
 pub mod session_registry;
 
 
+pub use agent_fabric_cockpit::{
+    AgentAddressView, COCKPIT_SCHEMA_V1, CockpitBadge, CockpitSnapshot, CostView, Freshness,
+    QuorumView, ReceiptLink, WorkGapPhase, WorkGapView, project_from_ledger,
+};
 pub use fast_doctor::{FAST_DOCTOR_SCHEMA_V1, FastDoctorReport};
 pub use fast_read_model::{FAST_READ_MODEL_SCHEMA_V1, FastSurfaceReadModel};
 pub use fast_surface::{
