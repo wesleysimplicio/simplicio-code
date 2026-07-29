@@ -176,16 +176,63 @@ pub(super) fn dispatch_task_result(result: TaskResult, app: &mut AppView) -> Vec
             message,
             succeeded,
         } => {
+            app.agent_attention
+                .record_terminal_result(&message, succeeded);
             if let Some(agent) = app.agents.get_mut(&agent_id) {
                 let prefix = if succeeded {
                     "Simplicio Agent"
                 } else {
                     "Simplicio Agent error"
                 };
-                agent
-                    .scrollback
-                    .push_block(RenderBlock::system(format!("{prefix}: {message}")));
+                if succeeded {
+                    agent
+                        .scrollback
+                        .push_block(RenderBlock::agent_message(message.clone()));
+                } else {
+                    agent
+                        .scrollback
+                        .push_block(RenderBlock::system(format!("{prefix}: {message}")));
+                }
             }
+            let Some(session_id) = app
+                .agents
+                .get(&agent_id)
+                .and_then(|agent| agent.session.session_id.as_ref())
+                .map(|session_id| session_id.0.to_string())
+            else {
+                return vec![];
+            };
+            let task_context = app
+                .agent_attention
+                .last_code_task()
+                .unwrap_or("(no task text)");
+            let result_context = message.chars().take(4_000).collect::<String>();
+            let completion_prompt = if succeeded {
+                format!(
+                    "You are the lateral Simplicio Agent copilot. Code has finished this task:\n{task_context}\n\nCode result:\n{result_context}\n\nNow inspect the workspace and run the focused tests. Report failures, evidence, and the next concrete action."
+                )
+            } else {
+                format!(
+                    "You are the lateral Simplicio Agent copilot. Code was handling:\n{task_context}\n\nIt reported a failure:\n{result_context}\n\nDiagnose it from the workspace and run the focused test or reproduction now. Report evidence and the next concrete action."
+                )
+            };
+            app.agent_attention
+                .record_copilot_prompt(&completion_prompt);
+            let copilot_session_id = app.agent_attention.copilot_session_id(&session_id);
+            vec![Effect::RunSimplicioCopilotTurn {
+                agent_id,
+                session_id: copilot_session_id,
+                message: completion_prompt,
+                idempotency_key: uuid::Uuid::new_v4().to_string(),
+            }]
+        }
+        TaskResult::SimplicioCopilotTurnCompleted {
+            agent_id: _,
+            message,
+            succeeded,
+        } => {
+            app.agent_attention
+                .record_copilot_result(&message, succeeded);
             vec![]
         }
         TaskResult::AgentAttentionPolled(result) => {

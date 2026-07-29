@@ -110,17 +110,23 @@ pub(super) fn dispatch_open_dashboard(app: &mut AppView) -> Vec<Effect> {
         app.show_toast("Agent dashboard is disabled in this configuration");
         return vec![];
     }
-    // Gate behind auth. Until login completes, the
-    // backend rejects new sessions; activating the dashboard view
-    // visually dismisses the auth UI. Toast and stay put.
-    if !matches!(app.auth_state, crate::app::app_view::AuthState::Done) {
+    // Simplicio Code's default surface is AgentHost-backed, so it must not
+    // inherit the legacy Grok login gate just to render the local dashboard.
+    // Other launch modes retain the original auth requirement.
+    let code_agent_first = std::env::var("SIMPLICIO_CODE_AGENT_FIRST").is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    });
+    if !code_agent_first && !matches!(app.auth_state, crate::app::app_view::AuthState::Done) {
         app.show_toast("Sign in to open the dashboard");
         return vec![];
     }
     // Same rationale for folder trust: opening the dashboard would visually
     // dismiss the trust question with the folder still unanswered. Toast and
     // stay put (mirrors the auth gate above) so the question is resolved first.
-    if matches!(app.trust_state, TrustState::Pending { .. }) {
+    if !code_agent_first && matches!(app.trust_state, TrustState::Pending { .. }) {
         app.show_toast("Answer the folder-trust question to open the dashboard");
         return vec![];
     }

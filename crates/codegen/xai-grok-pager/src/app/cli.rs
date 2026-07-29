@@ -450,7 +450,7 @@ fn version_with_channel() -> &'static str {
 }
 #[derive(Debug, Clone, Parser)]
 #[command(
-    name = "grok",
+    name = "simplicio_code",
     version = version_with_channel(),
     about = "Simplicio Code TUI",
     disable_version_flag = true,

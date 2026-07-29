@@ -22,6 +22,31 @@ use std::sync::OnceLock;
 /// [`take_screen_mode_env_override`]; not a public user interface.
 pub(crate) const GROK_SCREEN_MODE_ENV: &str = "GROK_SCREEN_MODE";
 
+/// Public executable spelling shown in copy/paste resume hints. The shared
+/// pager still serves the legacy Grok binary, but the Simplicio Code release
+/// must teach users to resume through its own launcher.
+pub(crate) fn resume_executable() -> &'static str {
+    let argv0 = std::env::args_os().next();
+    let invoked_as_simplicio_code = argv0
+        .as_deref()
+        .and_then(OsStr::to_str)
+        .is_some_and(|value| {
+            let name = std::path::Path::new(value)
+                .file_name()
+                .and_then(OsStr::to_str)
+                .unwrap_or(value);
+            name == "simplicio-code" || name == "simplicio_code"
+        });
+    if invoked_as_simplicio_code
+        || std::env::var("SIMPLICIO_CODE_AGENT_FIRST")
+            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+    {
+        "simplicio_code"
+    } else {
+        "grok"
+    }
+}
+
 /// Argv tokens (`--long`, `-s`, and their aliases) of [`super::cli::PagerArgs`]
 /// flags that consume a following value token when not written as
 /// `--flag=value`.
@@ -210,7 +235,10 @@ pub(crate) fn screen_mode_relaunch_resume_hint(session_id: &str, want_minimal: b
     } else {
         "--fullscreen"
     };
-    format!("{GROK_SCREEN_MODE_ENV}={mode} grok {flag} --resume {session_id}")
+    format!(
+        "{GROK_SCREEN_MODE_ENV}={mode} {} {flag} --resume {session_id}",
+        resume_executable()
+    )
 }
 
 /// Replace the current process with a relaunch into the requested screen mode.

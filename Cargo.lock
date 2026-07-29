@@ -13750,10 +13750,12 @@ version = "0.3.0-beta.3"
 dependencies = [
  "anyhow",
  "clap",
+ "crossterm",
  "cryptify",
  "dunce",
  "libc",
  "obfstr",
+ "ratatui",
  "rustls",
  "semver",
  "serde_json",

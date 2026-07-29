@@ -29,3 +29,25 @@ pub use config::workspace_grok_build_toolset;
 pub use error::AgentBuildError;
 pub use prompt::context::{DEFAULT_SYSTEM_PROMPT_LABEL, PromptContext};
 pub use system_reminder::ReminderPolicy;
+
+/// Return the model/provider selected by the installed Hermes-derived Agent.
+///
+/// Code uses this only for its shared UI label. Turn execution remains behind
+/// AgentHost, so the label cannot silently become a second provider config.
+pub fn configured_model_label() -> Option<String> {
+    let path = dirs::home_dir()?
+        .join(".simplicio_agent")
+        .join("config.yaml");
+    let contents = std::fs::read_to_string(path).ok()?;
+    let root: serde_yaml::Value = serde_yaml::from_str(&contents).ok()?;
+    let model = root.get("model")?;
+    let model_name = model
+        .get("default")
+        .or_else(|| model.get("name"))
+        .and_then(serde_yaml::Value::as_str)?;
+    let provider = model
+        .get("provider")
+        .and_then(serde_yaml::Value::as_str)
+        .unwrap_or("configured provider");
+    Some(format!("{model_name} · {provider}"))
+}

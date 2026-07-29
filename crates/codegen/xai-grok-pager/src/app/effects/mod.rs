@@ -82,6 +82,46 @@ pub(crate) fn execute(
                 }
             });
         }
+        Effect::RunSimplicioCopilotTurn {
+            agent_id,
+            session_id,
+            message,
+            idempotency_key,
+        } => {
+            let coordinator = xai_grok_agent::SimplicioAgentCoordinator::copilot_shared();
+            tasks.spawn(async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    let mut coordinator = coordinator
+                        .lock()
+                        .map_err(|_| {
+                            simplicio_agent_client::Error::InvalidCoordinatorState(
+                                simplicio_agent_client::CoordinatorState::Terminal,
+                            )
+                        })?;
+                    coordinator.start_copilot_turn(session_id, message, idempotency_key)
+                })
+                .await;
+                match result {
+                    Ok(Ok(turn)) if turn.completed => TaskResult::SimplicioCopilotTurnCompleted {
+                        agent_id,
+                        message: turn
+                            .final_response
+                            .unwrap_or_else(|| "Copilot completed without a textual response.".into()),
+                        succeeded: true,
+                    },
+                    Ok(Ok(_)) => TaskResult::SimplicioCopilotTurnCompleted {
+                        agent_id,
+                        message: "Copilot did not complete the requested turn.".into(),
+                        succeeded: false,
+                    },
+                    Ok(Err(_)) | Err(_) => TaskResult::SimplicioCopilotTurnCompleted {
+                        agent_id,
+                        message: "Simplicio Agent copilot is unavailable or incompatible.".into(),
+                        succeeded: false,
+                    },
+                }
+            });
+        }
         Effect::RunSimplicioRuntimeInspect {
             agent_id,
             cwd,

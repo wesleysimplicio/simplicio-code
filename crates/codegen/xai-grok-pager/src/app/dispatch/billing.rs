@@ -10,6 +10,35 @@ use std::time::Duration;
 use xai_grok_telemetry::events::{SuperGrokUpsell, SuperGrokUpsellClicked};
 use xai_grok_telemetry::session_ctx::log_event;
 
+/// Simplicio Code does not expose the inherited Grok subscription surface.
+/// Model and provider selection belongs to the installed Simplicio Agent.
+/// Billing is opt-in only for legacy compatibility tests and a future
+/// ecosystem-owned billing surface.
+#[cfg(test)]
+pub(crate) fn ecosystem_billing_enabled() -> bool {
+    true
+}
+
+#[cfg(not(test))]
+pub(crate) fn ecosystem_billing_enabled() -> bool {
+    std::env::var("SIMPLICIO_CODE_ENABLE_ECOSYSTEM_BILLING")
+        .ok()
+        .is_some_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+}
+
+fn push_provider_limit_notice(agent: &mut AgentView) {
+    agent.scrollback.push_block(RenderBlock::System(
+        crate::scrollback::blocks::SystemMessageBlock::new(
+            "The selected Simplicio Agent model/provider is unavailable or rate-limited. Use /model or /simplicio_agent model to choose another route.",
+        ),
+    ));
+}
+
 /// How long the pager auto-checks subscription status before stopping.
 /// After this, the user can still manually check via the [Refresh] button.
 pub(super) const PAYWALL_AUTO_CHECK_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -112,7 +141,7 @@ pub(crate) fn acp_error_is_free_usage_exhausted(err: &agent_client_protocol::Err
 /// User-facing message for free-usage exhaustion. Shown by headless mode and
 /// `format_acp_error` in place of auth-aware rate-limit copy. Deliberately
 /// promises no reset duration — the quota window is backend-config-driven.
-pub(crate) const FREE_USAGE_USER_MESSAGE: &str = "You\u{2019}ve reached your free Simplicio Code usage limit for now. Get SuperGrok for much higher limits, or try again later: https://grok.com/supergrok?referrer=grok-build";
+pub(crate) const FREE_USAGE_USER_MESSAGE: &str = "The selected Simplicio Agent model/provider is unavailable or rate-limited. Use /model or /simplicio_agent model to choose another route.";
 
 /// Open the credit-limit upsell on the given agent.
 ///
@@ -128,6 +157,10 @@ pub(super) fn open_credit_limit_upsell(
     mode: CreditLimitUpsellMode,
     max_tier: bool,
 ) {
+    if !ecosystem_billing_enabled() {
+        push_provider_limit_notice(agent);
+        return;
+    }
     use crate::scrollback::blocks::CreditLimitCardAction;
 
     let (
@@ -295,6 +328,11 @@ fn open_supergrok_upsell(
         Question, QuestionOption,
     };
 
+    if !ecosystem_billing_enabled() {
+        push_provider_limit_notice(agent);
+        return true;
+    }
+
     // Never displace an already-open question modal. Callers that consume
     // input on open must check this `false` and keep the input instead.
     if agent.question_view.is_some() {
@@ -425,6 +463,11 @@ pub(super) fn handle_gate_refreshed(
     let Some(rs) = settings else {
         return vec![];
     };
+    if !ecosystem_billing_enabled() {
+        app.usage_billing_redirect_url = None;
+        app.subscription_watch_interval_secs = None;
+        return app.lift_gate();
+    }
     app.usage_billing_redirect_url = rs.usage_billing_redirect_url.clone();
     if let Some(secs) = rs.subscription_watch_interval_secs {
         app.subscription_watch_interval_secs = Some(secs);
@@ -562,6 +605,12 @@ pub(super) fn handle_credit_limit_recheck_complete(
 // Action handlers.
 
 pub(super) fn dispatch_open_supergrok_url(app: &mut AppView) -> Vec<Effect> {
+    if !ecosystem_billing_enabled() {
+        app.show_toast(
+            "Simplicio Code uses the model/provider configured in simplicio_agent; no subscription is required here.",
+        );
+        return vec![];
+    }
     log_event(SuperGrokUpsellClicked {
         source: SuperGrokUpsell::WelcomeScreen,
         auth_method: app.login_method_id.as_ref().map(|id| id.0.to_string()),

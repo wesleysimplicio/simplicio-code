@@ -643,6 +643,12 @@ pub(super) async fn send_check_subscription(
     tx: &AcpAgentTx,
     verify: Option<u64>,
 ) -> TaskResult {
+    if !crate::app::dispatch::ecosystem_billing_enabled() {
+        return TaskResult::CheckSubscriptionComplete {
+            verify,
+            meta: None,
+        };
+    }
     let req = acp::ExtRequest::new(
         "x.ai/auth/check_subscription",
         serde_json::value::to_raw_value(&serde_json::json!({}))
@@ -681,6 +687,12 @@ pub(super) async fn send_credit_limit_recheck(
     tx: &AcpAgentTx,
     agent_id: AgentId,
 ) -> TaskResult {
+    if !crate::app::dispatch::ecosystem_billing_enabled() {
+        return TaskResult::CreditLimitRecheckComplete {
+            agent_id,
+            meta: None,
+        };
+    }
     let req = acp::ExtRequest::new(
         "x.ai/auth/check_subscription",
         serde_json::value::to_raw_value(&serde_json::json!({}))

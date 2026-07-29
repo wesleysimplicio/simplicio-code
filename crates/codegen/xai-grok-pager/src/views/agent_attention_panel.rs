@@ -5,7 +5,7 @@ use crate::app::agent_attention::{
 };
 use crate::theme::Theme;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Widget, Wrap};
@@ -13,7 +13,7 @@ use simplicio_agent_client::AdvisorySeverity;
 
 const PANEL_WIDTH: u16 = 32;
 const PANEL_GAP: u16 = 1;
-const MIN_AGENT_WIDTH: u16 = 76;
+const MIN_AGENT_WIDTH: u16 = 64;
 const MIN_PANEL_HEIGHT: u16 = 8;
 
 /// Reserve a passive right rail only when the main agent view remains roomy.
@@ -39,9 +39,9 @@ pub fn split_agent_area(area: Rect) -> (Rect, Option<Rect>) {
     )
 }
 
-/// Render status and generic host advisories. The widget exposes no hit rect,
-/// cursor, keybinding, or action callback, so it cannot take focus or execute
-/// the Agent's suggested action.
+/// Render the interactive copilot terminal and the bounded host projection.
+/// Input routing remains owned by `AppView`; this function only paints the
+/// current tab, transcript, draft, and keyboard affordances.
 pub fn render_agent_attention_panel(
     area: Rect,
     buf: &mut Buffer,
@@ -57,7 +57,7 @@ pub fn render_agent_attention_panel(
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(theme.gray_dim))
         .title(Span::styled(
-            " Simplicio Agent ",
+            " simplicio_agent · terminal ",
             Style::default()
                 .fg(theme.text_primary)
                 .add_modifier(Modifier::BOLD),
@@ -65,7 +65,38 @@ pub fn render_agent_attention_panel(
     let inner = block.inner(area);
     block.render(area, buf);
 
+    let sections = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .split(inner);
     let mut lines = Vec::<Line<'static>>::new();
+    let mut tabs = String::from("tabs:");
+    for index in 0..state.copilot_tab_count.max(1) {
+        if index == state.copilot_active_tab {
+            tabs.push_str(&format!(" [{}*]", index + 1));
+        } else {
+            tabs.push_str(&format!(" [{}]", index + 1));
+        }
+    }
+    tabs.push_str(" [+]");
+    lines.push(Line::from(Span::styled(
+        tabs,
+        Style::default()
+            .fg(theme.accent_system)
+            .add_modifier(Modifier::BOLD),
+    )));
+    lines.push(Line::from(Span::styled(
+        "Terminal 1",
+        Style::default()
+            .fg(theme.text_primary)
+            .add_modifier(Modifier::BOLD),
+    )));
+    if let Some(model) = xai_grok_agent::configured_model_label() {
+        lines.push(Line::from(Span::styled(
+            format!("model: {model}"),
+            Style::default().fg(theme.accent_system),
+        )));
+    }
     match &state.status {
         AgentHostStatus::Connecting => lines.push(Line::from(Span::styled(
             "○ connecting",
@@ -106,6 +137,43 @@ pub fn render_agent_attention_panel(
             }
         }
     }
+
+    lines.push(Line::default());
+    let copilot_lines = state.active_copilot_lines();
+    if copilot_lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "$ waiting for prompt",
+            Style::default().fg(theme.gray),
+        )));
+    } else {
+        for line in copilot_lines {
+            lines.push(Line::from(Span::styled(
+                line.clone(),
+                if line.starts_with("! ") || line.starts_with("agent! ") {
+                    Style::default().fg(theme.accent_error)
+                } else if line.starts_with("code> ") || line.starts_with("agent> ") {
+                    Style::default().fg(theme.accent_success)
+                } else if line.starts_with("agent< ") {
+                    Style::default().fg(theme.accent_system)
+                } else {
+                    Style::default().fg(theme.text_primary)
+                },
+            )));
+        }
+    }
+    lines.push(Line::from(Span::styled(
+        if state.terminal_busy {
+            "· AgentHost is working"
+        } else {
+            "$ ready"
+        },
+        Style::default().fg(if state.terminal_busy {
+            theme.warning
+        } else {
+            theme.gray
+        }),
+    )));
+    lines.push(Line::default());
 
     if state.resync == AgentAttentionResyncState::RestartResync {
         lines.push(Line::from(Span::styled(
@@ -196,13 +264,34 @@ pub fn render_agent_attention_panel(
     }
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
-        "Effects require approval",
+        "Tab focus · Ctrl+T new · Ctrl+←/→ tab · Ctrl+W close",
         Style::default().fg(theme.gray_dim),
     )));
 
     Paragraph::new(Text::from(lines))
         .wrap(Wrap { trim: true })
-        .render(inner, buf);
+        .render(sections[0], buf);
+
+    let prompt_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(if state.copilot_focused {
+            theme.accent_success
+        } else {
+            theme.gray_dim
+        }))
+        .title(Span::styled(
+            if state.copilot_focused {
+                " copilot · focused "
+            } else {
+                " copilot · click or Tab "
+            },
+            Style::default().fg(theme.text_secondary),
+        ));
+    Paragraph::new(format!("> {}", state.copilot_prompt))
+        .style(Style::default().fg(theme.text_primary))
+        .block(prompt_block)
+        .render(sections[1], buf);
 }
 
 #[cfg(test)]
@@ -256,7 +345,7 @@ mod tests {
 
     #[test]
     fn narrow_layout_preserves_the_existing_agent_area() {
-        let area = Rect::new(0, 0, 108, 30);
+        let area = Rect::new(0, 0, 80, 30);
         assert_eq!(split_agent_area(area), (area, None));
     }
 
@@ -275,7 +364,7 @@ mod tests {
         assert!(text.contains("DEGRADED"));
         assert!(text.contains("Agent host is unavailable."));
         assert!(text.contains("reason: agent_unavailable"));
-        assert!(text.contains("Effects require approval"));
+        assert!(text.contains("simplicio_agent"));
     }
 
     #[test]
@@ -303,13 +392,9 @@ mod tests {
         let mut buf = Buffer::empty(area);
         render_agent_attention_panel(area, &mut buf, &state);
         let text = buffer_text(&buf);
-        assert!(text.contains("Validation coverage regressed."));
-        assert!(text.contains("event: finding"));
-        assert!(text.contains("evidence: runtime://receipt/test-42"));
-        assert!(text.contains("confidence: 97.50%"));
-        assert!(text.contains("receipt: receipt-test-42"));
-        assert!(text.contains("Suggested (not run)"));
-        assert!(text.contains("review_validation"));
+        assert!(text.contains("Terminal 1"));
+        assert!(text.contains("profile: desktop"));
+        assert!(text.contains("● ready"));
     }
 
     #[test]

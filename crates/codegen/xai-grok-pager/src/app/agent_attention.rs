@@ -4,6 +4,7 @@
 //! operations. It never turns an advisory into an effect: this state is a
 //! read-only input to the side panel.
 
+use ratatui::layout::Rect;
 use simplicio_agent_client::{
     AgentAttentionState, AgentHostClient, AgentHostCoordinator, Error, HostInstanceId,
 };
@@ -190,10 +191,30 @@ struct IncarnatedAttention {
     attention: AgentAttentionState,
 }
 
-/// App-owned state for the non-focusable Agent panel.
+/// App-owned state for the interactive lateral Agent copilot panel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentAttentionPanelState {
     pub status: AgentHostStatus,
+    /// Short terminal transcript mirrored from the AgentHost turns routed by
+    /// Simplicio Code. This is presentation state only; execution remains in
+    /// the versioned AgentHost coordinator.
+    pub terminal_lines: Vec<String>,
+    pub terminal_busy: bool,
+    pub copilot_terminal_lines: Vec<Vec<String>>,
+    /// Bounded task context kept locally while the Code terminal is working.
+    /// The copilot receives it only after Code completes, keeping foreground
+    /// prompt latency to one provider request.
+    last_code_task: Option<String>,
+    /// Draft typed into the copilot terminal.
+    pub copilot_prompt: String,
+    /// Whether keyboard input currently belongs to the copilot rail.
+    pub copilot_focused: bool,
+    /// Number of independent copilot AgentHost sessions exposed as tabs.
+    pub copilot_tab_count: usize,
+    pub copilot_active_tab: usize,
+    /// Last rendered hit area, used for click-to-focus without a second UI
+    /// routing layer.
+    pub panel_area: Option<Rect>,
     stream: Option<IncarnatedAttention>,
     pub resync: AgentAttentionResyncState,
     next_poll_generation: u64,
@@ -205,6 +226,15 @@ impl Default for AgentAttentionPanelState {
     fn default() -> Self {
         Self {
             status: AgentHostStatus::Connecting,
+            terminal_lines: Vec::new(),
+            terminal_busy: false,
+            copilot_terminal_lines: vec![Vec::new()],
+            last_code_task: None,
+            copilot_prompt: String::new(),
+            copilot_focused: false,
+            copilot_tab_count: 1,
+            copilot_active_tab: 0,
+            panel_area: None,
             stream: None,
             resync: AgentAttentionResyncState::Stable,
             next_poll_generation: 1,
@@ -239,6 +269,141 @@ impl AgentAttentionPanelState {
 
     pub fn attention(&self) -> Option<&AgentAttentionState> {
         self.stream.as_ref().map(|stream| &stream.attention)
+    }
+
+    /// Mirror a prompt in the side terminal without retaining unbounded user
+    /// input in the TUI state.
+    pub fn record_terminal_prompt(&mut self, prompt: &str) {
+        self.terminal_busy = true;
+        self.push_terminal_lines(prompt, "code> ");
+        let mut bounded = prompt.chars().take(4_000).collect::<String>();
+        if prompt.chars().count() > 4_000 {
+            bounded.push('…');
+        }
+        self.last_code_task = Some(bounded.clone());
+        Self::push_bounded_lines(
+            self.copilot_terminal_lines
+                .get_mut(self.copilot_active_tab)
+                .expect("copilot tab exists"),
+            &bounded,
+            "watch> ",
+        );
+    }
+
+    /// Mirror the bounded AgentHost response in the side terminal.
+    pub fn record_terminal_result(&mut self, message: &str, succeeded: bool) {
+        self.terminal_busy = false;
+        if !succeeded {
+            self.push_terminal_lines(message, "! ");
+        } else {
+            self.push_terminal_lines(message, "code< ");
+        }
+    }
+
+    pub fn record_copilot_prompt(&mut self, prompt: &str) {
+        self.terminal_busy = true;
+        Self::push_bounded_lines(
+            self.copilot_terminal_lines
+                .get_mut(self.copilot_active_tab)
+                .expect("copilot tab exists"),
+            prompt,
+            "agent> ",
+        );
+    }
+
+    pub fn record_copilot_result(&mut self, message: &str, succeeded: bool) {
+        if !succeeded {
+            Self::push_bounded_lines(
+                self.copilot_terminal_lines
+                    .get_mut(self.copilot_active_tab)
+                    .expect("copilot tab exists"),
+                message,
+                "agent! ",
+            );
+        } else {
+            Self::push_bounded_lines(
+                self.copilot_terminal_lines
+                    .get_mut(self.copilot_active_tab)
+                    .expect("copilot tab exists"),
+                message,
+                "agent< ",
+            );
+        }
+        self.terminal_busy = false;
+    }
+
+    pub fn push_terminal_system(&mut self, message: &str) {
+        self.push_terminal_lines(message, "system> ");
+    }
+
+    pub fn active_copilot_lines(&self) -> &[String] {
+        self.copilot_terminal_lines
+            .get(self.copilot_active_tab)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    pub fn last_code_task(&self) -> Option<&str> {
+        self.last_code_task.as_deref()
+    }
+
+    pub fn toggle_copilot_focus(&mut self) {
+        self.copilot_focused = !self.copilot_focused;
+    }
+
+    pub fn new_copilot_tab(&mut self) {
+        if self.copilot_tab_count >= 32 {
+            return;
+        }
+        self.copilot_tab_count += 1;
+        self.copilot_terminal_lines.push(Vec::new());
+        self.copilot_active_tab = self.copilot_tab_count.saturating_sub(1);
+        self.copilot_prompt.clear();
+        self.copilot_focused = true;
+    }
+
+    pub fn close_copilot_tab(&mut self) {
+        if self.copilot_tab_count <= 1 {
+            return;
+        }
+        self.copilot_tab_count -= 1;
+        self.copilot_terminal_lines.remove(self.copilot_active_tab);
+        self.copilot_active_tab = self.copilot_active_tab.min(self.copilot_tab_count - 1);
+        self.copilot_prompt.clear();
+    }
+
+    pub fn cycle_copilot_tab(&mut self, delta: isize) {
+        let count = self.copilot_tab_count.max(1) as isize;
+        self.copilot_active_tab =
+            (self.copilot_active_tab as isize + delta).rem_euclid(count) as usize;
+        self.copilot_focused = true;
+        self.copilot_prompt.clear();
+    }
+
+    pub fn copilot_session_id(&self, code_session_id: &str) -> String {
+        format!("{code_session_id}:copilot:{}", self.copilot_active_tab + 1)
+    }
+
+    fn push_terminal_lines(&mut self, text: &str, prefix: &str) {
+        Self::push_bounded_lines(&mut self.terminal_lines, text, prefix);
+    }
+
+    fn push_bounded_lines(lines: &mut Vec<String>, text: &str, prefix: &str) {
+        for line in text.lines().take(12) {
+            let mut bounded = line.chars().take(180).collect::<String>();
+            if line.chars().count() > 180 {
+                bounded.push('…');
+            }
+            lines.push(format!("{prefix}{bounded}"));
+        }
+        if text.is_empty() {
+            lines.push(prefix.trim_end().to_owned());
+        }
+        const MAX_TERMINAL_LINES: usize = 32;
+        if lines.len() > MAX_TERMINAL_LINES {
+            let remove = lines.len() - MAX_TERMINAL_LINES;
+            lines.drain(..remove);
+        }
     }
 
     /// Healthy cadence with capped exponential backoff after failures.

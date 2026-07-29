@@ -86,7 +86,8 @@ impl AppView {
     /// Whether the watch (and the refocus check) should run: enabled,
     /// consumer session, and gated or possibly-free.
     pub fn subscription_watch_wanted(&self) -> bool {
-        self.subscription_watch_interval().is_some()
+        crate::app::dispatch::ecosystem_billing_enabled()
+            && self.subscription_watch_interval().is_some()
             && self.is_consumer_session()
             && (self.gate.is_some() || self.may_be_free_tier())
     }
@@ -139,6 +140,11 @@ impl AppView {
     /// source may be stale). Otherwise → show directly.
     #[must_use]
     pub fn impose_gate(&mut self, gate: xai_grok_shell::auth::GateInfo) -> Vec<Effect> {
+        if !crate::app::dispatch::ecosystem_billing_enabled() {
+            self.gate = None;
+            self.pending_gate_verification = None;
+            return vec![];
+        }
         if self.gate.is_some() {
             self.gate = Some(gate);
             return vec![];
