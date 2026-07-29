@@ -47,6 +47,8 @@ use xai_grok_shell::leader::{
     ControlPayload, LeaderClient, LeaderEnvUrls, connect_or_spawn, socket_path_for_ws_url,
 };
 use xai_grok_update::{UpdateConfig, auto_update, enforce_minimum_version_or_exit};
+
+mod panel;
 /// Apply headless args to an existing config, only overriding values that are
 /// explicitly set. This allows environment defaults to be preserved when
 /// specific args are not provided.
@@ -448,6 +450,7 @@ fn env_flag_enabled(value: &str) -> bool {
         "" | "0" | "false" | "off" | "no"
     )
 }
+
 /// Blocking fetch of remote settings via the startup prefetch path.
 fn fetch_remote_settings() -> Option<xai_grok_shell::util::config::RemoteSettings> {
     join_early_prefetch(xai_grok_shell::agent::models::start_early_prefetch(None))
@@ -1494,6 +1497,46 @@ fn flag_dashboard_at_startup_if_requested(args: &mut PagerArgs) -> Result<()> {
     unsafe { std::env::set_var("GROK_OPEN_DASHBOARD_AT_STARTUP", "1") };
     Ok(())
 }
+
+/// Start the headless Simplicio AgentHost on demand for the default Code TUI.
+/// The AgentHost is the backend; Code remains the only interactive surface.
+fn ensure_simplicio_agent_host() {
+    let program = env::var_os("SIMPLICIO_AGENT_BIN").unwrap_or_else(|| "simplicio-agent".into());
+    let daemon_ready = || {
+        std::process::Command::new(&program)
+            .args(["daemon", "status"])
+            .output()
+            .ok()
+            .and_then(|output| serde_json::from_slice::<serde_json::Value>(&output.stdout).ok())
+            .and_then(|status| status.get("ok").and_then(serde_json::Value::as_bool))
+            .unwrap_or(false)
+    };
+    if daemon_ready() {
+        return;
+    }
+
+    let Ok(_child) = std::process::Command::new(&program)
+        .args(["daemon", "start", "--warm-profile", "desktop"])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return;
+    };
+
+    // AgentHost preloads the model/provider catalog before binding its socket;
+    // allow that cold start to finish instead of falling through to a fake
+    // disconnected Code session.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        if daemon_ready() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
 const RUNTIME_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 /// A plain runtime drop blocks forever on an uncancellable in-flight blocking
 /// task; `shutdown_timeout` abandons it after `grace` so exit can't hang.
@@ -1771,6 +1814,33 @@ async fn async_main() -> Result<()> {
         xai_grok_workspace::permission::ClientType::Generic
     });
     let update_config = build_update_config();
+    let simplicio_code_entrypoint = env::current_exe()
+        .ok()
+        .and_then(|path| path.file_name().map(|name| name.to_owned()))
+        .and_then(|name| name.to_str().map(str::to_owned))
+        .is_some_and(|name| name == "simplicio-code" || name == "simplicio_code");
+    if simplicio_code_entrypoint && is_interactive {
+        ensure_simplicio_agent_host();
+        unsafe { env::set_var("SIMPLICIO_CODE_AGENT_FIRST", "1") };
+    }
+    let opens_cockpit = is_interactive
+        && args.resume_session.is_none()
+        && args.load_session.is_none()
+        && !args.continue_last_session
+        && args.session_id.is_none()
+        && !args.minimal;
+    if opens_cockpit {
+        // The first screen is Code's native `/dashboard`, not a second
+        // cockpit process. This keeps the dashboard's own navigation, tabs,
+        // terminal/session actions, and scrollback in one TUI.
+        ensure_simplicio_agent_host();
+        unsafe { env::set_var("GROK_OPEN_DASHBOARD_AT_STARTUP", "1") };
+
+        // Keep the Code visual session, but make its productive prompt path
+        // AgentHost-owned. The legacy in-process ACP remains only as the
+        // rendering/session shell and cannot select a second provider.
+        unsafe { env::set_var("SIMPLICIO_CODE_AGENT_FIRST", "1") };
+    }
     if let Some(command) = args.command.take() {
         match command {
             Command::Version { json } => {

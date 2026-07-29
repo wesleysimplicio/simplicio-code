@@ -135,6 +135,8 @@ pub enum Action {
     },
     /// Send the current prompt text to the agent.
     SendPrompt(String),
+    /// Send text to the interactive lateral Simplicio Agent copilot terminal.
+    SendCopilotPrompt(String),
     /// Submit a clicked follow-up suggestion chip as a LITERAL model prompt.
     /// The suggestion text is server/model-controlled, so it must bypass
     /// slash-command and exit-alias resolution (a `/always-approve` or `/quit`
@@ -1326,6 +1328,14 @@ pub enum Effect {
         message: String,
         idempotency_key: String,
     },
+    /// Execute one copilot turn in a separate AgentHost session while keeping
+    /// the same desktop profile/model configuration as the Code terminal.
+    RunSimplicioCopilotTurn {
+        agent_id: AgentId,
+        session_id: String,
+        message: String,
+        idempotency_key: String,
+    },
     /// Execute a read-only Runtime inspection. Mutating Runtime operations
     /// must remain Agent-coordinated through `/simplicio`.
     RunSimplicioRuntimeInspect {
@@ -2090,6 +2100,13 @@ pub enum SubagentKillOutcome {
 pub enum TaskResult {
     /// Result of an explicit TUI `/simplicio` command.
     SimplicioAgentTurnCompleted {
+        agent_id: AgentId,
+        message: String,
+        succeeded: bool,
+    },
+    /// Result from the lateral copilot terminal; it stays in the side panel
+    /// and is not duplicated into the main Code transcript.
+    SimplicioCopilotTurnCompleted {
         agent_id: AgentId,
         message: String,
         succeeded: bool,

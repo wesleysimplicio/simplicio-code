@@ -12,6 +12,7 @@ use simplicio_agent_client::{
 use std::sync::{Arc, Mutex, OnceLock};
 
 static SHARED_COORDINATOR: OnceLock<Arc<Mutex<SimplicioAgentCoordinator>>> = OnceLock::new();
+static COPILOT_COORDINATOR: OnceLock<Arc<Mutex<SimplicioAgentCoordinator>>> = OnceLock::new();
 
 /// Code's versioned adapter to the one productive AgentHost coordinator.
 #[derive(Debug)]
@@ -32,6 +33,16 @@ impl SimplicioAgentCoordinator {
     /// therefore shared across turns instead of being recreated per command.
     pub fn shared() -> Arc<Mutex<Self>> {
         SHARED_COORDINATOR
+            .get_or_init(|| Arc::new(Mutex::new(Self::new("desktop"))))
+            .clone()
+    }
+
+    /// Coordinator for the lateral copilot terminals. It deliberately has a
+    /// separate client cursor/turn lock from Code while using the same
+    /// AgentHost profile and configuration. AgentHost namespaces the sessions
+    /// by causal surface, so Code and copilot can run concurrently.
+    pub fn copilot_shared() -> Arc<Mutex<Self>> {
+        COPILOT_COORDINATOR
             .get_or_init(|| Arc::new(Mutex::new(Self::new("desktop"))))
             .clone()
     }
@@ -69,6 +80,16 @@ impl SimplicioAgentCoordinator {
         idempotency_key: impl Into<String>,
     ) -> Result<AgentTurnResult, Error> {
         let identity = CausalIdentity::new("code", session_id, idempotency_key)?;
+        self.start_turn_with_identity(&identity, message)
+    }
+
+    pub fn start_copilot_turn(
+        &mut self,
+        session_id: impl Into<String>,
+        message: impl Into<String>,
+        idempotency_key: impl Into<String>,
+    ) -> Result<AgentTurnResult, Error> {
+        let identity = CausalIdentity::new("copilot", session_id, idempotency_key)?;
         self.start_turn_with_identity(&identity, message)
     }
 

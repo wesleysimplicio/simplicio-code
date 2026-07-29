@@ -1386,7 +1386,13 @@ pub(crate) async fn run(
     if std::env::var("GROK_OPEN_DASHBOARD_AT_STARTUP").as_deref() == Ok("1") {
         // SAFETY: we are pre-multithreaded init for this app loop.
         unsafe { std::env::remove_var("GROK_OPEN_DASHBOARD_AT_STARTUP") };
-        if app.session_startup_allowed() {
+        let code_agent_first = std::env::var("SIMPLICIO_CODE_AGENT_FIRST").is_ok_and(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        });
+        if app.session_startup_allowed() || code_agent_first {
             let effs = dispatch::dispatch(Action::OpenDashboard, &mut app);
             if process_effects(effs, &mut tasks, &mut app, &progress_tx) {
                 return Ok(make_run_result(&app));

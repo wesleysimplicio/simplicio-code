@@ -32,6 +32,8 @@ xai-crash-handler = { path = "../xai-crash-handler" }
 xai-acp-lib = { workspace = true }
 
 # Async runtime + misc.
+ratatui = { workspace = true, features = ["crossterm"] }
+crossterm = { workspace = true }
 tokio = { workspace = true, features = [
     "sync",
     "rt",

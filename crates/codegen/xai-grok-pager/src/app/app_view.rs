@@ -17,7 +17,7 @@ use crate::scrollback::render::ScratchBuffer;
 use crate::views::prompt_widget::PromptWidget;
 use crate::views::welcome::WelcomePromptFocus;
 use agent_client_protocol as acp;
-use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEventKind};
+use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind};
 use indexmap::IndexMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1122,7 +1122,9 @@ impl AppView {
         self.is_zdr = meta.is_zdr;
         self.team_role = meta.team_role.clone();
         self.coding_data_retention_opt_out = meta.coding_data_retention_opt_out;
-        self.gate = meta.gate.clone();
+        self.gate = crate::app::dispatch::ecosystem_billing_enabled()
+            .then(|| meta.gate.clone())
+            .flatten();
         if was_gated && self.gate.is_none() {
             self.paywall_check_started = None;
             xai_grok_telemetry::session_ctx::log_event(
@@ -1132,7 +1134,9 @@ impl AppView {
                 },
             );
         }
-        self.subscription_tier = meta.subscription_tier.clone();
+        self.subscription_tier = crate::app::dispatch::ecosystem_billing_enabled()
+            .then(|| meta.subscription_tier.clone())
+            .flatten();
         let was_api_key = self.is_api_key_auth;
         self.is_api_key_auth = meta.auth_mode.as_deref().is_some_and(is_api_key_label)
             || meta
@@ -2030,6 +2034,116 @@ impl AppView {
     }
 }
 impl AppView {
+    fn code_agent_first_enabled() -> bool {
+        std::env::var_os("SIMPLICIO_CODE_AGENT_FIRST").is_some_and(|value| {
+            let value = value.to_string_lossy();
+            !matches!(value.as_ref(), "0" | "false" | "off")
+        })
+    }
+
+    /// Route the lateral terminal before the regular Agent pane. Plain Tab
+    /// intentionally moves between the two visible terminals; Ctrl+T and
+    /// Ctrl+arrows manage copilot tabs, while clicks focus the rail.
+    fn handle_copilot_input(
+        &mut self,
+        ev: &Event,
+        agent_id: super::agent::AgentId,
+    ) -> Option<InputOutcome> {
+        if !Self::code_agent_first_enabled() || self.is_scroll_blocking_modal_open() {
+            return None;
+        }
+        if let Event::Mouse(mouse) = ev
+            && matches!(mouse.kind, MouseEventKind::Down(MouseButton::Left))
+            && let Some(area) = self.agent_attention.panel_area
+            && area.contains((mouse.column, mouse.row).into())
+        {
+            if mouse.row == area.y.saturating_add(1) {
+                let relative = mouse.column.saturating_sub(area.x.saturating_add(7));
+                if relative >= area.width.saturating_sub(8) {
+                    self.agent_attention.new_copilot_tab();
+                } else {
+                    let tab = (relative / 6) as usize;
+                    if tab < self.agent_attention.copilot_tab_count {
+                        self.agent_attention.copilot_active_tab = tab;
+                        self.agent_attention.copilot_prompt.clear();
+                    }
+                }
+            }
+            self.agent_attention.copilot_focused = true;
+            return Some(InputOutcome::Changed);
+        }
+        let Event::Key(key) = ev else {
+            if self.agent_attention.copilot_focused
+                && let Event::Paste(text) = ev
+            {
+                self.agent_attention.copilot_prompt.push_str(text);
+                return Some(InputOutcome::Changed);
+            }
+            return None;
+        };
+        if key.kind == KeyEventKind::Release {
+            return Some(InputOutcome::Unchanged);
+        }
+        let plain_tab = key.code == KeyCode::Tab
+            && (key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT);
+        if plain_tab {
+            self.agent_attention.toggle_copilot_focus();
+            return Some(InputOutcome::Changed);
+        }
+        if !self.agent_attention.copilot_focused {
+            return None;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            return match key.code {
+                KeyCode::Char('t') => {
+                    self.agent_attention.new_copilot_tab();
+                    Some(InputOutcome::Changed)
+                }
+                KeyCode::Char('w') => {
+                    self.agent_attention.close_copilot_tab();
+                    Some(InputOutcome::Changed)
+                }
+                KeyCode::Left => {
+                    self.agent_attention.cycle_copilot_tab(-1);
+                    Some(InputOutcome::Changed)
+                }
+                KeyCode::Right => {
+                    self.agent_attention.cycle_copilot_tab(1);
+                    Some(InputOutcome::Changed)
+                }
+                _ => None,
+            };
+        }
+        match key.code {
+            KeyCode::Enter if !key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let text = std::mem::take(&mut self.agent_attention.copilot_prompt);
+                if text.trim().is_empty() {
+                    Some(InputOutcome::Changed)
+                } else {
+                    Some(InputOutcome::Action(Action::SendCopilotPrompt(text)))
+                }
+            }
+            KeyCode::Esc => {
+                self.agent_attention.copilot_focused = false;
+                Some(InputOutcome::Changed)
+            }
+            KeyCode::Backspace => {
+                self.agent_attention.copilot_prompt.pop();
+                Some(InputOutcome::Changed)
+            }
+            KeyCode::Char(ch) if !key.modifiers.intersects(KeyModifiers::ALT) => {
+                if self.agent_attention.copilot_prompt.chars().count() < 20_000 {
+                    self.agent_attention.copilot_prompt.push(ch);
+                }
+                Some(InputOutcome::Changed)
+            }
+            _ => {
+                let _ = agent_id;
+                None
+            }
+        }
+    }
+
     /// Handle a terminal event. Routes through the input layer stack:
     ///
     /// 1. Pending action check (double-press confirmation)
@@ -2180,6 +2294,9 @@ impl AppView {
                 },
             ),
             ActiveView::Agent(id) => {
+                if let Some(outcome) = self.handle_copilot_input(ev, id) {
+                    return outcome;
+                }
                 let overlay_active = self
                     .dashboard
                     .as_ref()
@@ -2384,6 +2501,9 @@ impl AppView {
                     d.close_popup();
                 }
                 if let Some(agent_id) = attached {
+                    if let Some(outcome) = self.handle_copilot_input(ev, agent_id) {
+                        return outcome;
+                    }
                     if let Event::Key(key) = ev
                         && key.kind != KeyEventKind::Release
                     {
@@ -3756,6 +3876,8 @@ impl AppView {
         };
         let zdr_blocked_for_draw = self.is_zdr_blocked();
         let has_access = self.has_access();
+        let simplicio_code_agent_first = std::env::var("SIMPLICIO_CODE_AGENT_FIRST")
+            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
         let voice_available = self.voice_available();
         let voice_on_surface = self.voice_target_on_active_surface();
         let voice_listening = voice_on_surface && self.voice_listening();
@@ -3834,7 +3956,9 @@ impl AppView {
                         } else {
                             self.tip.as_deref()
                         };
-                        let model_name_base = self.models.current_model_name().unwrap_or_default();
+                        let model_name_base = xai_grok_agent::configured_model_label()
+                            .or_else(|| self.models.current_model_name())
+                            .unwrap_or_default();
                         let model_name = match self.models.reasoning_effort {
                             Some(eff) => format!("{model_name_base} ({eff})"),
                             None => model_name_base,
@@ -3897,9 +4021,13 @@ impl AppView {
                             session_picker_grouped: self.session_picker_grouped,
                             session_picker_source_filter: self.session_picker_source_filter,
                             chat_mode: self.chat_mode,
-                            credit_balance: self.credit_balance.as_ref(),
-                            auto_topup: self.auto_topup.as_ref(),
-                            usage_visible: self.usage_visible,
+                            credit_balance: (!simplicio_code_agent_first)
+                                .then_some(self.credit_balance.as_ref())
+                                .flatten(),
+                            auto_topup: (!simplicio_code_agent_first)
+                                .then_some(self.auto_topup.as_ref())
+                                .flatten(),
+                            usage_visible: self.usage_visible && !simplicio_code_agent_first,
                             is_api_key_auth: self.is_api_key_auth,
                             changelog_bullets: &self.changelog_bullets,
                             changelog_has_full_notes: self.changelog_markdown.is_some(),
@@ -4084,6 +4212,7 @@ impl AppView {
                         if let Some(agent) = agents.get_mut(&id) {
                             let (agent_content_area, agent_panel_area) =
                                 crate::views::agent_attention_panel::split_agent_area(agent_area);
+                            agent_attention.panel_area = agent_panel_area;
                             let announcement_banner_h =
                                 crate::views::announcements::session_banner_height(
                                     &self.active_announcements,
@@ -4186,9 +4315,12 @@ impl AppView {
                                     caption: crate::views::announcements::usable_cta_caption(owner),
                                 },
                             );
+                            let (dashboard_area, agent_panel_area) =
+                                crate::views::agent_attention_panel::split_agent_area(view_area);
+                            agent_attention.panel_area = agent_panel_area;
                             let dash_cursor = crate::views::dashboard::render_dashboard(
                                 f.buffer_mut(),
-                                view_area,
+                                dashboard_area,
                                 dashboard,
                                 agents,
                                 registry,
@@ -4200,7 +4332,8 @@ impl AppView {
                             let (popup_cursor, popup_post_flush, drawn_popup_agent) =
                                 if let Some(agent_id) = dashboard.attached_agent {
                                     let theme = crate::theme::Theme::current();
-                                    let popup_area = crate::views::dashboard::popup_rect(view_area);
+                                    let popup_area =
+                                        crate::views::dashboard::popup_rect(dashboard_area);
                                     let title = agents
                                         .get(&agent_id)
                                         .map(crate::views::session_title::entry_title)
@@ -4246,6 +4379,13 @@ impl AppView {
                                 Self::dashboard_stale_image_clears(agents, drawn_popup_agent);
                             let popup_post_flush =
                                 Self::merge_post_flush(stale_clears, popup_post_flush);
+                            if let Some(panel_area) = agent_panel_area {
+                                crate::views::agent_attention_panel::render_agent_attention_panel(
+                                    panel_area,
+                                    f.buffer_mut(),
+                                    agent_attention,
+                                );
+                            }
                             if let Some(fps) = &fps_overlay {
                                 fps.render(full_area, f.buffer_mut());
                             }

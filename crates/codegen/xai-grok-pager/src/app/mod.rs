@@ -745,10 +745,11 @@ pub async fn run(
 fn print_exit_resume_hint(session_id: &str, minimal: bool, w: &mut impl Write) {
     let _ = writeln!(w);
     let _ = writeln!(w, "Resume this session with:");
+    let executable = screen_mode_relaunch::resume_executable();
     if minimal {
-        let _ = writeln!(w, "  grok --minimal --resume {session_id}");
+        let _ = writeln!(w, "  {executable} --minimal --resume {session_id}");
     } else {
-        let _ = writeln!(w, "  grok --resume {session_id}");
+        let _ = writeln!(w, "  {executable} --resume {session_id}");
     }
 }
 /// Screen-mode relaunch failure fallback (same quit tail as plain resume).

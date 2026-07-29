@@ -734,11 +734,12 @@ impl AgentView {
         let appearance = self.scrollback.appearance().clone();
         let layout_cfg = &appearance.scrollback.layout;
         let scrollbar_cfg = &appearance.scrollback.scrollbar;
-        let model_id = self
-            .session
-            .models
-            .current_model_name()
-            .unwrap_or_else(|| "unknown".to_string());
+        let model_id = xai_grok_agent::configured_model_label().unwrap_or_else(|| {
+            self.session
+                .models
+                .current_model_name()
+                .unwrap_or_else(|| "unknown".to_string())
+        });
         let effective_plan = self.plan_mode_pending.unwrap_or(self.plan_mode_active);
         let casual_commenting = self.is_casual_commenting();
         let prompt_focused = if self.plan_approval_view.is_some() {
@@ -2186,20 +2187,36 @@ impl AgentView {
             .registry()
             .get("usage")
             .is_some();
-        let warning = self.credit_balance.as_ref().and_then(|bal| {
-            crate::views::credit_bar::usage_warning_for_session(
-                bal,
-                self.auto_topup.as_ref(),
-                usage_visible,
-                self.chat_kind,
-            )
-        });
+        // Simplicio Code is an AgentHost client. It must not surface the
+        // legacy Grok subscription/weekly-limit meter while its turns are
+        // governed by simplicio_agent.
+        let warning = if std::env::var("SIMPLICIO_CODE_AGENT_FIRST")
+            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        {
+            None
+        } else {
+            self.credit_balance.as_ref().and_then(|bal| {
+                crate::views::credit_bar::usage_warning_for_session(
+                    bal,
+                    self.auto_topup.as_ref(),
+                    usage_visible,
+                    self.chat_kind,
+                )
+            })
+        };
         let usage_warning_text: Option<String> = warning.as_ref().map(|(t, _)| t.clone());
         let usage_warning = usage_warning_text.as_deref();
         let usage_warning_critical = warning.is_some_and(|(_, critical)| critical);
+        let model_name = if std::env::var("SIMPLICIO_CODE_AGENT_FIRST")
+            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+        {
+            xai_grok_agent::configured_model_label().unwrap_or(model_id)
+        } else {
+            model_id
+        };
         let model_label = match self.session.models.reasoning_effort {
-            Some(eff) => format!("{model_id} ({eff})"),
-            None => model_id,
+            Some(eff) => format!("{model_name} ({eff})"),
+            None => model_name,
         };
         let info = match &self.prompt_mode {
             PromptMode::Normal => PromptInfo {

@@ -66,6 +66,15 @@ pub(super) fn dispatch_send_prompt(app: &mut AppView, text: String) -> Vec<Effec
     )
 }
 
+fn code_agent_first_enabled() -> bool {
+    std::env::var("SIMPLICIO_CODE_AGENT_FIRST").is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
 /// Clear the active prompt and record non-empty text in prompt history (Esc Esc).
 pub(super) fn dispatch_clear_prompt(app: &mut AppView) -> Vec<Effect> {
     with_active_agent(app, |agent| {
@@ -378,6 +387,7 @@ pub(super) fn dispatch_send_prompt_inner(
                 }
             })
             .or_else(|| trimmed.strip_prefix("/simplicio ").map(str::to_owned))
+            .or_else(|| trimmed.strip_prefix("/simplicio_agent ").map(str::to_owned))
     } else {
         None
     };
@@ -396,10 +406,49 @@ pub(super) fn dispatch_send_prompt_inner(
         if consume_input {
             agent.prompt.set_text("");
         }
+        app.agent_attention
+            .record_terminal_prompt(instruction.trim());
         return vec![Effect::RunSimplicioAgentTurn {
             agent_id: id,
             session_id: session_id.0.to_string(),
             message: instruction.trim().to_owned(),
+            idempotency_key: uuid::Uuid::new_v4().to_string(),
+        }];
+    }
+
+    // The default Simplicio Code session is an AgentHost client. Keep local
+    // UI commands local, but send ordinary prompts and `/model` to the same
+    // Agent selected by simplicio_agent so Code and Agent cannot diverge.
+    let is_agent_model_command =
+        !literal && (trimmed == "/model" || trimmed.starts_with("/model "));
+    let is_agent_prompt = code_agent_first_enabled()
+        && !trimmed.is_empty()
+        && (literal || !trimmed.starts_with('/') || is_agent_model_command);
+    if is_agent_prompt {
+        let Some(session_id) = agent.session.session_id.as_ref() else {
+            if consume_input {
+                agent.prompt.set_text("");
+            }
+            agent
+                .scrollback
+                .push_block(RenderBlock::system("Simplicio Agent session is not ready."));
+            return vec![];
+        };
+        if consume_input {
+            agent.prompt.set_text("");
+        }
+        agent
+            .scrollback
+            .push_block(RenderBlock::user_prompt(text.clone()));
+        app.agent_attention.record_terminal_prompt(&text);
+        // Foreground Code receives the user's text immediately. The lateral
+        // copilot keeps a local watch marker and is invoked only once the
+        // foreground result is available, so a simple "oi" never competes
+        // with a second provider request.
+        return vec![Effect::RunSimplicioAgentTurn {
+            agent_id: id,
+            session_id: session_id.0.to_string(),
+            message: text,
             idempotency_key: uuid::Uuid::new_v4().to_string(),
         }];
     }
@@ -1566,6 +1615,36 @@ pub(super) fn handle_compact_complete(
         return maybe_drain_queue(agent);
     }
     vec![]
+}
+
+pub(crate) fn dispatch_send_copilot_prompt(app: &mut AppView, text: String) -> Vec<Effect> {
+    let text = text.trim().to_owned();
+    if text.is_empty() {
+        return vec![];
+    }
+    let ActiveView::Agent(agent_id) = app.active_view else {
+        app.agent_attention
+            .push_terminal_system("Open a Code terminal before using the copilot.");
+        return vec![];
+    };
+    let Some(agent) = app.agents.get(&agent_id) else {
+        return vec![];
+    };
+    let Some(session_id) = agent.session.session_id.as_ref() else {
+        app.agent_attention
+            .push_terminal_system("Code session is not ready for the copilot.");
+        return vec![];
+    };
+    let copilot_session_id = app
+        .agent_attention
+        .copilot_session_id(session_id.0.as_ref());
+    app.agent_attention.record_copilot_prompt(&text);
+    vec![Effect::RunSimplicioCopilotTurn {
+        agent_id,
+        session_id: copilot_session_id,
+        message: text,
+        idempotency_key: uuid::Uuid::new_v4().to_string(),
+    }]
 }
 
 pub(super) fn handle_suggestion_debounce_expired(
