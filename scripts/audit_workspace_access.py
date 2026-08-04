@@ -18,7 +18,7 @@ from typing import Any
 
 SCHEMA = "simplicio.workspace-access-manifest/v1"
 DEFAULT_PATTERNS = {
-    "filesystem": re.compile(r"(?:std::fs|tokio::fs|std::fs::|tokio::fs::)"),
+    "filesystem": re.compile(r"(?:std::fs|tokio::fs|std::os::(?:unix|windows)::fs::symlink(?:_dir|_file)?)"),
     "process": re.compile(r"(?:Command::new|tokio::process|std::process)"),
     "walk": re.compile(r"(?:WalkBuilder|ripgrep|rg_path\(\))"),
 }

@@ -154,7 +154,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
       "kind": "filesystem",
       "classification": "test-fixture",
-      "max_count": 5
+      "max_count": 6
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
@@ -178,7 +178,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/ext_fs.rs",
       "kind": "filesystem",
       "classification": "test-fixture",
-      "max_count": 1
+      "max_count": 4
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/file_tree.rs",
