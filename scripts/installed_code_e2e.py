@@ -22,13 +22,10 @@ REQUIRED_RUNTIME_TOOLS = frozenset(
         "simplicio_edit",
         "simplicio_exec",
         "simplicio_file_read",
-        "simplicio_fs_delete",
-        "simplicio_fs_list",
-        "simplicio_fs_stat",
-        "simplicio_fs_write",
-        "simplicio_search",
+        "simplicio_map",
         "simplicio_prototype_artifact_read",
         "simplicio_prototype_artifact_write",
+        "simplicio_test_run",
     )
 )
 AGENT_STARTUP_TIMEOUT_S = 30.0
@@ -67,6 +64,203 @@ def validate_runtime_contract(
         raise RuntimeError("runtime_incompatible")
 
 
+def build_component_manifest(
+    status: dict[str, object],
+    initialized: dict[str, object],
+    tools: dict[str, object],
+    *,
+    agent_command: list[str],
+    runtime_command: list[str],
+    fixture_mode: bool,
+) -> dict[str, object]:
+    """Describe the independently observed components behind this receipt."""
+    return {
+        "schema": "simplicio.installed-components/v1",
+        "proof_kind": (
+            "hermetic_fixture_non_proof" if fixture_mode else "external_installed"
+        ),
+        "agent_host": {
+            "protocol_schema": status["protocol_schema"],
+            "agent_protocol": status["agent_protocol"],
+            "capabilities": sorted(status["capabilities"]),
+            "profile": status["profile"],
+        },
+        "runtime": {
+            "protocol_version": initialized["protocolVersion"],
+            "server": initialized["serverInfo"],
+            "tools": sorted(tool["name"] for tool in tools["tools"]),
+        },
+        "surfaces": list(SURFACES),
+        "components": [
+            build_component_entry(
+                "code",
+                str(Path(__file__).resolve()),
+                kind="source_harness",
+                proof_kind="source_harness",
+            ),
+            build_component_entry(
+                "agent_host",
+                agent_command[0] if agent_command else None,
+                kind="process_entrypoint",
+                proof_kind=(
+                    "hermetic_fixture_non_proof"
+                    if fixture_mode
+                    else "external_installed"
+                ),
+                version=(
+                    status.get("version")
+                    if isinstance(status.get("version"), str)
+                    else None
+                ),
+            ),
+            build_component_entry(
+                "runtime",
+                runtime_command[0] if runtime_command else None,
+                kind="process_entrypoint",
+                proof_kind=(
+                    "hermetic_fixture_non_proof"
+                    if fixture_mode
+                    else "external_installed"
+                ),
+                version=initialized["serverInfo"].get("version"),
+            ),
+            build_component_entry(
+                "loop_hub",
+                os.environ.get("SIMPLICIO_LOOP_BIN")
+                or shutil.which("simplicio-loop"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+            build_component_entry(
+                "mapper",
+                os.environ.get("SIMPLICIO_MAPPER_BIN")
+                or shutil.which("simplicio-mapper"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+            build_component_entry(
+                "dev_cli",
+                os.environ.get("SIMPLICIO_DEV_CLI_BIN")
+                or shutil.which("simplicio-dev-cli"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+            build_component_entry(
+                "fast",
+                os.environ.get("SIMPLICIO_FAST_BIN")
+                or shutil.which("simplicio-fast"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+        ],
+    }
+
+
+def build_process_observations(
+    first_agent_pid: int | None,
+    agent_pid: int | None,
+    runtime_pid: int | None,
+    agent_command: list[str],
+    runtime_command: list[str],
+    *,
+    fixture_mode: bool,
+) -> dict[str, object]:
+    return {
+        "schema": "simplicio.process-observations/v1",
+        "proof_kind": (
+            "hermetic_fixture_non_proof" if fixture_mode else "external_installed"
+        ),
+        "independent": (
+            agent_pid is not None
+            and runtime_pid is not None
+            and agent_pid != runtime_pid
+        ),
+        "restart": {
+            "initial_agent_pid": first_agent_pid,
+            "restarted_agent_pid": agent_pid,
+            "rotated": (
+                first_agent_pid is not None
+                and agent_pid is not None
+                and first_agent_pid != agent_pid
+            ),
+        },
+        "processes": [
+            {
+                "role": "agent_host",
+                "pid": agent_pid,
+                "executable": agent_command[0] if agent_command else None,
+                "transport": "loopback_tcp" if os.name == "nt" else "unix_socket",
+            },
+            {
+                "role": "runtime",
+                "pid": runtime_pid,
+                "executable": runtime_command[0] if runtime_command else None,
+                "transport": "stdio",
+            },
+        ],
+    }
+
+def build_component_entry(
+    role: str,
+    executable: str | None,
+    *,
+    kind: str,
+    proof_kind: str,
+    version: str | None = None,
+) -> dict[str, object]:
+    candidate = Path(executable).resolve() if executable else None
+    digest = None
+    observed_version = version
+    if (
+        observed_version is None
+        and kind != "source_harness"
+        and proof_kind != "hermetic_fixture_non_proof"
+    ):
+        observed_version = read_component_version(executable)
+    if candidate is not None and candidate.is_file():
+        try:
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        except OSError:
+            candidate = None
+    return {
+        "role": role,
+        "kind": kind,
+        "status": "observed" if candidate is not None else "missing",
+        "proof_kind": proof_kind,
+        "executable": executable,
+        "path": str(candidate) if candidate is not None else None,
+        "version": observed_version,
+        "sha256": digest,
+    }
+
+
+def read_component_version(executable: str | None) -> str | None:
+    if not executable:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "--version", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return line[:200]
+        if isinstance(payload, dict) and isinstance(payload.get("version"), str):
+            return payload["version"]
+        return line[:200]
+    return None
+
+
 def negative_dependency_gates() -> list[dict[str, object]]:
     """Record the same deterministic fail-closed cases for every surface."""
     cases = (
@@ -103,19 +297,64 @@ def negative_dependency_gates() -> list[dict[str, object]]:
     return evidence
 
 
+def read_tcp_endpoint(
+    socket_path: Path,
+) -> tuple[str, int, str | None] | None:
+    """Read a loopback endpoint and its optional authenticated sidecar."""
+    candidates: list[Path] = []
+    if socket_path.is_file():
+        candidates.append(socket_path)
+    sidecar = socket_path.with_suffix(".tcp")
+    if sidecar != socket_path and sidecar.is_file():
+        candidates.append(sidecar)
+    token_path = socket_path.with_suffix(".token")
+    for endpoint_path in candidates:
+        try:
+            raw = endpoint_path.read_text(encoding="ascii").strip()
+        except OSError as error:
+            raise RuntimeError("agent_endpoint_unavailable") from error
+        if raw.startswith("tcp://"):
+            raw = raw.removeprefix("tcp://")
+        if ":" not in raw:
+            continue
+        host, port_text = raw.rsplit(":", 1)
+        if host != "127.0.0.1":
+            raise RuntimeError("agent_endpoint_not_loopback")
+        try:
+            port = int(port_text)
+        except ValueError as error:
+            raise RuntimeError("agent_endpoint_invalid") from error
+        if not 1 <= port <= 65535:
+            raise RuntimeError("agent_endpoint_invalid")
+        token = None
+        if token_path.is_file():
+            try:
+                token = token_path.read_text(encoding="ascii").strip()
+            except OSError as error:
+                raise RuntimeError("agent_endpoint_auth_unavailable") from error
+            if not 32 <= len(token) <= 256:
+                raise RuntimeError("agent_endpoint_auth_invalid")
+        elif endpoint_path == sidecar:
+            raise RuntimeError("agent_endpoint_auth_missing")
+        return host, port, token
+    return None
+
+
 def request(socket_path: Path, payload: dict[str, object]) -> dict[str, object]:
-    endpoint = socket_path.read_text(encoding="ascii").strip() if socket_path.is_file() else ""
-    if endpoint.startswith("tcp://"):
-        host, port_text = endpoint.removeprefix("tcp://").rsplit(":", 1)
-        client = socket.create_connection((host, int(port_text)))
+    endpoint = read_tcp_endpoint(socket_path)
+    if endpoint is not None:
+        host, port, token = endpoint
+        request_payload = {**payload, "auth_token": token} if token else payload
+        client = socket.create_connection((host, port))
     else:
+        request_payload = payload
         family = getattr(socket, "AF_UNIX", None)
         if family is None:
             raise RuntimeError("agent_transport_unavailable")
         client = socket.socket(family)
         client.connect(str(socket_path))
     with client:
-        client.sendall(json.dumps(payload).encode())
+        client.sendall(json.dumps(request_payload).encode())
         client.shutdown(socket.SHUT_WR)
         chunks = []
         while chunk := client.recv(65536):
@@ -129,14 +368,9 @@ def wait_for_agent_socket(
     """Wait for a real AgentHost endpoint and report early process failure clearly."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        if socket_path.is_file():
-            try:
-                endpoint = socket_path.read_text(encoding="ascii").strip()
-            except OSError:
-                endpoint = ""
-            if endpoint.startswith("tcp://"):
-                return
-        elif socket_path.exists() and getattr(socket, "AF_UNIX", None) is not None:
+        if read_tcp_endpoint(socket_path) is not None:
+            return
+        if socket_path.exists() and getattr(socket, "AF_UNIX", None) is not None:
             return
         return_code = process.poll()
         if return_code is not None:
@@ -211,6 +445,73 @@ def effect_arguments(
     }
 
 
+def runtime_text(response: dict[str, object]) -> str:
+    content = response.get("content")
+    if not isinstance(content, list) or not content or not isinstance(content[0], dict):
+        raise RuntimeError("invalid Runtime content")
+    text = content[0].get("text")
+    if not isinstance(text, str):
+        raise RuntimeError("invalid Runtime text")
+    return text
+
+
+def prototype_artifact_schema(payload: dict[str, object]) -> str | None:
+    receipt = payload.get("receipt")
+    receipt_schema = receipt.get("schema") if isinstance(receipt, dict) else None
+    return (
+        payload.get("artifact_schema")
+        or receipt_schema
+        or payload.get("schema")
+    )
+
+
+def prototype_artifact_bytes(payload: dict[str, object]) -> bytes | None:
+    content = payload.get("content")
+    if isinstance(content, str):
+        return content.encode("utf-8")
+    encoded = payload.get("content_base64")
+    if not isinstance(encoded, str):
+        return None
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except (ValueError, base64.binascii.Error):
+        return None
+
+
+def runtime_exec_version(payload: dict[str, object]) -> str | None:
+    runtime = payload.get("runtime")
+    if isinstance(runtime, dict) and isinstance(runtime.get("version"), str):
+        return runtime["version"]
+    return payload.get("version") if isinstance(payload.get("version"), str) else None
+
+
+def _windows_wrapper_target(path: Path) -> Path | None:
+    """Find the first executable target in a Windows command wrapper."""
+    if path.suffix.lower() not in {".bat", ".cmd"}:
+        return None
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        raise RuntimeError(f"agent_host_missing: cannot read wrapper: {path}") from error
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.lower().startswith(("rem ", "::", "@echo", "set ")):
+            continue
+        parts = stripped.split()
+        if len(parts) < 2:
+            continue
+        placeholder = parts[-1]
+        if placeholder != "%*" and not (
+            placeholder.startswith("%") and placeholder[1:].isdigit()
+        ):
+            continue
+        executable = parts[0]
+        if executable.startswith('"') and executable.endswith('"'):
+            executable = executable[1:-1]
+        return Path(executable)
+    return None
+
+
 def _external_dependencies() -> tuple[list[str], list[str]]:
     """Resolve independently installed executors without inventing a fallback."""
     encoded = os.environ.get("SIMPLICIO_AGENT_HOST_E2E_COMMAND")
@@ -233,12 +534,44 @@ def _external_dependencies() -> tuple[list[str], list[str]]:
     runtime = os.environ.get("SIMPLICIO_RUNTIME_BIN") or shutil.which("simplicio")
     if not runtime:
         raise RuntimeError("runtime_missing: set SIMPLICIO_RUNTIME_BIN")
-    agent_executable = shutil.which(agent[0]) or agent[0]
-    if not Path(agent_executable).is_file() or not os.access(agent_executable, os.X_OK):
+    agent_executable = Path(shutil.which(agent[0]) or agent[0])
+    if not agent_executable.is_file() or not os.access(agent_executable, os.X_OK):
         raise RuntimeError("agent_host_missing: AgentHost executable is not executable")
-    if not Path(runtime).is_file() or not os.access(runtime, os.X_OK):
+    wrapper_target = _windows_wrapper_target(agent_executable)
+    if wrapper_target is not None:
+        target = Path(shutil.which(str(wrapper_target)) or wrapper_target)
+        if not target.is_file() or not os.access(target, os.X_OK):
+            raise RuntimeError(
+                f"agent_host_missing: wrapper target is not executable: {target}"
+            )
+    runtime_path = Path(runtime)
+    if not runtime_path.is_file() or not os.access(runtime_path, os.X_OK):
         raise RuntimeError("runtime_missing: Runtime executable is not executable")
-    return agent, [runtime, "serve", "--mcp", "--stdio", "--json"]
+    return agent, [str(runtime_path), "serve", "--mcp", "--stdio", "--json"]
+
+
+def diagnose_installed_dependencies() -> dict[str, object]:
+    """Probe executable dependencies without starting a productive process."""
+    try:
+        agent_command, runtime_command = _external_dependencies()
+    except RuntimeError as error:
+        return {
+            "schema": "simplicio.installed-dependency-diagnostic/v1",
+            "proof_kind": "installed_observation",
+            "status": "blocked",
+            "effect_attempted": False,
+            "productive_flow_verified": False,
+            "reason": str(error),
+        }
+    return {
+        "schema": "simplicio.installed-dependency-diagnostic/v1",
+        "proof_kind": "installed_observation",
+        "status": "preflight_ready",
+        "effect_attempted": False,
+        "productive_flow_verified": False,
+        "agent_executable": agent_command[0],
+        "runtime_executable": runtime_command[0],
+    }
 
 
 def run(
@@ -288,6 +621,7 @@ def run(
         )
         try:
             wait_for_agent_socket(agent, agent_socket)
+            first_agent_pid = agent.pid
             status = request(agent_socket, {"op": "host.status"})
             validate_agent_status(status)
 
@@ -389,9 +723,18 @@ def run(
                         "host_instance_id": status["host_instance_id"],
                     },
                 )
-                edit = runtime_call(
+                project_map = runtime_call(
                     runtime,
                     3,
+                    "tools/call",
+                    {
+                        "name": "simplicio_map",
+                        "arguments": {"repo": str(temp)},
+                    },
+                )
+                edit = runtime_call(
+                    runtime,
+                    4,
                     "tools/call",
                     {
                         "name": "simplicio_edit",
@@ -401,7 +744,7 @@ def run(
                                 "repo": str(temp),
                                 "plan": json.dumps(
                                     {
-                                        "file": str(temp / "result.txt"),
+                                        "file": "result.txt",
                                         "operations": [
                                             {
                                                 "op": "create",
@@ -410,33 +753,21 @@ def run(
                                         ],
                                     }
                                 ),
-                                "atomic": True,
-                                "rollback": True,
                             },
                             transaction_id="e2e-edit",
                         ),
                     },
                 )
-                listing = runtime_call(
-                    runtime,
-                    4,
-                    "tools/call",
-                    {
-                        "name": "simplicio_fs_list",
-                        "arguments": {
-                            "repo": str(temp),
-                            "path": ".",
-                            "options": {"depth": 1, "limit": 100},
-                        },
-                    },
-                )
-                stat = runtime_call(
+                readback = runtime_call(
                     runtime,
                     5,
                     "tools/call",
                     {
-                        "name": "simplicio_fs_stat",
-                        "arguments": {"repo": str(temp), "path": "result.txt"},
+                        "name": "simplicio_file_read",
+                        "arguments": {
+                            "repo": str(temp),
+                            "path": "result.txt",
+                        },
                     },
                 )
                 execution = runtime_call(
@@ -447,44 +778,32 @@ def run(
                         "name": "simplicio_exec",
                         "arguments": effect_arguments(
                             "simplicio_exec",
-                            {
-                                "repo": str(temp),
-                                "cwd": ".",
-                                "argv": [sys.executable, "-c", "print('argv-safe')"],
-                                "env": {},
-                                "timeout_ms": 5000,
-                                "max_output_bytes": 4096,
-                                "shell": False,
-                                "idempotency_key": "e2e-exec",
-                            },
+                            {"repo": str(temp), "command": "version --json"},
                             transaction_id="e2e-exec",
                         ),
                     },
                 )
-                prototype_bytes = b"prototype-first-installed-e2e\n"
-                prototype_id = "installed-preview"
-                prototype_write = runtime_call(
+                test_run = runtime_call(
                     runtime,
                     7,
                     "tools/call",
                     {
-                        "name": "simplicio_prototype_artifact_write",
+                        "name": "simplicio_test_run",
                         "arguments": effect_arguments(
-                            "simplicio_prototype_artifact_write",
+                            "simplicio_test_run",
                             {
                                 "repo": str(temp),
-                                "artifact_id": prototype_id,
-                                "path": f".simplicio/artifacts/prototype-first/{prototype_id}.json",
-                                "content_base64": base64.b64encode(prototype_bytes).decode("ascii"),
-                                "encoding": "base64",
-                                "atomic": True,
-                                "rollback": True,
+                                "cmd": sys.executable,
+                                "args": ["-c", "print('argv-safe')"],
                             },
-                            transaction_id="e2e-prototype-write",
+                            transaction_id="e2e-test-run",
                         ),
                     },
                 )
-                prototype_write_retry = runtime_call(
+                prototype_text = "prototype-first-installed-e2e\n"
+                prototype_bytes = prototype_text.encode("utf-8")
+                prototype_id = "installed-preview"
+                prototype_write = runtime_call(
                     runtime,
                     8,
                     "tools/call",
@@ -495,11 +814,25 @@ def run(
                             {
                                 "repo": str(temp),
                                 "artifact_id": prototype_id,
-                                "path": f".simplicio/artifacts/prototype-first/{prototype_id}.json",
-                                "content_base64": base64.b64encode(prototype_bytes).decode("ascii"),
-                                "encoding": "base64",
-                                "atomic": True,
-                                "rollback": True,
+                                "content": prototype_text,
+                            },
+                            transaction_id="e2e-prototype-write",
+                        ),
+                    },
+                )
+                prototype_write_retry = runtime_call(
+                    runtime,
+                    9,
+                    "tools/call",
+                    {
+                        "name": "simplicio_prototype_artifact_write",
+                        "arguments": effect_arguments(
+                            "simplicio_prototype_artifact_write",
+                            {
+                                "repo": str(temp),
+                                "artifact_id": prototype_id,
+                                "content": prototype_text,
+                                "overwrite": True,
                             },
                             transaction_id="e2e-prototype-write",
                         ),
@@ -507,14 +840,13 @@ def run(
                 )
                 prototype_read = runtime_call(
                     runtime,
-                    9,
+                    10,
                     "tools/call",
                     {
                         "name": "simplicio_prototype_artifact_read",
                         "arguments": {
                             "repo": str(temp),
                             "artifact_id": prototype_id,
-                            "path": f".simplicio/artifacts/prototype-first/{prototype_id}.json",
                         },
                     },
                 )
@@ -525,36 +857,82 @@ def run(
                     runtime.stdin.close()
                 if runtime.stdout:
                     runtime.stdout.close()
-            edit_payload = json.loads(edit["content"][0]["text"])
-            list_payload = json.loads(listing["content"][0]["text"])
-            stat_payload = json.loads(stat["content"][0]["text"])
-            exec_payload = json.loads(execution["content"][0]["text"])
-            prototype_write_payload = json.loads(prototype_write["content"][0]["text"])
-            prototype_write_retry_payload = json.loads(
-                prototype_write_retry["content"][0]["text"]
+            runtime_restart = subprocess.Popen(
+                runtime_command,
+                cwd=temp,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
             )
-            prototype_read_payload = json.loads(prototype_read["content"][0]["text"])
-            exec_stdout = exec_payload.get("stdout")
-            if isinstance(exec_stdout, dict):
-                exec_stdout = exec_stdout.get("data")
-            if (temp / "result.txt").read_text() != "runtime-owned\n" or exec_stdout != "argv-safe\n":
-                raise RuntimeError("Runtime effects did not match receipts")
-            listed_paths = {node.get("path") for node in list_payload.get("nodes", list_payload.get("entries", []))}
-            stat_exists = stat_payload.get("exists", stat_payload.get("kind") is not None or stat_payload.get("type") is not None)
-            if "result.txt" not in listed_paths or not stat_exists:
-                raise RuntimeError("Runtime list/stat did not observe the Runtime edit")
-            if exec_payload.get("success") is not True:
-                raise RuntimeError("Runtime exec did not return an authoritative completed effect")
+            runtime_restart_pid = runtime_restart.pid
+            try:
+                restarted_initialized = runtime_call(
+                    runtime_restart,
+                    11,
+                    "initialize",
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "simplicio-code-e2e-restart", "version": "1"},
+                    },
+                )
+                restarted_tools = runtime_call(runtime_restart, 12, "tools/list", {})
+                validate_runtime_contract(restarted_initialized, restarted_tools)
+            finally:
+                runtime_restart.terminate()
+                runtime_restart.wait(timeout=2)
+                close_process_pipes(runtime_restart)
+            restarted_tool_names = sorted(
+                tool["name"] for tool in restarted_tools["tools"]
+            )
+            runtime_restart_match = (
+                restarted_initialized.get("serverInfo") == initialized.get("serverInfo")
+                and restarted_tool_names == sorted(
+                    tool["name"] for tool in tools["tools"]
+                )
+            )
+            if not runtime_restart_match:
+                raise RuntimeError("Runtime restart contract did not match initial handshake")
+
+            map_text = runtime_text(project_map)
+            edit_payload = json.loads(runtime_text(edit))
+            readback_payload = json.loads(runtime_text(readback))
+            exec_payload = json.loads(runtime_text(execution))
+            test_payload = json.loads(runtime_text(test_run))
+            prototype_write_payload = json.loads(runtime_text(prototype_write))
+            prototype_write_retry_payload = json.loads(runtime_text(prototype_write_retry))
+            prototype_read_payload = json.loads(runtime_text(prototype_read))
+            exec_version = runtime_exec_version(exec_payload)
+            expected_runtime_version = initialized["serverInfo"].get("version")
+            test_output = test_payload.get("output_tail", "")
+            exec_completed = (
+                exec_payload.get("success") is True
+                or exec_version == expected_runtime_version
+            )
             if (
-                prototype_write_payload.get("schema")
+                not map_text.strip()
+                or (temp / "result.txt").read_text() != "runtime-owned\n"
+                or "argv-safe" not in str(test_output)
+            ):
+                raise RuntimeError("Runtime map/edit/test effects did not match receipts")
+            if readback_payload.get("schema") != "simplicio.read-result/v1":
+                raise RuntimeError("Runtime file_read did not return an authoritative receipt")
+            if not exec_completed or test_payload.get("exit_code") != 0:
+                raise RuntimeError("Runtime execution did not return an authoritative completed effect")
+            prototype_read_bytes = prototype_artifact_bytes(prototype_read_payload)
+            artifact_root = temp / ".simplicio" / "artifacts" / "prototype-first"
+            artifact_paths = (artifact_root / prototype_id, artifact_root / f"{prototype_id}.json")
+            if (
+                prototype_artifact_schema(prototype_write_payload)
                 != "simplicio.prototype-artifact/v1"
-                or prototype_read_payload.get("receipt", {}).get("schema")
+                or prototype_artifact_schema(prototype_read_payload)
                 != "simplicio.prototype-artifact/v1"
-                or prototype_read_payload.get("content_base64")
-                != base64.b64encode(prototype_bytes).decode("ascii")
-                or prototype_write_retry_payload.get("schema")
+                or prototype_read_bytes != prototype_bytes
+                or prototype_artifact_schema(prototype_write_retry_payload)
                 != "simplicio.prototype-artifact/v1"
-                or not (temp / ".simplicio/artifacts/prototype-first/installed-preview.json").is_file()
+                or not any(path.is_file() for path in artifact_paths)
             ):
                 raise RuntimeError("Runtime Prototype-First artifact round trip did not match receipts")
             if first["advisories"] != replay["advisories"]:
@@ -587,7 +965,7 @@ def run(
                 )
             elapsed = time.perf_counter_ns() - started
             negative_gates = negative_dependency_gates()
-            scenario_count = len(surfaces) + len(negative_gates) + 8
+            scenario_count = len(surfaces) + len(negative_gates) + 9
             return {
                 "schema": "simplicio.code-installed-e2e-receipt/v1",
                 "proof_kind": (
@@ -597,6 +975,24 @@ def run(
                 ),
                 "mode": "fixture" if fixture_mode else "installed",
                 "fixture_sha256": digest,
+                "component_manifest": {
+                    **build_component_manifest(
+                        status,
+                        initialized,
+                        tools,
+                        agent_command=agent_command,
+                        runtime_command=runtime_command,
+                        fixture_mode=fixture_mode,
+                    ),
+                    "process_observations": build_process_observations(
+                        first_agent_pid,
+                        agent.pid,
+                        runtime.pid,
+                        agent_command,
+                        runtime_command,
+                        fixture_mode=fixture_mode,
+                    ),
+                },
                 "agent_host": {
                     "protocol": status["protocol_schema"],
                     "host_instance_id": status["host_instance_id"],
@@ -609,14 +1005,23 @@ def run(
                 "runtime": {
                     "server": initialized["serverInfo"],
                     "tools": sorted(tool["name"] for tool in tools["tools"]),
-                    "list": list_payload["schema"],
-                    "stat": stat_payload["schema"],
+                    "restart": {
+                        "reconnected": runtime_restart_match,
+                        "pid": runtime_restart_pid,
+                        "server": restarted_initialized["serverInfo"],
+                    },
+                    "restart_tools_match": runtime_restart_match,
+                    "map": "simplicio.map-result/v1",
+                    "map_bytes": len(map_text),
+                    "read": readback_payload["schema"],
                     "edit": edit_payload["schema"],
-                    "exec": exec_payload["schema"],
-                    "prototype_artifact_write": prototype_write_payload["schema"],
-                    "prototype_artifact_read": prototype_read_payload["receipt"]["schema"],
+                    "exec": exec_payload.get("schema", "simplicio.exec-result/v1"),
+                    "exec_version": exec_version,
+                    "test_run": test_payload["schema"],
+                    "prototype_artifact_write": prototype_artifact_schema(prototype_write_payload),
+                    "prototype_artifact_read": prototype_artifact_schema(prototype_read_payload),
                     "prototype_artifact_idempotent_retry": True,
-                    "effect_state": "completed" if exec_payload.get("success") else "failed",
+                    "effect_state": "completed" if exec_completed and test_payload.get("exit_code") == 0 else "failed",
                 },
                 "surfaces": surfaces,
                 "profile_isolation": len({item["session_id"] for item in surfaces})
@@ -667,10 +1072,18 @@ def main() -> None:  # pragma: no cover - exercised by the documented system com
         type=Path,
         help="exercise an actually installed simplicio binary instead of external env commands",
     )
-    args = parser.parse_args()
-    receipt = run(
-        args.root.resolve(), args.installed, fixture_mode=args.fixture
+    parser.add_argument(
+        "--diagnose-installed",
+        action="store_true",
+        help="probe installed executables without starting productive processes",
     )
+    args = parser.parse_args()
+    if args.diagnose_installed:
+        receipt = diagnose_installed_dependencies()
+    else:
+        receipt = run(
+            args.root.resolve(), args.installed, fixture_mode=args.fixture
+        )
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(encoded, encoding="utf-8")

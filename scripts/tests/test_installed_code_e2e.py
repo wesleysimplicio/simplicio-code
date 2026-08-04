@@ -23,6 +23,51 @@ class InstalledCodeE2ETest(unittest.TestCase):
         receipt = MODULE.run(ROOT, fixture_mode=True)
         self.assertEqual(receipt["schema"], "simplicio.code-installed-e2e-receipt/v1")
         self.assertEqual(receipt["proof_kind"], "hermetic_fixture_non_proof")
+        component_manifest = receipt["component_manifest"]
+        self.assertEqual(
+            component_manifest["schema"], "simplicio.installed-components/v1"
+        )
+        self.assertEqual(
+            component_manifest["proof_kind"], "hermetic_fixture_non_proof"
+        )
+        self.assertEqual(component_manifest["surfaces"], list(MODULE.SURFACES))
+        self.assertEqual(
+            component_manifest["runtime"]["protocol_version"], "2024-11-05"
+        )
+        self.assertIn("simplicio_edit", component_manifest["runtime"]["tools"])
+        components = {
+            item["role"]: item for item in component_manifest["components"]
+        }
+        self.assertEqual(
+            set(components),
+            {"code", "agent_host", "runtime", "loop_hub", "mapper", "dev_cli", "fast"},
+        )
+        self.assertEqual(
+            components["agent_host"]["proof_kind"], "hermetic_fixture_non_proof"
+        )
+        self.assertEqual(
+            components["runtime"]["version"], "code-e2e-fixture/1"
+        )
+        for component in components.values():
+            self.assertIn("status", component)
+            self.assertIn("sha256", component)
+        process_observations = component_manifest["process_observations"]
+        self.assertEqual(
+            process_observations["schema"], "simplicio.process-observations/v1"
+        )
+        self.assertTrue(process_observations["independent"])
+        self.assertTrue(process_observations["restart"]["rotated"])
+        self.assertEqual(
+            {item["role"] for item in process_observations["processes"]},
+            {"agent_host", "runtime"},
+        )
+        expected_agent_transport = (
+            "loopback_tcp" if MODULE.os.name == "nt" else "unix_socket"
+        )
+        self.assertEqual(
+            {item["transport"] for item in process_observations["processes"]},
+            {expected_agent_transport, "stdio"},
+        )
         self.assertEqual(
             [item["surface"] for item in receipt["surfaces"]], list(MODULE.SURFACES)
         )
@@ -31,11 +76,17 @@ class InstalledCodeE2ETest(unittest.TestCase):
         self.assertTrue(receipt["agent_host"]["advisory_replay_equal"])
         self.assertTrue(receipt["agent_host"]["restart_reconnected"])
         self.assertEqual(receipt["mode"], "fixture")
-        self.assertEqual(receipt["runtime"]["list"], "simplicio.fs-list-result/v1")
-        self.assertEqual(receipt["runtime"]["stat"], "simplicio.fs-stat-result/v1")
+        self.assertEqual(receipt["runtime"]["map"], "simplicio.map-result/v1")
+        self.assertEqual(receipt["runtime"]["read"], "simplicio.read-result/v1")
         self.assertEqual(receipt["runtime"]["edit"], "simplicio.edit-result/v1")
-        self.assertEqual(receipt["runtime"]["exec"], "simplicio.exec-result/v1")
+        self.assertIn(
+            receipt["runtime"]["exec"],
+            {"simplicio.exec-result/v1", "simplicio.release-manifest/v1"},
+        )
+        self.assertEqual(receipt["runtime"]["test_run"], "simplicio.test-run/v1")
         self.assertEqual(receipt["runtime"]["effect_state"], "completed")
+        self.assertTrue(receipt["runtime"]["restart"]["reconnected"])
+        self.assertTrue(receipt["runtime"]["restart_tools_match"])
         self.assertTrue(receipt["runtime"]["prototype_artifact_idempotent_retry"])
         gates = receipt["negative_dependency_gates"]
         self.assertEqual(len(gates), len(MODULE.SURFACES) * 4)
@@ -67,6 +118,14 @@ class InstalledCodeE2ETest(unittest.TestCase):
                 RuntimeError, reason
             ):
                 probe()
+
+
+    def test_runtime_36_contract_matches_current_mcp_tools(self):
+        initialized = {"protocolVersion": "2024-11-05"}
+        tools = {
+            "tools": [{"name": name} for name in MODULE.REQUIRED_RUNTIME_TOOLS]
+        }
+        MODULE.validate_runtime_contract(initialized, tools)
 
     def test_explicit_installed_mode_never_falls_back_to_fixture(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -102,6 +161,79 @@ class InstalledCodeE2ETest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "agent_host_missing"):
                 MODULE.run(ROOT)
+
+    def test_external_mode_rejects_wrapper_without_executable_target(self):
+        import os
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory) / "agent.cmd"
+            missing_target = Path(directory) / "missing-hermes.exe"
+            wrapper.write_text(
+                '@echo off' + chr(10) + f'"{missing_target}" %*' + chr(10),
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            with patch.dict(
+                os.environ,
+                {
+                    "SIMPLICIO_AGENT_HOST_E2E_COMMAND": json.dumps([str(wrapper)]),
+                    "SIMPLICIO_RUNTIME_BIN": MODULE.sys.executable,
+                },
+                clear=False,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "wrapper target is not executable"
+                ):
+                    MODULE.run(ROOT)
+
+    def test_installed_dependency_diagnosis_is_effect_free(self):
+        import os
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory) / "agent.cmd"
+            missing_target = Path(directory) / "missing-hermes.exe"
+            wrapper.write_text(
+                '@echo off' + chr(10) + f'"{missing_target}" %*' + chr(10),
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            with patch.dict(
+                os.environ,
+                {
+                    "SIMPLICIO_AGENT_HOST_E2E_COMMAND": json.dumps([str(wrapper)]),
+                    "SIMPLICIO_RUNTIME_BIN": MODULE.sys.executable,
+                },
+                clear=False,
+            ):
+                diagnosis = MODULE.diagnose_installed_dependencies()
+        self.assertEqual(
+            diagnosis["schema"], "simplicio.installed-dependency-diagnostic/v1"
+        )
+        self.assertEqual(diagnosis["status"], "blocked")
+        self.assertFalse(diagnosis["effect_attempted"])
+        self.assertFalse(diagnosis["productive_flow_verified"])
+        self.assertIn("wrapper target is not executable", diagnosis["reason"])
+
+    def test_tcp_sidecar_requires_loopback_and_authentication(self):
+        with tempfile.TemporaryDirectory() as directory:
+            socket_path = Path(directory) / "agent.sock"
+            endpoint_path = socket_path.with_suffix(".tcp")
+            token_path = socket_path.with_suffix(".token")
+            endpoint_path.write_text("127.0.0.1:4242", encoding="ascii")
+            token_path.write_text("t" * 32, encoding="ascii")
+            self.assertEqual(
+                MODULE.read_tcp_endpoint(socket_path),
+                ("127.0.0.1", 4242, "t" * 32),
+            )
+            endpoint_path.write_text("192.0.2.1:4242", encoding="ascii")
+            with self.assertRaisesRegex(RuntimeError, "not_loopback"):
+                MODULE.read_tcp_endpoint(socket_path)
+            endpoint_path.write_text("127.0.0.1:4242", encoding="ascii")
+            token_path.unlink()
+            with self.assertRaisesRegex(RuntimeError, "auth_missing"):
+                MODULE.read_tcp_endpoint(socket_path)
 
     def test_fixture_rejects_invalid_identity_and_path_escape(self):
         rejected = FIXTURE.agent_response({"op": "turn.start", "turn_id": "one"}, {})

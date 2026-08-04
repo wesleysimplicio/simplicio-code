@@ -358,10 +358,22 @@ impl<S: SecretStore> AuthSession<S> {
         token: &TokenResponse,
         now: DateTime<Utc>,
     ) -> Result<(), AuthError> {
+        let entitlement = self.entitlement(now)?;
+        self.rotate_refresh_with_entitlement(token, entitlement, now)
+    }
+
+    pub fn rotate_refresh_with_entitlement(
+        &self,
+        token: &TokenResponse,
+        entitlement: Entitlement,
+        now: DateTime<Utc>,
+    ) -> Result<(), AuthError> {
         let refresh = token.refresh_token.as_ref().ok_or_else(|| {
             AuthError::Protocol("refresh response omitted rotated refresh token".into())
         })?;
-        let entitlement = self.entitlement(now)?;
+        if !entitlement.is_valid_at(now) || token.expires_in == 0 {
+            return Err(AuthError::EntitlementRequired);
+        }
         self.store
             .save_refresh_token(&Secret::new(refresh.expose()))?;
         let mut inner = self
@@ -371,6 +383,7 @@ impl<S: SecretStore> AuthSession<S> {
         inner.access_token = Some(token.access_token.clone());
         inner.access_expires_at = Some(now + Duration::seconds(token.expires_in as i64));
         inner.entitlement = Some(entitlement);
+        inner.state = AuthState::Authorized;
         Ok(())
     }
 
@@ -454,8 +467,37 @@ impl<S: SecretStore> IdentityClient<S> {
         }
     }
 
+    pub async fn refresh_session(&self) -> Result<(), AuthError> {
+        let refresh = self
+            .session
+            .store
+            .load_refresh_token()?
+            .ok_or(AuthError::EntitlementRequired)?;
+        let response = self
+            .http
+            .post(self.endpoints.url(paths::REFRESH))
+            .json(&serde_json::json!({
+                "refresh_token": refresh.expose(),
+            }))
+            .send()
+            .await?;
+        let token: TokenResponse = decode_response(response).await?;
+        let entitlement = self
+            .fetch_entitlement_with_token(&token.access_token)
+            .await?;
+        self.session
+            .rotate_refresh_with_entitlement(&token, entitlement, Utc::now())
+    }
+
     pub async fn fetch_entitlement(&self) -> Result<Entitlement, AuthError> {
         let token = self.session.access_token(Utc::now())?;
+        self.fetch_entitlement_with_token(&token).await
+    }
+
+    async fn fetch_entitlement_with_token(
+        &self,
+        token: &SecretString,
+    ) -> Result<Entitlement, AuthError> {
         let response = self
             .http
             .get(self.endpoints.url(paths::ENTITLEMENT))

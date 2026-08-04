@@ -13,6 +13,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn('echo "version=${GITHUB_REF_NAME#v}"', publish)
         self.assertIn("body_path: RELEASE_NOTES_${{ steps.ver.outputs.version }}.md", publish)
 
+    def test_manifest_records_source_commit(self) -> None:
+        text = WORKFLOW.read_text(encoding="utf-8")
+        package = text.split("      - name: Generate signed release manifest", 1)[1].split("  publish:\n", 1)[0]
+        self.assertIn('--commit-sha \"${{ github.sha }}\"', package)
+
     def test_release_workflow_does_not_claim_production_signing(self) -> None:
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("NOT a production trust root", text)

@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -9,6 +10,10 @@ SPEC = importlib.util.spec_from_file_location("benchmark_snake", ROOT / "scripts
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader
 SPEC.loader.exec_module(MODULE)
+HUB_SPEC = importlib.util.spec_from_file_location("code_loop_hub_e2e", ROOT / "scripts/code_loop_hub_e2e.py")
+HUB_MODULE = importlib.util.module_from_spec(HUB_SPEC)
+assert HUB_SPEC.loader
+HUB_SPEC.loader.exec_module(HUB_MODULE)
 
 
 def test_events_happy_path_is_idempotent_and_has_no_partial_file():
@@ -47,3 +52,13 @@ def test_events_corruption_fails_closed_and_preserves_published_file():
         else:
             raise AssertionError("invalid event must fail")
         assert path.read_bytes() == published
+
+
+def test_hub_cleanup_removes_owned_lock_after_process_exit():
+    with tempfile.TemporaryDirectory() as tmp:
+        lock = Path(tmp) / "hub.lock"
+        lock.write_text("owned", encoding="utf-8")
+        hub = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        HUB_MODULE.stop_hub(hub, lock)
+        assert hub.poll() is not None
+        assert not lock.exists()

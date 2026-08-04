@@ -71,13 +71,15 @@ def start_hub(loop_root: Path, env: dict[str, str], lock: Path, endpoint: str, t
     )
 
 
-def stop_hub(hub: subprocess.Popen[str]) -> None:
+def stop_hub(hub: subprocess.Popen[str], lock: Path | None = None) -> None:
     hub.terminate()
     try:
         hub.wait(timeout=5)
     except subprocess.TimeoutExpired:
         hub.kill()
         hub.wait(timeout=5)
+    if lock is not None and hub.poll() is not None:
+        lock.unlink(missing_ok=True)
 
 
 def process_sample(pid: int) -> tuple[int | None, float | None, float | None]:
@@ -155,7 +157,7 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
                 samples.append(process_sample(hub.pid))
                 if restart_ready.exists() and restart_downtime_ms is None:
                     restart_started = time.perf_counter()
-                    stop_hub(hub)
+                    stop_hub(hub, lock)
                     hub = start_hub(loop_root, env, lock, endpoint, transport)
                     hub_pids.append(hub.pid)
                     wait_for_endpoint(endpoint, hub, transport)
@@ -200,7 +202,7 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
                 "restart_reconnected": True,
             }
         finally:
-            stop_hub(hub)
+            stop_hub(hub, lock)
 
 
 def run(args: argparse.Namespace) -> dict[str, object]:
