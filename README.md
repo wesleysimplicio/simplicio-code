@@ -26,6 +26,7 @@ for the version of the code present in this tree.
 ---
 
 ## Estado do produto
+A fonte revisável do estado atual é [`docs/status/current.md`](docs/status/current.md); ela separa evidência de código, release, capabilities e residuais live.
 
 Versão atual: **0.3.0-beta.3**.
 
