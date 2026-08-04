@@ -47,6 +47,12 @@ def main() -> None:
     parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--artifacts-dir", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--required-platform",
+        action="append",
+        default=[],
+        help="platform that must be present before publishing the manifest",
+    )
     args = parser.parse_args()
     if COMMIT_SHA_RE.fullmatch(args.commit_sha) is None:
         parser.error("--commit-sha must be exactly 40 lowercase hexadecimal characters")
@@ -70,6 +76,14 @@ def main() -> None:
     if not entries:
         sys.stderr.write(
             f"no artifacts matching 'simplicio-code-{args.version}-<platform>' found in {artifacts_dir}\n"
+        )
+        sys.exit(1)
+
+    observed_platforms = {entry["platform"] for entry in entries}
+    missing_platforms = sorted(set(args.required_platform) - observed_platforms)
+    if missing_platforms:
+        sys.stderr.write(
+            "missing required release platform(s): " + ", ".join(missing_platforms) + "\n"
         )
         sys.exit(1)
 
