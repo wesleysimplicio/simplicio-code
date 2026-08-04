@@ -6,6 +6,7 @@ import argparse
 import functools
 import http.server
 import socketserver
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -17,18 +18,31 @@ def validate_url(url: str) -> None:
         raise ValueError("only http:// and https:// URLs are supported")
 
 
-def serve(directory: Path, host: str = "127.0.0.1", port: int = 0) -> str:
+def serve(
+    directory: Path,
+    host: str = "127.0.0.1",
+    port: int = 0,
+    duration: float | None = None,
+) -> str:
     directory = directory.resolve()
     if not directory.is_dir():
         raise ValueError(f"report directory does not exist: {directory}")
+    if duration is not None and duration <= 0:
+        raise ValueError("duration must be positive")
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory))
     with socketserver.TCPServer((host, port), handler) as server:
         actual_port = server.server_address[1]
         print(f"http://{host}:{actual_port}/", flush=True)
-        try:
-            server.serve_forever()
-        except KeyboardInterrupt:
-            pass
+        if duration is None:
+            try:
+                server.serve_forever()
+            except KeyboardInterrupt:
+                pass
+        else:
+            server.timeout = min(0.25, duration)
+            deadline = time.monotonic() + duration
+            while time.monotonic() < deadline:
+                server.handle_request()
     return f"http://{host}:{actual_port}/"
 
 
@@ -37,6 +51,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("directory", type=Path)
     parser.add_argument("--url", help="validate a browser URL before opening it")
     parser.add_argument("--port", type=int, default=0)
+    parser.add_argument("--duration-seconds", type=float, help="stop the loopback server after this bounded duration")
     args = parser.parse_args(argv)
     if args.url:
         try:
@@ -45,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             parser.error(str(exc))
         print(args.url)
         return 0
-    serve(args.directory, port=args.port)
+    serve(args.directory, port=args.port, duration=args.duration_seconds)
     return 0
 
 
