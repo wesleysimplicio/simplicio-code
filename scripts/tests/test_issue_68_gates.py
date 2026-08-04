@@ -9,7 +9,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-from check_unused_struct_locals import scan_source  # noqa: E402
+from check_unused_struct_locals import candidate_key, evaluate, scan_source  # noqa: E402
 from headless_invocation_matrix import FATAL_PROCESS_CODES, PERMISSION_MODES, build_cases, execute  # noqa: E402
 from audit_workspace_access import audit  # noqa: E402
 from check_deterministic_invariants import check as check_deterministic_invariants  # noqa: E402
@@ -33,6 +33,12 @@ fn build() {
 """
     findings = scan_source(source, "fixture.rs")
     check("struct omission shape is reported", len(findings) == 1 and findings[0]["variable"] == "search_backend")
+    review = evaluate(findings, set(), False)
+    check("heuristic report is explicitly review-only", review["status"] == "REVIEW_ONLY" and not review["blocking"])
+    enforced = evaluate(findings, {candidate_key(findings[0])}, True)
+    check("exact allowlist passes enforcement", enforced["status"] == "PASS" and enforced["unallowlisted_count"] == 0)
+    stale = evaluate(findings, {candidate_key(findings[0]), ("fixture.rs", 99, 100, "removed")}, True)
+    check("stale allowlist fails closed", stale["status"] == "FAIL" and stale["stale_allowlist_count"] == 1)
 
     source_with_use = """
 fn build() {
