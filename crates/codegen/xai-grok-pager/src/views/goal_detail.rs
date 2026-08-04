@@ -2010,10 +2010,16 @@ mod tests {
         let text = buffer_text(&buf);
         // Completed = ✓, InProgress = ▶, Pending = □, Cancelled = ✗
         // Match icon + content to disambiguate from the close button [✗].
-        assert!(text.contains("\u{2713} done"), "missing ✓ for Completed");
+        assert!(
+            text.contains(&format!("{} done", crate::glyphs::check_mark())),
+            "missing check mark for Completed"
+        );
         assert!(text.contains("\u{25b6} wip"), "missing ▶ for InProgress");
         assert!(text.contains("\u{25a1} todo"), "missing □ for Pending");
-        assert!(text.contains("\u{2717} skip"), "missing ✗ for Cancelled");
+        assert!(
+            text.contains(&format!("{} skip", crate::glyphs::ballot_x())),
+            "missing cancelled marker"
+        );
     }
 
     #[test]

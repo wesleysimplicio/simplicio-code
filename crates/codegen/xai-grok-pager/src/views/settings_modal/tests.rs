@@ -1617,7 +1617,7 @@ fn render_editing_value_cursor_at_logical_position_when_buffer_fits() {
     let mut found_cursor_col: Option<u16> = None;
     for x in 0..area.width {
         if let Some(cell) = buf.cell((x, row_y))
-            && cell.symbol() == "\u{258F}"
+            && cell.symbol() == crate::glyphs::selection_bar()
         {
             found_cursor_col = Some(x);
             break;
@@ -1655,7 +1655,7 @@ fn render_editing_value_cursor_pans_to_left_on_overflow_at_start() {
     let mut found_cursor_col: Option<u16> = None;
     for x in 0..area.width {
         if let Some(cell) = buf.cell((x, row_y))
-            && cell.symbol() == "\u{258F}"
+            && cell.symbol() == crate::glyphs::selection_bar()
         {
             found_cursor_col = Some(x);
             break;
@@ -1692,7 +1692,7 @@ fn render_editing_value_cursor_pans_to_right_on_overflow_at_end() {
     let mut found_cursor_col: Option<u16> = None;
     for x in 0..area.width {
         if let Some(cell) = buf.cell((x, row_y))
-            && cell.symbol() == "\u{258F}"
+            && cell.symbol() == crate::glyphs::selection_bar()
         {
             found_cursor_col = Some(x);
             break;
@@ -2112,18 +2112,18 @@ fn int_editing_value_renders_stepper_ui() {
                 row.push_str(cell.symbol());
             }
         }
-        if row.contains('\u{2039}') && row.contains('\u{203A}') {
+        if row.contains(crate::glyphs::chevron_left()) && row.contains(crate::glyphs::chevron()) {
             stepper_row = Some(row);
             break;
         }
     }
     let row = stepper_row.expect("must find the stepper row");
     assert!(
-        row.contains('\u{2039}'),
+        row.contains(crate::glyphs::chevron_left()),
         "stepper row must contain `‹` glyph, got {row:?}"
     );
     assert!(
-        row.contains('\u{203A}'),
+        row.contains(crate::glyphs::chevron()),
         "stepper row must contain `›` glyph, got {row:?}"
     );
     assert!(
@@ -2659,7 +2659,11 @@ fn picker_highlights_current_choice() {
     };
     // Layout: rows 3..6 are choices (with subtitle on row 1).
     assert_eq!(marker_at(3), "\u{25CB}", "row 3 (unfocused) should be ○");
-    assert_eq!(marker_at(4), "\u{25CF}", "row 4 (focused) should be ●");
+    assert_eq!(
+        marker_at(4),
+        crate::glyphs::filled_dot(),
+        "row 4 (focused) should be the filled selection dot"
+    );
     assert_eq!(marker_at(5), "\u{25CB}", "row 5 (unfocused) should be ○");
 
     // Cell at the LAST column of each row carries the row bg
@@ -5447,7 +5451,7 @@ fn chevron_column_is_at_constant_right_offset() {
     let enum_cell = buf_enum.cell((glyph_x, 0)).expect("enum col cell");
     assert_eq!(
         enum_cell.symbol(),
-        "\u{203A}",
+        crate::glyphs::chevron(),
         "Enum row's chevron column must contain the `›` glyph at \
          area.right - {} (constant right offset across rows), got: {:?}",
         ROW_RIGHT_PAD_W + 1,
@@ -5521,7 +5525,7 @@ fn chevron_column_is_at_constant_right_offset() {
         .expect("enum row chevron glyph cell");
     assert_eq!(
         enum_glyph_cell.symbol(),
-        "\u{203A}",
+        crate::glyphs::chevron(),
         "Enum row's chevron glyph must land at glyph_x={glyph_x_multi}",
     );
     let bool_glyph_cell = buf_multi
@@ -5596,7 +5600,7 @@ fn chevron_column_aligns_across_one_and_two_line_layouts() {
         .expect("two-line chevron cell on line 2");
     assert_eq!(
         two_line_cell.symbol(),
-        "\u{203A}",
+        crate::glyphs::chevron(),
         "Two-line row's chevron must land at \
          `area.right - ROW_RIGHT_PAD_W - 1` on LINE 2 (UX Issue 2)",
     );
@@ -5605,7 +5609,7 @@ fn chevron_column_aligns_across_one_and_two_line_layouts() {
         .expect("one-line chevron cell");
     assert_eq!(
         one_line_cell.symbol(),
-        "\u{203A}",
+        crate::glyphs::chevron(),
         "One-line row's chevron must land at `area.right - ROW_RIGHT_PAD_W - 1`",
     );
     // The offset from the right edge is the same — pin that
@@ -5947,7 +5951,7 @@ fn settings_breadcrumb_rect_set_in_sub_pane_modes() {
     // label varies by setting — assert it's strictly wider
     // than `Settings` alone (proof that the rect extends past
     // the prefix) AND at least MODAL_TITLE + " › ".
-    let prefix_w = MODAL_TITLE.width() + " \u{203A} ".width();
+    let prefix_w = MODAL_TITLE.width() + format!(" {} ", crate::glyphs::chevron()).width();
     assert!(
         (rect.width as usize) > MODAL_TITLE.width(),
         "rect width must extend past `Settings` alone for theme picker, got {}",

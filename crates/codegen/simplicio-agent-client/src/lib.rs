@@ -21,6 +21,7 @@ pub const HOST_PROTOCOL_SCHEMA: &str = "simplicio.agent-host/v1";
 pub const HOST_PROTOCOL_VERSION: u64 = 1;
 pub const AGENT_PROTOCOL_VERSION: &str = "agent/v1";
 pub const ADVISORY_SCHEMA: &str = "simplicio.agent-advisory/v1";
+pub const WORKSPACE_OBSERVE_SCHEMA: &str = "simplicio.workspace.observe/v1";
 // AgentHost turns include a full provider round-trip. Two seconds is enough
 // for the handshake but truncates normal model responses, causing the client
 // to report EAGAIN while the host later hits BrokenPipe writing the result.
@@ -29,6 +30,7 @@ pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 512 * 1024;
 
 const REQUIRED_CAPABILITIES: [&str; 3] = ["host.advisories", "host.status", "turn.start"];
 const MAX_ADVISORIES_PER_PAGE: usize = 128;
+const MAX_OBSERVATIONS_PER_PAGE: usize = 128;
 const MIN_HOST_INSTANCE_ID_BYTES: usize = 16;
 const MAX_HOST_INSTANCE_ID_BYTES: usize = 64;
 
@@ -147,6 +149,49 @@ pub struct AgentAdvisory {
 pub struct AdvisoryPage {
     pub schema: String,
     pub events: Vec<AgentAdvisory>,
+    pub next_cursor: u64,
+    pub truncated: bool,
+}
+
+/// Consent is explicit and local to the workspace session. The AgentHost may
+/// observe only already-authorized Mapper/Runtime handles; it never receives a
+/// Code-local filesystem path or arbitrary source blob.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceObserveConsent {
+    Off,
+    ReadOnly,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceObserveRequest {
+    pub schema: String,
+    pub workspace_id: String,
+    pub session_id: String,
+    pub after: u64,
+    pub consent: WorkspaceObserveConsent,
+    pub max_events: u16,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceObservation {
+    pub schema: String,
+    pub sequence: u64,
+    pub workspace_id: String,
+    /// Fixed event vocabulary; event data is a handle/provenance reference,
+    /// never an arbitrary payload.
+    pub kind: String,
+    pub source: String,
+    pub evidence: String,
+    pub generation: u64,
+    pub ts_wall_ns: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceObservationPage {
+    pub schema: String,
+    pub workspace_id: String,
+    pub events: Vec<WorkspaceObservation>,
     pub next_cursor: u64,
     pub truncated: bool,
 }
@@ -510,6 +555,49 @@ impl AgentHostClient {
         }
         parse_advisory_page(&response, after, self.capabilities.host_instance_id())
     }
+
+    /// Reads bounded, read-only workspace observations from AgentHost. This
+    /// is opt-in and capability-gated; it never reads the workspace from Code
+    /// and never schedules an effect.
+    pub fn observe_workspace(
+        &self,
+        observe_request: &WorkspaceObserveRequest,
+    ) -> Result<WorkspaceObservationPage, Error> {
+        validate_workspace_observe_request(observe_request)?;
+        if observe_request.consent == WorkspaceObserveConsent::Off {
+            return Ok(WorkspaceObservationPage {
+                schema: WORKSPACE_OBSERVE_SCHEMA.into(),
+                workspace_id: observe_request.workspace_id.clone(),
+                events: Vec::new(),
+                next_cursor: observe_request.after,
+                truncated: false,
+            });
+        }
+        if !self.capabilities.supports("workspace.observe") {
+            return Err(Error::CapabilityMismatch {
+                missing: "workspace.observe".into(),
+            });
+        }
+        let response = request(
+            &self.socket_path,
+            &json!({
+                "op": "workspace.observe",
+                "schema": WORKSPACE_OBSERVE_SCHEMA,
+                "workspace_id": observe_request.workspace_id,
+                "session_id": observe_request.session_id,
+                "after": observe_request.after,
+                "consent": observe_request.consent,
+                "max_events": observe_request.max_events,
+                "host_instance_id": self.capabilities.host_instance_id.as_protocol_str(),
+            }),
+        )?;
+        validate_host_response(&response, Some(self.capabilities.host_instance_id()))?;
+        parse_workspace_observation_page(
+            &response,
+            observe_request,
+            self.capabilities.host_instance_id(),
+        )
+    }
 }
 
 /// Stateful Code-side coordinator adapter for one AgentHost incarnation.
@@ -659,6 +747,13 @@ impl AgentHostCoordinator {
         let page = self.client.advisories(cursor)?;
         self.cursor = page.next_cursor;
         Ok(page)
+    }
+
+    pub fn observe_workspace(
+        &mut self,
+        request: &WorkspaceObserveRequest,
+    ) -> Result<WorkspaceObservationPage, Error> {
+        self.client.observe_workspace(request)
     }
 
     pub fn snapshot(&self) -> CoordinatorSnapshot {
@@ -948,6 +1043,103 @@ fn parse_advisory_page(
     })
 }
 
+#[derive(Debug, Deserialize)]
+struct WorkspaceObservationPageEnvelope {
+    #[serde(default)]
+    host_instance_id: Option<Value>,
+    schema: String,
+    workspace_id: String,
+    events: Vec<WorkspaceObservation>,
+    next_cursor: u64,
+    truncated: bool,
+}
+
+fn validate_workspace_observe_request(request: &WorkspaceObserveRequest) -> Result<(), Error> {
+    if request.schema != WORKSPACE_OBSERVE_SCHEMA {
+        return Err(Error::InvalidResponse(format!(
+            "workspace observe schema '{}', expected '{WORKSPACE_OBSERVE_SCHEMA}'",
+            request.schema
+        )));
+    }
+    if request.workspace_id.trim().is_empty() || request.session_id.trim().is_empty() {
+        return Err(Error::InvalidTurnRequest(
+            "workspace observe requires workspace_id and session_id".into(),
+        ));
+    }
+    if request.max_events == 0 || usize::from(request.max_events) > MAX_OBSERVATIONS_PER_PAGE {
+        return Err(Error::InvalidTurnRequest(format!(
+            "workspace observe max_events must be 1..={MAX_OBSERVATIONS_PER_PAGE}"
+        )));
+    }
+    Ok(())
+}
+
+fn parse_workspace_observation_page(
+    response: &Value,
+    request: &WorkspaceObserveRequest,
+    expected_host_instance_id: &HostInstanceId,
+) -> Result<WorkspaceObservationPage, Error> {
+    let page: WorkspaceObservationPageEnvelope = serde_json::from_value(
+        response
+            .get("observations")
+            .cloned()
+            .ok_or_else(|| Error::InvalidResponse("observations field is missing".into()))?,
+    )
+    .map_err(|error| Error::InvalidResponse(error.to_string()))?;
+    let page_host_instance_id = parse_host_instance_id(page.host_instance_id.as_ref())?;
+    if &page_host_instance_id != expected_host_instance_id {
+        return Err(Error::HostInstanceMismatch);
+    }
+    if page.schema != WORKSPACE_OBSERVE_SCHEMA || page.workspace_id != request.workspace_id {
+        return Err(Error::ProtocolMismatch(
+            "workspace observation page has an invalid schema or workspace".into(),
+        ));
+    }
+    if page.events.len() > usize::from(request.max_events)
+        || page.events.len() > MAX_OBSERVATIONS_PER_PAGE
+    {
+        return Err(Error::InvalidResponse(
+            "workspace observation page exceeds its bound".into(),
+        ));
+    }
+    let mut previous = request.after;
+    for (index, event) in page.events.iter().enumerate() {
+        if event.schema != WORKSPACE_OBSERVE_SCHEMA
+            || event.workspace_id != request.workspace_id
+            || event.sequence <= previous
+            || (event.sequence != previous.saturating_add(1) && !(index == 0 && page.truncated))
+        {
+            return Err(Error::InvalidResponse(
+                "workspace observation cursor or provenance is invalid".into(),
+            ));
+        }
+        if !matches!(
+            event.kind.as_str(),
+            "test_failure" | "stale_contract" | "acceptance_gap"
+        ) || !matches!(event.source.as_str(), "mapper" | "runtime" | "agent")
+            || event.generation == 0
+        {
+            return Err(Error::InvalidResponse(
+                "workspace observation vocabulary or generation is invalid".into(),
+            ));
+        }
+        validate_projection_text("observation.evidence", &event.evidence, 512)?;
+        previous = event.sequence;
+    }
+    if page.next_cursor != previous {
+        return Err(Error::InvalidResponse(
+            "workspace observation next_cursor is invalid".into(),
+        ));
+    }
+    Ok(WorkspaceObservationPage {
+        schema: page.schema,
+        workspace_id: page.workspace_id,
+        events: page.events,
+        next_cursor: page.next_cursor,
+        truncated: page.truncated,
+    })
+}
+
 fn validate_advisory(event: &AgentAdvisory) -> Result<(), Error> {
     validate_projection_text("summary", &event.summary, 512)?;
     for (name, value) in [
@@ -1148,6 +1340,74 @@ mod tests {
                 "host_instance_id": HOST_ID,
             },
         })
+    }
+
+    fn observe_request(consent: WorkspaceObserveConsent) -> WorkspaceObserveRequest {
+        WorkspaceObserveRequest {
+            schema: WORKSPACE_OBSERVE_SCHEMA.into(),
+            workspace_id: "workspace-1".into(),
+            session_id: "session-1".into(),
+            after: 0,
+            consent,
+            max_events: 8,
+        }
+    }
+
+    #[test]
+    fn observation_consent_off_is_local_and_returns_no_events() {
+        let client = AgentHostClient {
+            socket_path: PathBuf::from("unused"),
+            capabilities: HostCapabilities {
+                profile: "desktop".into(),
+                capabilities: BTreeSet::new(),
+                host_instance_id: host_instance_id(),
+            },
+        };
+        let page = client
+            .observe_workspace(&observe_request(WorkspaceObserveConsent::Off))
+            .unwrap();
+        assert_eq!(page.schema, WORKSPACE_OBSERVE_SCHEMA);
+        assert!(page.events.is_empty());
+        assert_eq!(page.next_cursor, 0);
+    }
+
+    #[test]
+    fn workspace_observations_require_fixed_provenance_and_bounded_cursor() {
+        let mut response = host_response();
+        response["observations"] = json!({
+            "host_instance_id": HOST_ID,
+            "schema": WORKSPACE_OBSERVE_SCHEMA,
+            "workspace_id": "workspace-1",
+            "events": [{
+                "schema": WORKSPACE_OBSERVE_SCHEMA,
+                "sequence": 1,
+                "workspace_id": "workspace-1",
+                "kind": "test_failure",
+                "source": "runtime",
+                "evidence": "receipt:sha256:abc",
+                "generation": 3,
+                "ts_wall_ns": 1
+            }],
+            "next_cursor": 1,
+            "truncated": false
+        });
+        let page = parse_workspace_observation_page(
+            &response,
+            &observe_request(WorkspaceObserveConsent::ReadOnly),
+            &host_instance_id(),
+        )
+        .unwrap();
+        assert_eq!(page.events[0].kind, "test_failure");
+
+        response["observations"]["events"][0]["kind"] = json!("arbitrary_text");
+        assert!(matches!(
+            parse_workspace_observation_page(
+                &response,
+                &observe_request(WorkspaceObserveConsent::ReadOnly),
+                &host_instance_id(),
+            ),
+            Err(Error::InvalidResponse(_))
+        ));
     }
 
     #[test]

@@ -739,6 +739,25 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    fn windows_env_ref(name: &str) -> String {
+        match xai_grok_config::shell::detect_windows_shell().name() {
+            "cmd.exe" => format!("%{name}%"),
+            "bash" => format!("${{{name}}}"),
+            _ => format!("${{env:{name}}}"),
+        }
+    }
+
+    #[cfg(windows)]
+    fn windows_hook_command(variable: &str, script: &str) -> String {
+        let env_ref = windows_env_ref(variable);
+        match xai_grok_config::shell::detect_windows_shell().name() {
+            "cmd.exe" => format!("call \"{env_ref}\\{script}\""),
+            "bash" => format!("\"{env_ref}/{script}\""),
+            _ => format!("& \"{env_ref}\\{script}\""),
+        }
+    }
+
     fn make_envelope() -> HookEventEnvelope {
         use crate::event::HookPayload;
         HookEventEnvelope {
@@ -868,8 +887,14 @@ mod tests {
     #[tokio::test]
     async fn test_env_var_interpolation_runs_via_shell() {
         let tmp = tempfile::tempdir().unwrap();
-        let script = tmp.path().join("hook.sh");
-        std::fs::write(&script, "#!/bin/sh\nexit 0\n").unwrap();
+        let script_name = if cfg!(windows) { "hook.cmd" } else { "hook.sh" };
+        let script = tmp.path().join(script_name);
+        let script_body = if cfg!(windows) {
+            "@echo off\r\nexit /b 0\r\n"
+        } else {
+            "#!/bin/sh\nexit 0\n"
+        };
+        std::fs::write(&script, script_body).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -884,6 +909,16 @@ mod tests {
             tmp.path().to_string_lossy().into_owned(),
         );
 
+        let command = {
+            #[cfg(windows)]
+            {
+                std::path::PathBuf::from(windows_hook_command("GB1183_PLUGIN_ROOT", "hook.cmd"))
+            }
+            #[cfg(not(windows))]
+            {
+                std::path::PathBuf::from("${GB1183_PLUGIN_ROOT}/hook.sh")
+            }
+        };
         let spec = HookSpec {
             name: "test-env-interp".into(),
             event: crate::event::HookEventName::Stop,
@@ -891,8 +926,8 @@ mod tests {
             configured_matcher: None,
             matcher: None,
             enabled: true,
-            command: Some(std::path::PathBuf::from("${GB1183_PLUGIN_ROOT}/hook.sh")),
-            command_raw: Some("${GB1183_PLUGIN_ROOT}/hook.sh".to_string()),
+            command_raw: Some(command.to_string_lossy().into_owned()),
+            command: Some(command),
             url: None,
             url_raw: None,
             timeout_ms: 5000,
@@ -921,17 +956,22 @@ mod tests {
     #[tokio::test]
     async fn test_claude_project_dir_is_exported() {
         let tmp = tempfile::tempdir().unwrap();
-        let script = tmp.path().join("hook.sh");
-        // Exit 0 only if CLAUDE_PROJECT_DIR matches the workspace root.
         let workspace = tmp.path().to_string_lossy().into_owned();
-        std::fs::write(
-            &script,
+        let script_name = if cfg!(windows) { "hook.cmd" } else { "hook.sh" };
+        let script = tmp.path().join(script_name);
+        // Exit 0 only if CLAUDE_PROJECT_DIR matches the workspace root.
+        let script_body = if cfg!(windows) {
+            format!(
+                "@echo off\r\nif \"%CLAUDE_PROJECT_DIR%\"==\"{workspace}\" exit /b 0\r\nexit /b 1\r\n",
+                workspace = workspace
+            )
+        } else {
             format!(
                 "#!/bin/sh\ntest \"${{CLAUDE_PROJECT_DIR}}\" = \"{workspace}\"\n",
                 workspace = workspace
-            ),
-        )
-        .unwrap();
+            )
+        };
+        std::fs::write(&script, script_body).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -940,6 +980,16 @@ mod tests {
             std::fs::set_permissions(&script, perms).unwrap();
         }
 
+        let command = {
+            #[cfg(windows)]
+            {
+                std::path::PathBuf::from(windows_hook_command("CLAUDE_PROJECT_DIR", "hook.cmd"))
+            }
+            #[cfg(not(windows))]
+            {
+                std::path::PathBuf::from("${CLAUDE_PROJECT_DIR}/hook.sh")
+            }
+        };
         let spec = HookSpec {
             name: "test-claude-project-dir".into(),
             event: crate::event::HookEventName::Stop,
@@ -949,8 +999,8 @@ mod tests {
             enabled: true,
             // Use ${CLAUDE_PROJECT_DIR} in the path itself so this also exercises
             // the `$` -> sh -c routing.
-            command: Some(std::path::PathBuf::from("${CLAUDE_PROJECT_DIR}/hook.sh")),
-            command_raw: Some("${CLAUDE_PROJECT_DIR}/hook.sh".to_string()),
+            command_raw: Some(command.to_string_lossy().into_owned()),
+            command: Some(command),
             url: None,
             url_raw: None,
             timeout_ms: 5000,

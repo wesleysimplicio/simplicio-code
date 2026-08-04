@@ -87,6 +87,16 @@ fn is_platform_system_dir(cwd: &Path) -> bool {
 
 #[cfg(target_os = "windows")]
 fn is_platform_system_dir(cwd: &Path) -> bool {
+    // Tests, config fixtures, and cross-platform callers may use POSIX
+    // scratch paths even on Windows. Treat them as system scratch rather
+    // than accidentally classifying `C:\tmp` as a project directory.
+    if cwd == Path::new("/tmp")
+        || cwd.starts_with("/tmp/")
+        || cwd == Path::new("/var/tmp")
+        || cwd.starts_with("/var/tmp/")
+    {
+        return true;
+    }
     if let Ok(temp) = std::env::var("TEMP").or_else(|_| std::env::var("TMP")) {
         if cwd.starts_with(&temp) {
             return true;

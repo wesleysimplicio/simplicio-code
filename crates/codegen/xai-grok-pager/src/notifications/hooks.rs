@@ -11,9 +11,10 @@ fn execute_hook(
     session_id: Option<&str>,
     timeout: Duration,
 ) {
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c")
-        .arg(command)
+    let invocation = xai_grok_config::shell::shell_command_argv(command);
+    let mut cmd = Command::new(&invocation.program);
+    cmd.args(&invocation.args)
+        .envs(invocation.env.iter().map(|(key, value)| (*key, *value)))
         .env("GROK_EVENT", event_str)
         .env("GROK_MESSAGE", message)
         .stdin(Stdio::null())
@@ -100,15 +101,55 @@ mod tests {
         }
     }
 
+    fn capture_env_command(path: &std::path::Path) -> String {
+        if cfg!(windows) {
+            format!(
+                "Get-ChildItem Env: | ForEach-Object {{ \"$($_.Name)=$($_.Value)\" }} | Set-Content -LiteralPath \"{}\"",
+                path.display()
+            )
+        } else {
+            format!("env > {}", path.display())
+        }
+    }
+
+    fn capture_selected_env_command(path: &std::path::Path) -> String {
+        if cfg!(windows) {
+            format!(
+                "\"GROK_EVENT=$env:GROK_EVENT\" | Set-Content -LiteralPath \"{0}\"; \"GROK_MESSAGE=$env:GROK_MESSAGE\" | Add-Content -LiteralPath \"{0}\"; \"GROK_SESSION_ID=$env:GROK_SESSION_ID\" | Add-Content -LiteralPath \"{0}\"",
+                path.display()
+            )
+        } else {
+            format!(
+                "printf 'GROK_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \"$GROK_EVENT\" \"$GROK_MESSAGE\" \"$GROK_SESSION_ID\" > {}",
+                path.display()
+            )
+        }
+    }
+
+    fn create_marker_command(path: &std::path::Path) -> String {
+        if cfg!(windows) {
+            format!(
+                "New-Item -ItemType File -Force -Path \"{}\" | Out-Null",
+                path.display()
+            )
+        } else {
+            format!("touch {}", path.display())
+        }
+    }
+
+    fn long_sleep_command() -> &'static str {
+        if cfg!(windows) {
+            "Start-Sleep -Seconds 100"
+        } else {
+            "sleep 100"
+        }
+    }
+
     #[test]
     fn sets_environment_variables() {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("env.txt");
-        let command = format!(
-            "printf 'GROK_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \
-             \"$GROK_EVENT\" \"$GROK_MESSAGE\" \"$GROK_SESSION_ID\" > {}",
-            out.display()
-        );
+        let command = capture_selected_env_command(&out);
 
         execute_hook(
             &command,
@@ -137,7 +178,7 @@ mod tests {
     fn omits_session_id_when_none() {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("env.txt");
-        let command = format!("env > {}", out.display());
+        let command = capture_env_command(&out);
 
         execute_hook(
             &command,
@@ -158,7 +199,7 @@ mod tests {
     fn kills_on_timeout() {
         let start = Instant::now();
         execute_hook(
-            "sleep 100",
+            long_sleep_command(),
             "Turn complete",
             "msg",
             None,
@@ -174,7 +215,11 @@ mod tests {
     #[test]
     fn handles_failed_shell_command_gracefully() {
         execute_hook(
-            "/nonexistent/path/binary",
+            if cfg!(windows) {
+                "Write-Error 'missing hook'; exit 1"
+            } else {
+                "/nonexistent/path/binary"
+            },
             "Turn complete",
             "msg",
             None,
@@ -197,7 +242,7 @@ mod tests {
     fn successful_command_completes_without_error() {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("done");
-        let command = format!("touch {}", marker.display());
+        let command = create_marker_command(&marker);
 
         execute_hook(
             &command,
@@ -227,7 +272,14 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let marker = dir.path().join("done");
         let hook = NotificationHook {
-            command: format!("sleep 100; touch {}", marker.display()),
+            command: if cfg!(windows) {
+                format!(
+                    "Start-Sleep -Seconds 100; {}",
+                    create_marker_command(&marker)
+                )
+            } else {
+                format!("sleep 100; touch {}", marker.display())
+            },
             events: vec![],
             only_unfocused: false,
             timeout_secs: 0, // exercises the .max(1) clamp inside run_hook
@@ -256,11 +308,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("env.txt");
         let hook = NotificationHook {
-            command: format!(
-                "printf 'GROK_EVENT=%s\\nGROK_MESSAGE=%s\\nGROK_SESSION_ID=%s\\n' \
-                 \"$GROK_EVENT\" \"$GROK_MESSAGE\" \"$GROK_SESSION_ID\" > {}",
-                out.display()
-            ),
+            command: capture_selected_env_command(&out),
             events: vec![],
             only_unfocused: false,
             timeout_secs: 5,

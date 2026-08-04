@@ -1535,15 +1535,41 @@ pub mod gc {
         }
         #[cfg(not(target_os = "linux"))]
         {
-            // No libc dependency off Linux; fall back to `kill -0` exit status.
-            let mut cmd = std::process::Command::new("kill");
-            xai_tty_utils::detach_std_command(&mut cmd);
-            cmd.stdin(std::process::Stdio::null());
-            cmd.args(["-0", &pid.to_string()])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .is_ok_and(|s| s.success())
+            #[cfg(windows)]
+            {
+                use windows::Win32::Foundation::CloseHandle;
+                use windows::Win32::System::Threading::{
+                    GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+                };
+
+                if pid == 0 {
+                    return false;
+                }
+                let Ok(handle) =
+                    (unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) })
+                else {
+                    return false;
+                };
+                let mut exit_code = 0;
+                let result = unsafe { GetExitCodeProcess(handle, &mut exit_code) };
+                unsafe { CloseHandle(handle) }.ok();
+                return result.is_ok() && exit_code == 259;
+            }
+
+            #[cfg(not(windows))]
+            {
+                // Other Unix-like platforms retain the historical `kill -0`
+                // fallback; Windows uses the native process query above because
+                // `kill` is not a system command there.
+                let mut cmd = std::process::Command::new("kill");
+                xai_tty_utils::detach_std_command(&mut cmd);
+                cmd.stdin(std::process::Stdio::null());
+                cmd.args(["-0", &pid.to_string()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+                    .is_ok_and(|s| s.success())
+            }
         }
     }
 
@@ -1764,9 +1790,14 @@ pub mod gc {
         #[test]
         fn is_pid_alive_false_for_reaped_child() {
             // A fully reaped child's pid is gone (ESRCH) and must read as dead.
-            let mut child = std::process::Command::new("true")
-                .spawn()
-                .expect("spawn `true`");
+            let mut command = if cfg!(windows) {
+                let mut command = std::process::Command::new("cmd");
+                command.args(["/C", "exit", "0"]);
+                command
+            } else {
+                std::process::Command::new("true")
+            };
+            let mut child = command.spawn().expect("spawn portable exit command");
             let pid = child.id();
             child.wait().expect("wait on `true`");
             assert!(!is_pid_alive(pid));

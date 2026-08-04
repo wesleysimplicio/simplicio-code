@@ -17,6 +17,7 @@ use std::{
 
 pub const LOOP_HUB_CLIENT_SCHEMA: &str = "simplicio.loop-hub-client/v1";
 pub const LOOP_HUB_PROTOCOL: &str = "simplicio.loop-hub/v1";
+pub const LOOP_HUB_RUNTIME_PROCESS_SCHEMA: &str = "simplicio.loop-runtime-process/v1";
 const HUB_ENDPOINT_ENV: &str = "SIMPLICIO_LOOP_HUB_ENDPOINT";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -85,6 +86,18 @@ pub struct QueueCapabilities {
     pub max_pending_interactive: u32,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProcessCapabilities {
+    #[serde(default)]
+    pub start: bool,
+    #[serde(default)]
+    pub status: bool,
+    #[serde(default)]
+    pub cancel: bool,
+    #[serde(default)]
+    pub wait: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HubHandshake {
     pub schema: String,
@@ -97,6 +110,12 @@ pub struct HubHandshake {
     pub services: Vec<ServiceOwnership>,
     pub resources: SharedResources,
     pub queue: QueueCapabilities,
+    /// Process lifecycle is negotiated independently from the legacy
+    /// foreground `simplicio_exec` tool. Missing fields deserialize to false,
+    /// so older Runtime/Hub versions fail closed instead of being guessed as
+    /// compatible.
+    #[serde(default)]
+    pub runtime_process: RuntimeProcessCapabilities,
     /// The Hub must be the only scheduler owner. Code uses this to fail closed
     /// instead of silently creating a local fan-out loop.
     #[serde(default)]
@@ -488,6 +507,122 @@ pub struct RuntimeExecuteReceipt {
     pub result: Value,
 }
 
+/// Runtime-owned process lifecycle states. `EffectUnknown` is intentionally
+/// terminal from the Code client's perspective: a lost response must be
+/// reconciled by handle before another start can be attempted.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeProcessState {
+    NotStarted,
+    Running,
+    Exited,
+    Cancelled,
+    TimedOut,
+    EffectUnknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProcessStartRequest {
+    pub schema: String,
+    pub workspace: String,
+    pub cwd: String,
+    pub argv: Vec<String>,
+    pub env: std::collections::BTreeMap<String, String>,
+    pub timeout_ms: u64,
+    pub max_output_bytes: usize,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProcessHandleRequest {
+    pub schema: String,
+    pub workspace: String,
+    pub handle: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProcessCancelRequest {
+    pub schema: String,
+    pub workspace: String,
+    pub handle: String,
+    pub reason: String,
+    pub idempotency_key: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProcessWaitRequest {
+    pub schema: String,
+    pub workspace: String,
+    pub handle: String,
+    pub deadline_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuntimeProcessReceipt {
+    pub schema: String,
+    pub workspace: String,
+    pub handle: String,
+    pub state: RuntimeProcessState,
+    #[serde(default)]
+    pub receipt_id: String,
+    #[serde(default)]
+    pub idempotency_key: Option<String>,
+    #[serde(default)]
+    pub exit_code: Option<i32>,
+    #[serde(default)]
+    pub signal: Option<String>,
+    #[serde(default)]
+    pub stdout: String,
+    #[serde(default)]
+    pub stderr: String,
+    #[serde(default)]
+    pub truncated: bool,
+    #[serde(default)]
+    pub total_bytes: Option<usize>,
+}
+
+fn validate_process_request(
+    schema: &str,
+    workspace: &str,
+    handle: Option<&str>,
+) -> Result<(), HubError> {
+    if schema != LOOP_HUB_RUNTIME_PROCESS_SCHEMA {
+        return Err(HubError::InvalidRequest(
+            "unsupported Runtime process schema".into(),
+        ));
+    }
+    if workspace.trim().is_empty() {
+        return Err(HubError::InvalidRequest(
+            "Runtime process workspace must not be empty".into(),
+        ));
+    }
+    if handle.is_some_and(|value| value.trim().is_empty()) {
+        return Err(HubError::InvalidRequest(
+            "Runtime process handle must not be empty".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_process_receipt(
+    receipt: &RuntimeProcessReceipt,
+    workspace: &str,
+    handle: Option<&str>,
+) -> Result<(), HubError> {
+    validate_process_request(&receipt.schema, workspace, Some(&receipt.handle))?;
+    if receipt.workspace != workspace || handle.is_some_and(|expected| expected != receipt.handle) {
+        return Err(HubError::Protocol(
+            "Runtime returned a process receipt for a different resource".into(),
+        ));
+    }
+    if receipt.receipt_id.trim().is_empty() {
+        return Err(HubError::Protocol(
+            "Runtime process receipt has no receipt_id".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// The only effectful boundary in this module. Implementations belong to the
 /// Loop Hub adapter and must use the Hub's queue, claims, Runtime, Mapper and
 /// worker pools. This trait intentionally has no `spawn`, `exec`, or local
@@ -505,6 +640,42 @@ pub trait HubTransport: Send + Sync {
         let _ = request;
         Err(HubError::TransportUnavailable(
             "Loop Hub Runtime effect bridge is unavailable".into(),
+        ))
+    }
+    fn process_start(
+        &self,
+        request: &RuntimeProcessStartRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        let _ = request;
+        Err(HubError::TransportUnavailable(
+            "Loop Hub Runtime process start capability is unavailable".into(),
+        ))
+    }
+    fn process_status(
+        &self,
+        request: &RuntimeProcessHandleRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        let _ = request;
+        Err(HubError::TransportUnavailable(
+            "Loop Hub Runtime process status capability is unavailable".into(),
+        ))
+    }
+    fn process_cancel(
+        &self,
+        request: &RuntimeProcessCancelRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        let _ = request;
+        Err(HubError::TransportUnavailable(
+            "Loop Hub Runtime process cancel capability is unavailable".into(),
+        ))
+    }
+    fn process_wait(
+        &self,
+        request: &RuntimeProcessWaitRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        let _ = request;
+        Err(HubError::TransportUnavailable(
+            "Loop Hub Runtime process wait capability is unavailable".into(),
         ))
     }
 }
@@ -599,6 +770,106 @@ impl SharedHubServiceHandle {
             ));
         }
         self.session.transport.runtime_execute(request)
+    }
+
+    pub fn process_start(
+        &self,
+        request: &RuntimeProcessStartRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        if self.service != SharedService::Runtime {
+            return Err(HubError::InvalidRequest(
+                "only the shared Runtime handle may start processes".into(),
+            ));
+        }
+        validate_process_request(&request.schema, &request.workspace, None)?;
+        if request.argv.is_empty() || request.argv.iter().any(|arg| arg.trim().is_empty()) {
+            return Err(HubError::InvalidRequest(
+                "Runtime process argv must not be empty".into(),
+            ));
+        }
+        if request.idempotency_key.trim().is_empty() || request.timeout_ms == 0 {
+            return Err(HubError::InvalidRequest(
+                "Runtime process start requires idempotency_key and timeout_ms".into(),
+            ));
+        }
+        if !self.session.handshake.runtime_process.start {
+            return Err(HubError::TransportUnavailable(
+                "Runtime process.start/v1 capability is unavailable".into(),
+            ));
+        }
+        let receipt = self.session.transport.process_start(request)?;
+        validate_process_receipt(&receipt, &request.workspace, None)?;
+        Ok(receipt)
+    }
+
+    pub fn process_status(
+        &self,
+        request: &RuntimeProcessHandleRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        if self.service != SharedService::Runtime {
+            return Err(HubError::InvalidRequest(
+                "only the shared Runtime handle may query processes".into(),
+            ));
+        }
+        validate_process_request(&request.schema, &request.workspace, Some(&request.handle))?;
+        if !self.session.handshake.runtime_process.status {
+            return Err(HubError::TransportUnavailable(
+                "Runtime process.status/v1 capability is unavailable".into(),
+            ));
+        }
+        let receipt = self.session.transport.process_status(request)?;
+        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle))?;
+        Ok(receipt)
+    }
+
+    pub fn process_cancel(
+        &self,
+        request: &RuntimeProcessCancelRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        if self.service != SharedService::Runtime {
+            return Err(HubError::InvalidRequest(
+                "only the shared Runtime handle may cancel processes".into(),
+            ));
+        }
+        validate_process_request(&request.schema, &request.workspace, Some(&request.handle))?;
+        if request.reason.trim().is_empty() || request.idempotency_key.trim().is_empty() {
+            return Err(HubError::InvalidRequest(
+                "Runtime process cancel requires reason and idempotency_key".into(),
+            ));
+        }
+        if !self.session.handshake.runtime_process.cancel {
+            return Err(HubError::TransportUnavailable(
+                "Runtime process.cancel/v1 capability is unavailable".into(),
+            ));
+        }
+        let receipt = self.session.transport.process_cancel(request)?;
+        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle))?;
+        Ok(receipt)
+    }
+
+    pub fn process_wait(
+        &self,
+        request: &RuntimeProcessWaitRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        if self.service != SharedService::Runtime {
+            return Err(HubError::InvalidRequest(
+                "only the shared Runtime handle may wait for processes".into(),
+            ));
+        }
+        validate_process_request(&request.schema, &request.workspace, Some(&request.handle))?;
+        if request.deadline_ms == 0 {
+            return Err(HubError::InvalidRequest(
+                "Runtime process wait requires a deadline".into(),
+            ));
+        }
+        if !self.session.handshake.runtime_process.wait {
+            return Err(HubError::TransportUnavailable(
+                "Runtime process.wait/v1 capability is unavailable".into(),
+            ));
+        }
+        let receipt = self.session.transport.process_wait(request)?;
+        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle))?;
+        Ok(receipt)
     }
 }
 
@@ -931,6 +1202,7 @@ mod tests {
                 background_capacity: 1,
                 max_pending_interactive: 8,
             },
+            runtime_process: RuntimeProcessCapabilities::default(),
             local_scheduler: false,
         }
     }
@@ -1243,6 +1515,79 @@ mod tests {
             ..receipt
         };
         assert!(validate_lifecycle_receipt(&valid, "wf-1").is_ok());
+    }
+
+    #[test]
+    fn process_capabilities_fail_closed_when_hub_does_not_implement_them() {
+        HUB_SESSIONS.lock().unwrap().clear();
+        let hub = Arc::new(FakeHub::default());
+        let factory_hub = Arc::clone(&hub);
+        let factory = move |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone());
+        let client = LoopHubClient::connect(config("processes"), &factory)
+            .unwrap()
+            .unwrap();
+        let runtime = client.shared_runtime_handle();
+        let request = RuntimeProcessStartRequest {
+            schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+            workspace: "workspace".into(),
+            cwd: ".".into(),
+            argv: vec!["cargo".into(), "test".into()],
+            env: std::collections::BTreeMap::new(),
+            timeout_ms: 1_000,
+            max_output_bytes: 4_096,
+            idempotency_key: "start-1".into(),
+        };
+        let error = runtime.process_start(&request).unwrap_err();
+        assert!(
+            matches!(error, HubError::TransportUnavailable(message) if message.contains("process.start"))
+        );
+
+        let map = client.shared_map_handle();
+        let error = map
+            .process_status(&RuntimeProcessHandleRequest {
+                schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+                workspace: "workspace".into(),
+                handle: "handle-1".into(),
+            })
+            .unwrap_err();
+        assert!(
+            matches!(error, HubError::InvalidRequest(message) if message.contains("Runtime handle"))
+        );
+    }
+
+    #[test]
+    fn process_requests_reject_invalid_effect_inputs_before_transport() {
+        HUB_SESSIONS.lock().unwrap().clear();
+        let hub = Arc::new(FakeHub::default());
+        let factory_hub = Arc::clone(&hub);
+        let factory = move |_: &str| Ok::<Arc<dyn HubTransport>, HubError>(factory_hub.clone());
+        let client = LoopHubClient::connect(config("process-validation"), &factory)
+            .unwrap()
+            .unwrap();
+        let runtime = client.shared_runtime_handle();
+        let invalid = RuntimeProcessStartRequest {
+            schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+            workspace: "workspace".into(),
+            cwd: ".".into(),
+            argv: vec![],
+            env: std::collections::BTreeMap::new(),
+            timeout_ms: 1_000,
+            max_output_bytes: 4_096,
+            idempotency_key: "start-1".into(),
+        };
+        assert!(matches!(
+            runtime.process_start(&invalid),
+            Err(HubError::InvalidRequest(message)) if message.contains("argv")
+        ));
+        assert!(matches!(
+            runtime.process_wait(&RuntimeProcessWaitRequest {
+                schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+                workspace: "workspace".into(),
+                handle: "handle-1".into(),
+                deadline_ms: 0,
+            }),
+            Err(HubError::InvalidRequest(message)) if message.contains("deadline")
+        ));
     }
 
     #[test]

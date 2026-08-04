@@ -393,7 +393,7 @@ pub(super) fn set_yolo_mode(app: &mut AppView, new: bool) -> Vec<Effect> {
     // plan mode, say the plan edit gate stays binding — "all tool actions
     // auto-run" would overpromise while the shell rejects non-plan-file edits.
     if new && effective_plan {
-        app.show_toast(YOLO_ON_UNDER_PLAN_TOAST);
+        app.show_toast(&yolo_on_under_plan_toast());
     } else {
         app.show_toast(&yolo_toast(new));
     }
@@ -467,7 +467,7 @@ pub(super) fn set_permission_mode(
     // Toast on every save (plan-aware for AlwaysApprove, mirroring
     // `set_yolo_mode` — the plan edit gate stays binding under yolo).
     if kind.is_always_approve() && effective_plan {
-        app.show_toast(YOLO_ON_UNDER_PLAN_TOAST);
+        app.show_toast(&yolo_on_under_plan_toast());
     } else {
         app.show_toast(&permission_mode_toast(kind));
     }
@@ -486,23 +486,32 @@ pub(super) fn permission_mode_toast(kind: crate::app::actions::PermissionModeKin
     use crate::app::actions::PermissionModeKind;
     match kind {
         PermissionModeKind::AlwaysApprove => yolo_toast(true),
-        PermissionModeKind::Auto => "\u{2713} Permission mode: Auto (classifier)".to_string(),
-        PermissionModeKind::Ask => "\u{2713} Permission mode: Ask".to_string(),
-        PermissionModeKind::Default => "\u{2713} Permission mode: Default".to_string(),
+        PermissionModeKind::Auto => format!(
+            "{} Permission mode: Auto (classifier)",
+            crate::glyphs::check_mark()
+        ),
+        PermissionModeKind::Ask => format!("{} Permission mode: Ask", crate::glyphs::check_mark()),
+        PermissionModeKind::Default => {
+            format!("{} Permission mode: Default", crate::glyphs::check_mark())
+        }
     }
 }
 
-/// YOLO-ON toast when plan mode is active: always-approve arms the permission
-/// fast path, but the shell's plan-mode gate still rejects non-plan-file
-/// edits, so the standard "all tool actions auto-run" would overpromise.
-pub(super) const YOLO_ON_UNDER_PLAN_TOAST: &str =
-    "\u{26A0} Always-approve ON: plan mode still blocks file edits until you exit plan mode";
+fn yolo_on_under_plan_toast() -> String {
+    format!(
+        "{} Always-approve ON: plan mode still blocks file edits until you exit plan mode",
+        crate::glyphs::warning_mark()
+    )
+}
 
 /// Build the YOLO toast — ⚠ on ON (destructive), ✓ on OFF (safe default).
 fn yolo_toast(new: bool) -> String {
     if new {
         // Warning glyph + consequence — only post-commit feedback.
-        "\u{26A0} Always-approve ON: all tool actions auto-run".to_string()
+        format!(
+            "{} Always-approve ON: all tool actions auto-run",
+            crate::glyphs::warning_mark()
+        )
     } else {
         // OFF restores safe default — uniform ✓ glyph.
         save_success_toast("Always-approve", false)

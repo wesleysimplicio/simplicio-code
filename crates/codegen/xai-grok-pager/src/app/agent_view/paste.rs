@@ -360,7 +360,12 @@ impl AgentView {
                     }
                 }
                 crate::prompt_images::DroppedPath::NonImage(path) => {
-                    let to_insert = format!("{} ", path.display());
+                    let mut display = path.display().to_string();
+                    #[cfg(windows)]
+                    if display.starts_with('\\') {
+                        display = display.replace('\\', "/");
+                    }
+                    let to_insert = format!("{} ", display);
                     if !group_open {
                         self.prompt.textarea.begin_undo_group();
                         group_open = true;

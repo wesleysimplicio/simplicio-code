@@ -69,21 +69,12 @@ Machine: native Windows 11, `cargo 1.92.0`, `rustc 1.92.0`
    `xai-grok-pager-render`). This is a materially larger portion of the
    workspace building cleanly on Windows than was possible before PR #40.
 
-4. **One real, unrelated compile error surfaced**:
-   ```
-   error[E0063]: missing field `search_backend` in initializer of `AgentRebuildSpec`
-     --> crates\codegen\xai-grok-shell\src\session\acp_session_impl\spawn.rs:826:44
-   error: could not compile `xai-grok-shell` (lib) due to 1 previous error
-   ```
-   This is **not** a Windows or protoc issue — the struct field and the call
-   site are both plain, non-`cfg`-gated Rust, so this would fail identically
-   on Linux/macOS. It appears to have been introduced by the `main`-tip merge
-   commit `878031ea3` ("feat(#5): wire search through the Runtime MCP client
-   (grep_files consumer) (#41)"), which added a `search_backend` field to
-   `AgentRebuildSpec` but missed updating this one construction site. This is
-   currently breaking `cargo check --workspace` on `main` for every platform.
-   It is out of scope for this Windows-CI verification task and is tracked as
-   a separate follow-up rather than fixed here.
+4. **The historical `AgentRebuildSpec.search_backend` compile error is fixed**:
+   the ACP spawn initializer now supplies the Runtime-backed search adapter,
+   and the current checkout's workspace build/check reached completion without
+   that E0063 diagnostic. This was not a Windows or protoc issue; it was a
+   cross-platform struct-initializer regression caused by the Runtime search
+   wiring.
 
 ## CI status (important caveat)
 
@@ -99,11 +90,10 @@ The job was not started because your account is locked due to a billing issue.
 verification in this doc is local-only. The `.github/workflows/ci.yml`
 Windows job comments have been updated to reflect the PR #40 fix (protoc
 `/dev/stdout`/`/dev/null` bug fixed) while being explicit that the job is
-still deliberately scoped narrower than the full workspace, both because of
-the residual DotSlash-shim gap (needs `$PROTOC`/`$PATH` protoc, which the
-Windows job doesn't install yet) and because of the unrelated E0063 bug above
-that would make a full `--workspace` check red for reasons that have nothing
-to do with Windows.
+still deliberately scoped narrower than the full workspace because of the
+residual DotSlash-shim gap (needs `$PROTOC`/`$PATH` protoc, which the Windows
+job doesn't install yet). The historical E0063 regression above is no longer
+a current workspace compile blocker.
 
 ## Bottom line for issue #8
 
@@ -112,8 +102,6 @@ The specific Windows blocker issue #8's acceptance criteria called out
 locally verified: `xai-grok-tools-api` and the great majority of the
 workspace now build cleanly on native Windows once a `protoc.exe` is
 reachable via `$PROTOC` or `$PATH`. Full "CI green on Windows" is still
-blocked by two independent, smaller items: (a) the DotSlash-shim gap for
-resolving `bin/protoc` without a manual `$PROTOC` override (tracked in #35),
-and (b) the unrelated `AgentRebuildSpec.search_backend` compile error on
-`main` flagged above. Neither of those is a re-emergence of the original
-/dev/stdout bug.
+blocked by the remaining DotSlash-shim gap for resolving `bin/protoc` without
+a manual `$PROTOC` override (tracked in #35). This is not a re-emergence of
+the original `/dev/stdout` bug.

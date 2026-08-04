@@ -194,16 +194,15 @@ fn recover_truncated_tail_unit(
 }
 /// Truncate one item's content text to at most `max_tokens`, appending a `[... truncated N bytes ...]` marker (structural fields kept).
 fn truncate_item_to_tokens(item: ConversationItem, max_tokens: u64) -> ConversationItem {
-    let max_bytes = (max_tokens as usize).saturating_mul(4);
     match item {
         ConversationItem::ToolResult(mut t) => {
-            if let Some(s) = truncate_text_to_bytes(&t.content, max_bytes) {
+            if let Some(s) = truncate_text_to_tokens(&t.content, max_tokens) {
                 t.content = s;
             }
             ConversationItem::ToolResult(t)
         }
         ConversationItem::Assistant(mut a) => {
-            if let Some(s) = truncate_text_to_bytes(&a.content, max_bytes) {
+            if let Some(s) = truncate_text_to_tokens(&a.content, max_tokens) {
                 a.content = s;
             }
             ConversationItem::Assistant(a)
@@ -211,7 +210,7 @@ fn truncate_item_to_tokens(item: ConversationItem, max_tokens: u64) -> Conversat
         ConversationItem::User(mut u) => {
             for part in &mut u.content {
                 if let ContentPart::Text { text } = part
-                    && let Some(s) = truncate_text_to_bytes(text, max_bytes)
+                    && let Some(s) = truncate_text_to_tokens(text, max_tokens)
                 {
                     *text = s;
                 }
@@ -221,22 +220,47 @@ fn truncate_item_to_tokens(item: ConversationItem, max_tokens: u64) -> Conversat
         other => other,
     }
 }
-/// Char-boundary-safe prefix of `s` (incl. truncation marker) within `max_bytes`; `None` if `s` already fits.
-fn truncate_text_to_bytes(s: &str, max_bytes: usize) -> Option<std::sync::Arc<str>> {
-    if s.len() <= max_bytes {
+/// Char-boundary-safe prefix of `s` (including the truncation marker) within
+/// the canonical token budget; `None` if `s` already fits.
+fn truncate_text_to_tokens(s: &str, max_tokens: u64) -> Option<std::sync::Arc<str>> {
+    if xai_token_estimation::estimate_tokens(s) <= max_tokens {
         return None;
     }
     const MARKER_RESERVE: usize = 64;
-    let keep = max_bytes.saturating_sub(MARKER_RESERVE);
-    let mut end = keep.min(s.len());
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
+    let byte_budget = (max_tokens as usize).saturating_mul(4);
+    let initial = byte_budget.saturating_sub(MARKER_RESERVE).min(s.len());
+    let mut high = initial;
+    while high > 0 && !s.is_char_boundary(high) {
+        high -= 1;
     }
-    let dropped = s.len() - end;
-    Some(std::sync::Arc::<str>::from(format!(
-        "{}\n[... truncated {dropped} bytes to fit the compaction window ...]",
-        &s[..end]
-    )))
+    let mut low = 0usize;
+    let mut best = String::new();
+    while low <= high {
+        let mid = low + (high - low) / 2;
+        let Some(candidate_end) = s.get(..mid).map(str::len) else {
+            high = mid.saturating_sub(1);
+            continue;
+        };
+        let dropped = s.len() - candidate_end;
+        let candidate = format!(
+            "{}\n[... truncated {dropped} bytes to fit the compaction window ...]",
+            &s[..candidate_end]
+        );
+        if xai_token_estimation::estimate_tokens(&candidate) <= max_tokens {
+            best = candidate;
+            low = mid + 1;
+        } else {
+            high = mid.saturating_sub(1);
+        }
+    }
+    if best.is_empty() {
+        let candidate = format!(
+            "[... truncated {} bytes to fit the compaction window ...]",
+            s.len()
+        );
+        best = candidate;
+    }
+    Some(std::sync::Arc::<str>::from(best))
 }
 /// Tags injected by the runtime that should be stripped from user queries.
 const SYSTEM_TAGS: &[&str] = &[
@@ -3554,7 +3578,7 @@ The user asked to read main.rs and lib.rs. main.rs prints hello world, lib.rs ha
         let est: u64 = out.iter().map(estimate_item_tokens).sum();
         assert!(
             est <= 100 + 64,
-            "truncated unit should fit budget (+ marker slack)"
+            "truncated unit should fit budget (+ marker slack), got {est}"
         );
     }
     /// A single oversized trailing text turn is also truncated in place, not dropped.

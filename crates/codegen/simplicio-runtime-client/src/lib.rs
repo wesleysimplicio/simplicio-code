@@ -19,7 +19,6 @@ pub mod loop_hub_transport;
 pub mod map_cache;
 pub mod session_registry;
 
-
 pub use agent_fabric_cockpit::{
     AgentAddressView, COCKPIT_SCHEMA_V1, CockpitBadge, CockpitSnapshot, CostView, Freshness,
     QuorumView, ReceiptLink, WorkGapPhase, WorkGapView, project_from_ledger,

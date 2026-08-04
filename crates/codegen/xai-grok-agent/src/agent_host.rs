@@ -7,7 +7,8 @@
 
 use simplicio_agent_client::{
     AdvisoryPage, AgentHostCoordinator, AgentTurnCancelOutcome, AgentTurnResult, CausalIdentity,
-    CoordinatorSnapshot, CoordinatorState, Error,
+    CoordinatorSnapshot, CoordinatorState, Error, WorkspaceObservationPage,
+    WorkspaceObserveRequest,
 };
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -111,6 +112,13 @@ impl SimplicioAgentCoordinator {
 
     pub fn replay(&mut self, after: Option<u64>) -> Result<AdvisoryPage, Error> {
         self.connected()?.replay(after)
+    }
+
+    pub fn observe_workspace(
+        &mut self,
+        request: &WorkspaceObserveRequest,
+    ) -> Result<WorkspaceObservationPage, Error> {
+        self.connected()?.observe_workspace(request)
     }
 
     pub fn snapshot(&self) -> CoordinatorSnapshot {

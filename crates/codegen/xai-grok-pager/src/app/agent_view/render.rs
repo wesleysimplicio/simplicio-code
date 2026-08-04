@@ -491,7 +491,7 @@ impl AgentView {
             &Span::styled(format!(" {icon}"), Style::default().fg(icon_color)),
             3,
         );
-        let close_text = "[\u{2717}]";
+        let close_text = crate::glyphs::ballot_x_button();
         let close_width: u16 = close_text.width() as u16;
         let elapsed_text = elapsed.clone();
         let right_margin: u16 = 1;

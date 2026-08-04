@@ -6,12 +6,9 @@ name: release
 # GitHub prerelease.
 #
 # Scope notes (see the PR description for the full list):
-#   - Windows build is best-effort and allowed to fail (continue-on-error):
-#     bin/protoc (DotSlash) has no windows-x86_64 platform entry, and
-#     crates/build/xai-proto-build/src/lib.rs hardcodes /dev/stdout and
-#     /dev/null as protoc arguments, which native Windows protoc.exe cannot
-#     open. Both are pre-existing, this workflow does not attempt to fix
-#     them.
+#   - Windows is a required release target. The checked-in DotSlash manifest
+#     includes windows-x86_64 and the proto builder uses platform-native
+#     temporary output paths; a runner failure must fail the release.
 #   - Signing uses a keypair generated fresh in this workflow run — a
 #     placeholder for real key management (see scripts/release/sign_manifest.sh
 #     header and RELEASE_NOTES_0.3.0-beta.3.md). It demonstrates the
@@ -70,7 +67,7 @@ jobs:
             best_effort: false
           - os: windows-latest
             platform: windows-x86_64
-            best_effort: true
+            best_effort: false
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.best_effort }}
     steps:
@@ -203,6 +200,16 @@ jobs:
         with:
           name: release-assets
           path: dist
+
+      - name: Resolve release version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.version }}" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Create GitHub prerelease
         uses: softprops/action-gh-release@v2

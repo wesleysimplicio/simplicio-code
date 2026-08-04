@@ -13292,6 +13292,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "windows 0.61.3",
  "xai-gix-status",
  "xai-sqlite-journal",
  "xai-test-utils",

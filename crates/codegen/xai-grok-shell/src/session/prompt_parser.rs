@@ -3,7 +3,7 @@ use agent_client_protocol::{self as acp, ImageContent};
 use serde::Deserialize;
 use std::path::PathBuf;
 use xai_grok_workspace::file_system::{
-    FileReference, render_embedded_resource, render_file_reference,
+    AsyncFsWrapper, FileReference, render_embedded_resource, render_file_reference,
 };
 /// Parsed prompt with context and query kept separate.
 ///
@@ -109,6 +109,30 @@ pub async fn parse_prompt_with_skills(
     is_cursor: bool,
     skill_information: String,
 ) -> Result<ParsedPrompt, acp::Error> {
+    parse_prompt_with_skills_using_fs(
+        prompt,
+        working_directory,
+        _session_info,
+        verbatim,
+        is_cursor,
+        skill_information,
+        None,
+    )
+    .await
+}
+
+/// Parse prompt content while routing `@file` reads through the session's
+/// Runtime-backed filesystem. Without a filesystem, file references fail
+/// closed instead of falling back to direct workspace access.
+pub async fn parse_prompt_with_skills_using_fs(
+    prompt: &[acp::ContentBlock],
+    working_directory: PathBuf,
+    _session_info: &crate::session::info::Info,
+    verbatim: bool,
+    is_cursor: bool,
+    skill_information: String,
+    fs: Option<&AsyncFsWrapper>,
+) -> Result<ParsedPrompt, acp::Error> {
     let mut message_parts: Vec<String> = Vec::new();
     let mut image_parts = Vec::new();
     let mut resource_links = Vec::new();
@@ -139,7 +163,7 @@ pub async fn parse_prompt_with_skills(
             continue;
         };
         file_ref.path = working_directory.join(&file_ref.path);
-        let rendered_file = render_file_reference(file_ref, is_cursor).await;
+        let rendered_file = render_file_reference(file_ref, is_cursor, fs).await;
         let success = rendered_file.is_some();
         tracing::info_span!("at_mention", mention_type = "file", success).in_scope(|| {});
         if let Some(rendered_file) = rendered_file {

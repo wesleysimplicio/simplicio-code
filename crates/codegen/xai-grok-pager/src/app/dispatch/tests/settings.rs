@@ -1361,7 +1361,7 @@ fn set_compact_mode_toast_format() {
     let toast = read_toast(&app);
     assert!(toast.contains("Compact mode"));
     assert!(toast.contains("on"));
-    assert!(toast.contains('\u{2713}'));
+    assert!(toast.contains(crate::glyphs::check_mark()));
     let _ = dispatch(Action::SetCompactMode(false), &mut app);
     let toast = read_toast(&app);
     assert!(toast.contains("Compact mode"));
@@ -1582,14 +1582,20 @@ fn set_multiline_mode_toast_format() {
         .as_ref()
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
-    assert_eq!(toast, "\u{2713} Multiline: on");
+    assert_eq!(
+        toast,
+        format!("{} Multiline: on", crate::glyphs::check_mark())
+    );
     let _ = dispatch(Action::SetMultilineMode(false), &mut app);
     let toast = app.agents[&AgentId(0)]
         .toast
         .as_ref()
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
-    assert_eq!(toast, "\u{2713} Multiline: off");
+    assert_eq!(
+        toast,
+        format!("{} Multiline: off", crate::glyphs::check_mark())
+    );
 }
 /// No active agent → no-op (no panic, no effect, no mutation).
 /// Differs from `set_simple_mode_no_op_when_no_active_agent`: SHARED
@@ -2631,7 +2637,11 @@ fn rollback_permission_mode_reverts_state_no_effect() {
         .map(|(s, _)| s.clone())
         .expect("failure toast must be set");
     assert_eq!(
-        toast, "\u{2717} Could not save permission_mode: permission denied",
+        toast,
+        format!(
+            "{} Could not save permission_mode: permission denied",
+            crate::glyphs::ballot_x()
+        ),
         "rollback toast must follow the exact `✗ Could not save {{key}}: {{error}}` format \
              — drift here would diverge from other rollback toasts",
     );
@@ -3046,7 +3056,10 @@ fn set_theme_toast_format_uses_display_name() {
             toast.contains("Grok Day"),
             "toast must use display name `Grok Day`, not canonical `grokday`, got: {toast:?}",
         );
-        assert!(toast.contains('\u{2713}'), "toast must contain the ✓ glyph");
+        assert!(
+            toast.contains(crate::glyphs::check_mark()),
+            "toast must contain the check glyph"
+        );
     });
 }
 #[test]
@@ -3057,7 +3070,7 @@ fn set_auto_dark_theme_toast_format_uses_display_name() {
         let toast = read_toast(&app);
         assert!(toast.contains("Auto dark theme"));
         assert!(toast.contains("Grok Day"));
-        assert!(toast.contains('\u{2713}'));
+        assert!(toast.contains(crate::glyphs::check_mark()));
     });
 }
 #[test]

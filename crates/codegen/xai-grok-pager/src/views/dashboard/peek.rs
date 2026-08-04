@@ -653,7 +653,7 @@ pub fn render_peek_panel(
         // ("No") option accepts inline free-text feedback that the user
         // types after selecting it (mirrors the chat permission panel).
         let mut y = inner.y;
-        let q_line = format!("\u{25B8} {q}");
+        let q_line = format!("{} {q}", crate::glyphs::disclosure_closed());
         let trunc = truncate_str(&q_line, inner.width as usize);
         buf.set_string(
             inner.x,
@@ -677,7 +677,11 @@ pub fn render_peek_panel(
             // so the panel reads as a navigation surface, not an answer one).
             let selected = panel.focused && panel.selected_option == Some(i);
             let is_reject = panel.reject_option == Some(i);
-            let marker = if selected { "\u{25B8} " } else { "  " };
+            let marker = if selected {
+                format!("{} ", crate::glyphs::disclosure_closed())
+            } else {
+                "  ".to_string()
+            };
             let style = if selected {
                 Style::default()
                     .fg(theme.accent_user)
@@ -2160,8 +2164,11 @@ mod tests {
             }
             content.push('\n');
         }
-        // Selected option carries the ▸ marker; the other is plain.
-        assert!(content.contains("\u{25b8} 2. Deny"), "got: {content:?}");
+        // Selected option carries the platform-safe disclosure marker.
+        assert!(
+            content.contains(&format!("{} 2. Deny", crate::glyphs::disclosure_closed())),
+            "got: {content:?}"
+        );
         assert!(content.contains("  1. Allow"), "got: {content:?}");
     }
 

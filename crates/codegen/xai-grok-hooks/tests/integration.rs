@@ -20,6 +20,64 @@ fn write_hook(dir: &Path, filename: &str, content: &str) {
     std::fs::write(dir.join(filename), content).unwrap();
 }
 
+fn env_ref(name: &str) -> String {
+    if cfg!(windows) {
+        format!("${{env:{name}}}")
+    } else {
+        format!("${name}")
+    }
+}
+
+fn capture_stdin_command(path: &Path) -> String {
+    if cfg!(windows) {
+        format!(
+            "Set-Content -LiteralPath \"{}\" -Value ([Console]::In.ReadToEnd()) -NoNewline",
+            path.display()
+        )
+    } else {
+        format!("cat > {}", path.display())
+    }
+}
+
+fn env_capture_command(path: &Path, extra_key: bool) -> String {
+    let file = path.display();
+    let event = env_ref("GROK_HOOK_EVENT");
+    let name = env_ref("GROK_HOOK_NAME");
+    let session = env_ref("GROK_SESSION_ID");
+    let root = env_ref("GROK_WORKSPACE_ROOT");
+    let project = env_ref("CLAUDE_PROJECT_DIR");
+    if cfg!(windows) {
+        let extra = if extra_key {
+            format!(
+                "; \"USER_KEY={}\" | Add-Content -LiteralPath \"{file}\"",
+                env_ref("USER_KEY")
+            )
+        } else {
+            String::new()
+        };
+        format!(
+            "\"EVENT={event}\" | Set-Content -LiteralPath \"{file}\"; \"NAME={name}\" | Add-Content -LiteralPath \"{file}\"; \"SESSION={session}\" | Add-Content -LiteralPath \"{file}\"; \"ROOT={root}\" | Add-Content -LiteralPath \"{file}\"; \"PROJ={project}\" | Add-Content -LiteralPath \"{file}\"{extra}; echo '{{\"decision\":\"allow\"}}'"
+        )
+    } else if extra_key {
+        format!(
+            r#"echo "EVENT={event}" > {file}; echo "NAME={name}" >> {file}; echo "SESSION={session}" >> {file}; echo "ROOT={root}" >> {file}; echo "PROJ={project}" >> {file}; echo "USER_KEY={}" >> {file}; echo '{{"decision":"allow"}}'"#,
+            env_ref("USER_KEY")
+        )
+    } else {
+        format!(
+            r#"echo "EVENT={event}" > {file}; echo "NAME={name}" >> {file}; echo "SESSION={session}" >> {file}; echo '{{"decision":"allow"}}'"#
+        )
+    }
+}
+
+fn stdin_field_check_command() -> String {
+    if cfg!(windows) {
+        r#"$body = [Console]::In.ReadToEnd(); if (($body -match '"hookEventName"') -and ($body -match '"toolName"') -and ($body -match '"sessionId"')) { echo '{"decision":"allow"}' } else { echo '{"decision":"deny","reason":"missing fields"}' }"#.to_string()
+    } else {
+        r#"INPUT=$(cat); echo "$INPUT" | grep -q '"hookEventName"' && echo "$INPUT" | grep -q '"toolName"' && echo "$INPUT" | grep -q '"sessionId"' && echo '{"decision":"allow"}' || echo '{"decision":"deny","reason":"missing fields"}'"#.to_string()
+    }
+}
+
 /// Helper: create a pre_tool_use envelope.
 fn pre_tool_use_envelope(tool_name: &str) -> HookEventEnvelope {
     HookEventEnvelope {
@@ -330,7 +388,12 @@ async fn hook_receives_stdin_envelope() {
     write_hook(
         dir.path(),
         "check.json",
-        r#"{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"INPUT=$(cat); echo \"$INPUT\" | grep -q '\"hookEventName\"' && echo \"$INPUT\" | grep -q '\"toolName\"' && echo \"$INPUT\" | grep -q '\"sessionId\"' && echo '{\"decision\":\"allow\"}' || echo '{\"decision\":\"deny\",\"reason\":\"missing fields\"}'"}]}]}}"#,
+        &serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{"hooks": [{"type": "command", "command": stdin_field_check_command()}]}]
+            }
+        })
+        .to_string(),
     );
 
     let (registry, errors) = load_hooks(Some(dir.path()), None);
@@ -353,10 +416,7 @@ async fn hook_receives_env_vars() {
 
     // Inline command: check env vars and write results to a file.
     let output_file = dir.path().join("env_output.txt");
-    let cmd = format!(
-        r#"echo "EVENT=$GROK_HOOK_EVENT" > {f}; echo "NAME=$GROK_HOOK_NAME" >> {f}; echo "SESSION=$GROK_SESSION_ID" >> {f}; echo '{{"decision":"allow"}}'"#,
-        f = output_file.display(),
-    );
+    let cmd = env_capture_command(&output_file, false);
     let hook_json = serde_json::json!({
         "hooks": {
             "PreToolUse": [
@@ -507,7 +567,7 @@ async fn new_event_types_fire_and_receive_correct_envelope() {
         let dir = tempfile::tempdir().unwrap();
         let output_file = dir.path().join("output.json");
 
-        let cmd = format!("cat > {}", output_file.display());
+        let cmd = capture_stdin_command(&output_file);
         let hook_json = serde_json::json!({
             "hooks": {
                 (case.json_key): [
@@ -580,10 +640,7 @@ async fn runner_injected_vars_override_extra_env_at_spawn() {
     let output_file = dir.path().join("envcap.txt");
 
     // The hook writes the values it sees for each reserved key.
-    let cmd = format!(
-        r#"echo "EVENT=$GROK_HOOK_EVENT" > {f}; echo "NAME=$GROK_HOOK_NAME" >> {f}; echo "SESSION=$GROK_SESSION_ID" >> {f}; echo "ROOT=$GROK_WORKSPACE_ROOT" >> {f}; echo "PROJ=$CLAUDE_PROJECT_DIR" >> {f}; echo "USER_KEY=$USER_KEY" >> {f}; echo '{{"decision":"allow"}}'"#,
-        f = output_file.display(),
-    );
+    let cmd = env_capture_command(&output_file, true);
 
     let hook_json = serde_json::json!({
         "hooks": {

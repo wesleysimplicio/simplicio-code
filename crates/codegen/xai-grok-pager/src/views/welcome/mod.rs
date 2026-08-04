@@ -3102,8 +3102,13 @@ mod tests {
         // Logo and menu slots are zero in hero box mode (content is inside the box).
         assert_eq!(layout.logo.width, 0);
         assert_eq!(layout.menu.width, 0);
-        // Sub-rects inside the hero box are valid.
-        assert!(layout.hero_logo.height > 0);
+        // The Braille logo is intentionally hidden on legacy Windows
+        // consoles, so its sub-rect collapses there.
+        if crate::glyphs::is_legacy_windows_console() {
+            assert_eq!(layout.hero_logo.height, 0);
+        } else {
+            assert!(layout.hero_logo.height > 0);
+        }
         assert!(layout.hero_menu.height > 0);
         assert_eq!(layout.hero_version.height, 1);
     }
@@ -3196,7 +3201,11 @@ mod tests {
             menu_height: 3,
             ..Default::default()
         });
-        assert!(!with_warning.has_hero_box());
+        if crate::glyphs::is_legacy_windows_console() {
+            assert!(with_warning.has_hero_box());
+        } else {
+            assert!(!with_warning.has_hero_box());
+        }
         // The same terminal fits the box once the warning is gone.
         let no_warning = WelcomeLayout::compute(WelcomeLayoutInput {
             content_area: area,
@@ -3228,10 +3237,14 @@ mod tests {
             ..Default::default()
         });
         assert!(!blocked.has_hero_box());
-        assert!(
-            blocked.logo.height > 0,
-            "logo must be painted on the login screen"
-        );
+        if crate::glyphs::is_legacy_windows_console() {
+            assert_eq!(blocked.logo.height, 0);
+        } else {
+            assert!(
+                blocked.logo.height > 0,
+                "logo must be painted on the login screen"
+            );
+        }
         assert!(
             blocked.menu.height > 0,
             "menu must be painted on the login screen"
@@ -3281,7 +3294,8 @@ mod tests {
             ..Default::default()
         });
         assert!(layout.has_hero_box());
-        assert_eq!(layout.hero_box.height, 11);
+        let expected_inner = logo::full_logo_line_count().max(6);
+        assert_eq!(layout.hero_box.height, 2 + 2 + expected_inner);
     }
 
     #[test]

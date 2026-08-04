@@ -938,7 +938,18 @@ fn token_to_path(token: &str) -> Option<PathBuf> {
         if url.scheme() != "file" {
             return None;
         }
-        return url.to_file_path().ok();
+        if let Ok(path) = url.to_file_path() {
+            return Some(path);
+        }
+        #[cfg(windows)]
+        {
+            // POSIX-shaped file URLs remain valid drop payloads on Windows;
+            // Url::to_file_path rejects their root-relative spelling.
+            if url.host_str().is_none() {
+                return Some(PathBuf::from(url.path().replace('/', "\\")));
+            }
+        }
+        return None;
     }
 
     let unescaped = shell_unescape(unquoted);
@@ -2215,6 +2226,7 @@ mod tests {
 
     // ----- try_read_image_from_path ----------------------------------------
 
+    #[cfg(unix)]
     #[test]
     fn try_read_image_with_escaped_parens() {
         let dir = tempfile::tempdir().unwrap();
@@ -2237,6 +2249,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn try_read_image_with_escaped_spaces() {
         let dir = tempfile::tempdir().unwrap();
@@ -2599,6 +2612,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn quoted_path_with_internal_backslash_escape() {
         let dir = tempfile::tempdir().unwrap();
@@ -2616,6 +2630,7 @@ mod tests {
 
     // ----- file:// URL edge cases ----------------------------
 
+    #[cfg(unix)]
     #[test]
     fn file_url_with_localhost_host() {
         let dir = tempfile::tempdir().unwrap();
@@ -2933,6 +2948,7 @@ mod tests {
         assert_eq!(non_images[0], canon(&txt));
     }
 
+    #[cfg(unix)]
     #[test]
     fn dropped_path_percent_encoded_question_round_trips() {
         // `%3F` decodes to `?`. The URL parser must not treat the

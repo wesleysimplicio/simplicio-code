@@ -186,6 +186,7 @@ mod tests {
             events_api_key: None,
             mixpanel_token: None,
             mixpanel_enabled: false,
+            mixpanel_base_url: None,
             trace_upload: None,
             otel_enabled: None,
             otel_metrics_exporter: None,

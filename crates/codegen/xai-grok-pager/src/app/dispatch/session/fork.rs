@@ -540,7 +540,8 @@ pub(in crate::app::dispatch) fn handle_worktree_forked(
             }
             (false, Some(s)) => {
                 agent.scrollback.push_block(RenderBlock::system(format!(
-                    "\u{26A0} Code restore failed: {s}"
+                    "{} Code restore failed: {s}",
+                    crate::glyphs::warning_mark()
                 )));
             }
             _ => {}

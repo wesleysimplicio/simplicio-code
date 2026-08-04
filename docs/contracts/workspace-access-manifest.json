@@ -6,6 +6,30 @@
   ],
   "rules": [
     {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "process",
+      "contains": "std::process::id",
+      "classification": "bootstrap-allowlisted",
+      "owner": "session-scratch",
+      "rationale": "PID namespaces session scratch storage and does not access the workspace."
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "filesystem",
+      "contains": "tokio::fs::create_dir_all",
+      "classification": "bootstrap-allowlisted",
+      "owner": "session-scratch",
+      "rationale": "Creates bounded session scratch storage, not a workspace path."
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "filesystem",
+      "contains": "tokio::fs::write",
+      "classification": "bootstrap-allowlisted",
+      "owner": "session-scratch",
+      "rationale": "Writes bounded session scratch storage after Runtime-backed input."
+    },
+    {
       "path": "crates/codegen/simplicio-runtime-client/src/**",
       "kind": "process",
       "classification": "runtime-governed",
@@ -43,6 +67,18 @@
   ],
   "baseline": [
     {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "filesystem",
+      "classification": "bootstrap-allowlisted",
+      "max_count": 2
+    },
+    {
+      "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
+      "kind": "process",
+      "classification": "bootstrap-allowlisted",
+      "max_count": 1
+    },
+    {
       "path": "crates/codegen/simplicio-runtime-client/src/lib.rs",
       "kind": "filesystem",
       "classification": "test-fixture",
@@ -68,6 +104,18 @@
     },
     {
       "path": "crates/codegen/simplicio-runtime-client/tests/fake_server_search.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/simplicio-runtime-client/src/agent_workers.rs",
+      "kind": "filesystem",
+      "classification": "test-fixture",
+      "max_count": 1
+    },
+    {
+      "path": "crates/codegen/simplicio-runtime-client/tests/external_loop_hub.rs",
       "kind": "filesystem",
       "classification": "test-fixture",
       "max_count": 1
