@@ -5,7 +5,7 @@ Scans a directory of built artifacts named
 `simplicio-code-<version>-<platform>[.exe]`, computes each file's SHA-256,
 and writes a `ReleaseManifest` JSON document matching the schema consumed
 by `crates/codegen/xai-grok-update/src/manifest_verify.rs`
-(`ReleaseManifest { version, channel, artifacts: [{ platform, filename,
+(`ReleaseManifest { version, source_commit, channel, artifacts: [{ platform, filename,
 sha256 }] }`).
 
 This manifest is the thing that later gets Ed25519-signed (see
@@ -15,7 +15,7 @@ signed manifest).
 
 Usage:
     python3 scripts/release/generate_manifest.py \
-        --version 0.3.0-beta.3 --channel beta \
+        --version 0.3.0-beta.3 --channel beta --commit-sha <40-char-git-sha> \
         --artifacts-dir dist/ --out dist/manifest.json
 """
 
@@ -29,6 +29,7 @@ import sys
 from pathlib import Path
 
 ARTIFACT_RE = re.compile(r"^simplicio-code-(?P<version>.+)-(?P<platform>[a-z0-9_]+-[a-z0-9_]+)(\.exe)?$")
+COMMIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
 
 
 def sha256_of(path: Path) -> str:
@@ -43,9 +44,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--version", required=True)
     parser.add_argument("--channel", required=True, choices=["beta", "stable"])
+    parser.add_argument("--commit-sha", required=True)
     parser.add_argument("--artifacts-dir", required=True)
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
+    if COMMIT_SHA_RE.fullmatch(args.commit_sha) is None:
+        parser.error("--commit-sha must be exactly 40 lowercase hexadecimal characters")
 
     artifacts_dir = Path(args.artifacts_dir)
     entries = []
@@ -71,6 +75,7 @@ def main() -> None:
 
     manifest = {
         "version": args.version,
+        "source_commit": args.commit_sha,
         "channel": args.channel,
         "artifacts": entries,
     }

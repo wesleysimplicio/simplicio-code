@@ -167,6 +167,7 @@ jobs:
           python3 scripts/release/generate_manifest.py \
             --version "${{ steps.ver.outputs.version }}" \
             --channel "${{ steps.ver.outputs.channel }}" \
+            --commit-sha "${{ github.sha }}" \
             --artifacts-dir dist \
             --out dist/manifest.json
 

@@ -45,6 +45,8 @@ use std::collections::HashSet;
 pub struct ReleaseManifest {
     /// e.g. "0.3.0-beta.1"
     pub version: String,
+    /// Lowercase Git commit SHA from which this release was built.
+    pub source_commit: String,
     /// e.g. "beta" or "stable". A beta manifest must never be accepted by a
     /// client that only trusts "stable" — enforced by callers, not this
     /// module, since only the caller knows which channel it asked for.
@@ -107,6 +109,15 @@ pub fn verify_manifest_signature(
 pub fn validate_release_manifest(manifest: &ReleaseManifest) -> Result<()> {
     if semver::Version::parse(&manifest.version).is_err() {
         bail!("release manifest has an invalid semver version");
+    }
+    if manifest.source_commit.len() != 40
+        || manifest.source_commit != manifest.source_commit.to_ascii_lowercase()
+        || !manifest
+            .source_commit
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit())
+    {
+        bail!("release manifest has an invalid source commit SHA");
     }
     if !matches!(manifest.channel.as_str(), "beta" | "stable") {
         bail!(
@@ -235,6 +246,7 @@ mod tests {
     fn sample_manifest() -> ReleaseManifest {
         ReleaseManifest {
             version: "0.3.0-beta.1".to_string(),
+            source_commit: "0123456789abcdef0123456789abcdef01234567".to_string(),
             channel: "beta".to_string(),
             artifacts: vec![ArtifactEntry {
                 platform: "linux-x86_64".to_string(),
@@ -353,6 +365,17 @@ mod tests {
         let truncated = &data[..data.len() - 5];
         let result = verify_artifact_checksum(truncated, &digest);
         assert!(result.is_err(), "truncated artifact must fail its checksum");
+    }
+
+    #[test]
+    fn signed_manifest_rejects_invalid_source_commit() {
+        let (keypair, public_key) = generate_test_keypair();
+        let mut manifest = sample_manifest();
+        manifest.source_commit = "not-a-commit".to_string();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let signature = sign(&keypair, &bytes);
+
+        assert!(verify_manifest_signature(&bytes, &b64(&signature), &b64(&public_key)).is_err());
     }
 
     #[test]
