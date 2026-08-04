@@ -16,7 +16,7 @@ import subprocess
 import sys
 
 HOST_ID = "code-e2e-agent-host-00000001"
-TOOLS = ["simplicio_edit", "simplicio_exec", "simplicio_file_read", "simplicio_fs_delete", "simplicio_fs_list", "simplicio_fs_stat", "simplicio_fs_write", "simplicio_search", "simplicio_prototype_artifact_read", "simplicio_prototype_artifact_write"]
+TOOLS = ["simplicio_edit", "simplicio_exec", "simplicio_file_read", "simplicio_map", "simplicio_test_run", "simplicio_fs_delete", "simplicio_fs_list", "simplicio_fs_stat", "simplicio_fs_write", "simplicio_search", "simplicio_prototype_artifact_read", "simplicio_prototype_artifact_write"]
 
 
 def _host_envelope(**extra: object) -> dict[str, object]:
@@ -109,6 +109,32 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(item.get("content", ""), encoding="utf-8")
         payload = {"schema": "simplicio.edit-result/v1", "accepted": True, "plan": plan, "rolled_back": False}
+    elif name == "simplicio_map":
+        payload = {"schema": "simplicio.map-result/v1", "repo": str(repo)}
+    elif name == "simplicio_file_read":
+        target = _safe_path(repo, str(arguments.get("path", "")))
+        payload = {
+            "schema": "simplicio.read-result/v1",
+            "path": str(target.relative_to(repo)).replace("\\", "/"),
+            "content": target.read_text(encoding="utf-8"),
+        }
+    elif name == "simplicio_test_run":
+        cmd = str(arguments.get("cmd", sys.executable))
+        extra_args = [str(item) for item in arguments.get("args", [])]
+        completed = subprocess.run(
+            [cmd, *extra_args],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        payload = {
+            "schema": "simplicio.test-run/v1",
+            "cmd": cmd,
+            "args": extra_args,
+            "exit_code": completed.returncode,
+            "output_tail": completed.stdout + completed.stderr,
+        }
     elif name == "simplicio_fs_list":
         target = _safe_path(repo, str(arguments.get("path", ".")))
         payload = {"schema": "simplicio.fs-list-result/v1", "nodes": [{"name": child.name, "path": child.relative_to(repo).as_posix(), "type": "directory" if child.is_dir() else "file"} for child in sorted(target.iterdir())], "truncated": False}
@@ -116,14 +142,28 @@ def runtime_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
         target = _safe_path(repo, str(arguments.get("path", ".")))
         payload = {"schema": "simplicio.fs-stat-result/v1", "exists": target.exists(), "type": "directory" if target.is_dir() else "file" if target.is_file() else None, "size": target.stat().st_size if target.exists() else None}
     elif name == "simplicio_exec":
-        cwd = _safe_path(repo, str(arguments.get("cwd", ".")))
-        completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)
-        payload = {"schema": "simplicio.exec-result/v1", "success": completed.returncode == 0, "stdout": completed.stdout, "stderr": completed.stderr, "exit_code": completed.returncode, "timed_out": False, "truncated": False, "effect_state": "completed"}
+        if "command" in arguments:
+            payload = {
+                "schema": "simplicio.exec-result/v1",
+                "success": True,
+                "runtime": {"version": "code-e2e-fixture/1"},
+                "stdout": "fixture-runtime\n",
+                "stderr": "",
+                "exit_code": 0,
+                "effect_state": "completed",
+            }
+        else:
+            cwd = _safe_path(repo, str(arguments.get("cwd", ".")))
+            completed = subprocess.run(arguments["argv"], cwd=cwd, env={**os.environ, **arguments.get("env", {})}, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=int(arguments.get("timeout_ms", 120000)) / 1000, check=False)
+            payload = {"schema": "simplicio.exec-result/v1", "success": completed.returncode == 0, "stdout": completed.stdout, "stderr": completed.stderr, "exit_code": completed.returncode, "timed_out": False, "truncated": False, "effect_state": "completed"}
     elif name == "simplicio_prototype_artifact_write":
         artifact_id = str(arguments["artifact_id"])
         if not artifact_id or any(char not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for char in artifact_id):
             raise ValueError("unsafe prototype artifact id")
-        content = base64.b64decode(str(arguments["content_base64"]), validate=True)
+        if "content" in arguments:
+            content = str(arguments["content"]).encode("utf-8")
+        else:
+            content = base64.b64decode(str(arguments["content_base64"]), validate=True)
         target = _safe_path(repo, f".simplicio/artifacts/prototype-first/{artifact_id}.json")
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.exists() and target.read_bytes() != content:
