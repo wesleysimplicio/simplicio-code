@@ -31,6 +31,7 @@ pub const DEFAULT_MAX_RESPONSE_BYTES: usize = 512 * 1024;
 const REQUIRED_CAPABILITIES: [&str; 3] = ["host.advisories", "host.status", "turn.start"];
 const MAX_ADVISORIES_PER_PAGE: usize = 128;
 const MAX_OBSERVATIONS_PER_PAGE: usize = 128;
+const MAX_WORKSPACE_OBSERVATION_HISTORY: usize = 128;
 const MIN_HOST_INSTANCE_ID_BYTES: usize = 16;
 const MAX_HOST_INSTANCE_ID_BYTES: usize = 64;
 
@@ -194,6 +195,118 @@ pub struct WorkspaceObservationPage {
     pub events: Vec<WorkspaceObservation>,
     pub next_cursor: u64,
     pub truncated: bool,
+}
+
+/// Bounded, fail-closed state for one workspace observation stream.
+///
+/// The transport parser validates one page, while this state machine validates
+/// the page sequence that is projected to a surface: duplicate/replayed
+/// cursors are rejected, generations cannot move backwards, and retained
+/// observations never grow without a bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceObservationState {
+    workspace_id: String,
+    cursor: u64,
+    generation: u64,
+    observations: Vec<WorkspaceObservation>,
+    history_truncated: bool,
+}
+
+impl WorkspaceObservationState {
+    pub fn new(workspace_id: impl Into<String>) -> Result<Self, Error> {
+        let workspace_id = workspace_id.into();
+        validate_projection_text("workspace_id", &workspace_id, 256)?;
+        Ok(Self {
+            workspace_id,
+            cursor: 0,
+            generation: 0,
+            observations: Vec::new(),
+            history_truncated: false,
+        })
+    }
+
+    pub fn workspace_id(&self) -> &str {
+        &self.workspace_id
+    }
+
+    pub fn cursor(&self) -> u64 {
+        self.cursor
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn observations(&self) -> &[WorkspaceObservation] {
+        &self.observations
+    }
+
+    pub fn history_truncated(&self) -> bool {
+        self.history_truncated
+    }
+
+    /// Apply the next validated page and return the number of newly accepted
+    /// observations. A replay, gap, workspace mismatch, stale generation, or
+    /// oversized projection fails before state is mutated.
+    pub fn apply_page(&mut self, page: WorkspaceObservationPage) -> Result<usize, Error> {
+        if page.schema != WORKSPACE_OBSERVE_SCHEMA || page.workspace_id != self.workspace_id {
+            return Err(Error::ProtocolMismatch(
+                "workspace observation state has an invalid schema or workspace".into(),
+            ));
+        }
+        if page.events.len() > MAX_OBSERVATIONS_PER_PAGE {
+            return Err(Error::InvalidResponse(
+                "workspace observation state page exceeds its bound".into(),
+            ));
+        }
+
+        let mut previous = self.cursor;
+        let mut generation = self.generation;
+        for (index, event) in page.events.iter().enumerate() {
+            if event.schema != WORKSPACE_OBSERVE_SCHEMA
+                || event.workspace_id != self.workspace_id
+                || event.sequence <= previous
+                || (event.sequence != previous.saturating_add(1) && !(index == 0 && page.truncated))
+            {
+                return Err(Error::InvalidResponse(
+                    "workspace observation state cursor is invalid".into(),
+                ));
+            }
+            if !matches!(
+                event.kind.as_str(),
+                "test_failure" | "stale_contract" | "acceptance_gap"
+            ) || !matches!(event.source.as_str(), "mapper" | "runtime" | "agent")
+                || event.generation == 0
+                || event.generation < generation
+            {
+                return Err(Error::InvalidResponse(
+                    "workspace observation state generation or vocabulary is invalid".into(),
+                ));
+            }
+            validate_projection_text("observation.evidence", &event.evidence, 512)?;
+            previous = event.sequence;
+            generation = event.generation;
+        }
+        if page.next_cursor != previous {
+            return Err(Error::InvalidResponse(
+                "workspace observation state cursor does not match page".into(),
+            ));
+        }
+
+        let accepted = page.events.len();
+        self.observations.extend(page.events);
+        let excess = self
+            .observations
+            .len()
+            .saturating_sub(MAX_WORKSPACE_OBSERVATION_HISTORY);
+        if excess > 0 {
+            self.observations.drain(..excess);
+        }
+        self.cursor = page.next_cursor;
+        self.generation = generation;
+        self.history_truncated |= page.truncated || excess > 0;
+        Ok(accepted)
+    }
 }
 
 /// Minimal state a non-focus-stealing side panel can render.
@@ -1833,6 +1946,108 @@ mod tests {
 
         response["advisories"]["truncated"] = json!(true);
         assert!(parse_advisory_page(&response, 0, &host_instance_id()).is_ok());
+    }
+
+    fn observation(sequence: u64, generation: u64) -> WorkspaceObservation {
+        WorkspaceObservation {
+            schema: WORKSPACE_OBSERVE_SCHEMA.into(),
+            sequence,
+            workspace_id: "workspace-1".into(),
+            kind: "acceptance_gap".into(),
+            source: "mapper".into(),
+            evidence: format!("receipt-{sequence}"),
+            generation,
+            ts_wall_ns: sequence,
+        }
+    }
+
+    fn observation_page(
+        events: Vec<WorkspaceObservation>,
+        next_cursor: u64,
+    ) -> WorkspaceObservationPage {
+        WorkspaceObservationPage {
+            schema: WORKSPACE_OBSERVE_SCHEMA.into(),
+            workspace_id: "workspace-1".into(),
+            events,
+            next_cursor,
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn workspace_observation_state_accepts_contiguous_pages() {
+        let mut state = WorkspaceObservationState::new("workspace-1").unwrap();
+        assert_eq!(
+            state
+                .apply_page(observation_page(
+                    vec![observation(1, 1), observation(2, 1)],
+                    2,
+                ))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            state
+                .apply_page(observation_page(vec![observation(3, 2)], 3))
+                .unwrap(),
+            1
+        );
+        assert_eq!(state.cursor(), 3);
+        assert_eq!(state.generation(), 2);
+        assert_eq!(state.observations().len(), 3);
+    }
+
+    #[test]
+    fn workspace_observation_state_rejects_replay_gap_mismatch_and_stale_generation() {
+        let mut state = WorkspaceObservationState::new("workspace-1").unwrap();
+        state
+            .apply_page(observation_page(vec![observation(1, 2)], 1))
+            .unwrap();
+
+        for invalid in [
+            observation_page(vec![observation(1, 2)], 1),
+            observation_page(vec![observation(3, 2)], 3),
+            observation_page(vec![observation(2, 1)], 2),
+        ] {
+            assert!(matches!(
+                state.apply_page(invalid),
+                Err(Error::InvalidResponse(_))
+            ));
+            assert_eq!(state.cursor(), 1);
+        }
+
+        let mut mismatched = observation_page(vec![observation(2, 2)], 2);
+        mismatched.workspace_id = "workspace-2".into();
+        assert!(matches!(
+            state.apply_page(mismatched),
+            Err(Error::ProtocolMismatch(_))
+        ));
+    }
+
+    #[test]
+    fn workspace_observation_state_bounds_history_and_marks_truncation() {
+        let mut state = WorkspaceObservationState::new("workspace-1").unwrap();
+        let first: Vec<_> = (1..=128).map(|sequence| observation(sequence, 1)).collect();
+        state.apply_page(observation_page(first, 128)).unwrap();
+        state
+            .apply_page(observation_page(vec![observation(129, 1)], 129))
+            .unwrap();
+
+        assert_eq!(
+            state.observations().len(),
+            MAX_WORKSPACE_OBSERVATION_HISTORY
+        );
+        assert_eq!(state.observations().first().unwrap().sequence, 2);
+        assert_eq!(state.observations().last().unwrap().sequence, 129);
+        assert!(state.history_truncated());
+    }
+
+    #[test]
+    fn workspace_observation_state_rejects_empty_workspace_identity() {
+        assert!(matches!(
+            WorkspaceObservationState::new(""),
+            Err(Error::InvalidResponse(_))
+        ));
     }
 
     #[cfg(windows)]
