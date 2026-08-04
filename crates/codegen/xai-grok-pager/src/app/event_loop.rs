@@ -1210,11 +1210,10 @@ pub(crate) async fn run(
     const GATE_POLL_INTERVAL: Duration = Duration::from_secs(30);
     let mut gate_poll_at: Option<Instant> = None;
 
-    // Reuse the central select!/JoinSet scheduler. The state model rejects a
-    // second in-flight poll, and the cancellation guard owns teardown. Minimal
-    // mode has no side panel, so it does no invisible Agent polling.
-    let mut agent_attention_poll_at: Option<Instant> =
-        app.screen_mode.is_fullscreen().then(Instant::now);
+    // Simplicio Code now uses a real side terminal instead of the embedded
+    // AgentHost panel. Keep its polling scheduler dormant so foreground
+    // prompts never compete with an invisible copilot request.
+    let mut agent_attention_poll_at: Option<Instant> = None;
 
     // Free→paid subscription watch (see `app::subscription`).
     let mut subscription_watch_at: Option<Instant> = if app.subscription_watch_wanted() {

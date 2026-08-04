@@ -155,6 +155,17 @@ pub struct ConnectFlags {
     pub default_auto_mode: bool,
 }
 
+/// Whether Code should use the installed Simplicio Agent as its direct ACP
+/// provider/model backend instead of bootstrapping the legacy Grok agent.
+pub fn simplicio_agent_acp_enabled() -> bool {
+    std::env::var("SIMPLICIO_CODE_DIRECT_AGENT").is_ok_and(|value| {
+        matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
+}
+
 /// Connect to an agent: spawn, initialize, authenticate.
 ///
 /// This is the main entry point for establishing an ACP connection.
@@ -199,8 +210,12 @@ pub async fn connect(cancel: &CancellationToken, flags: ConnectFlags) -> Result<
     apply_config_writes(&flags);
 
     // Spawn the agent
-    let memory_config = agent_config.memory_config.clone();
-    let spawned = spawn::spawn_grok_shell(agent_config, cancel, memory_config).await?;
+    let spawned = if simplicio_agent_acp_enabled() {
+        spawn::spawn_simplicio_agent(agent_config, cancel).await?
+    } else {
+        let memory_config = agent_config.memory_config.clone();
+        spawn::spawn_grok_shell(agent_config, cancel, memory_config).await?
+    };
     let auth_manager = spawned.auth_manager.clone();
     let (tx, rx) = (spawned.channel.tx, spawned.channel.rx);
 

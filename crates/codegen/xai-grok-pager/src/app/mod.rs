@@ -435,27 +435,32 @@ pub async fn run(
     let screen_mode_override = screen_mode_relaunch::take_screen_mode_env_override();
     let cancel = CancellationToken::new();
     let startup_start = std::time::Instant::now();
-    let raw_config = xai_grok_shell::config::load_effective_config()
-        .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
-    let grok_com_config =
-        match xai_grok_shell::agent::config::Config::new_from_toml_cfg(&raw_config) {
-            Ok(c) => c.grok_com_config,
-            Err(e) => {
-                tracing::warn!(
-                    error = % e, "failed to parse config for auth refresh, using defaults"
-                );
-                xai_grok_shell::auth::GrokComConfig::default()
-            }
-        };
-    let refreshed_auth = xai_grok_shell::auth::try_ensure_fresh_auth(&grok_com_config).await;
-    let early_prefetch =
-        xai_grok_shell::agent::models::start_early_prefetch_with_auth(refreshed_auth);
-    xai_grok_shell::agent::mvp_agent::warm_async_http_client();
+    let direct_simplicio_agent = crate::acp::simplicio_agent_acp_enabled();
     tokio::task::spawn_blocking(|| {});
     if let Ok(cwd) = std::env::current_dir() {
         crate::git_info::populate_from_cwd_async(cwd);
     }
-    let remote_settings = join_early_prefetch(early_prefetch);
+    let remote_settings = if direct_simplicio_agent {
+        None
+    } else {
+        let raw_config = xai_grok_shell::config::load_effective_config()
+            .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
+        let grok_com_config =
+            match xai_grok_shell::agent::config::Config::new_from_toml_cfg(&raw_config) {
+                Ok(c) => c.grok_com_config,
+                Err(e) => {
+                    tracing::warn!(
+                        error = % e, "failed to parse config for auth refresh, using defaults"
+                    );
+                    xai_grok_shell::auth::GrokComConfig::default()
+                }
+            };
+        let refreshed_auth = xai_grok_shell::auth::try_ensure_fresh_auth(&grok_com_config).await;
+        let early_prefetch =
+            xai_grok_shell::agent::models::start_early_prefetch_with_auth(refreshed_auth);
+        xai_grok_shell::agent::mvp_agent::warm_async_http_client();
+        join_early_prefetch(early_prefetch)
+    };
     xai_grok_shell::util::config::cache_remote_auto_mode(
         remote_settings.as_ref().and_then(|s| s.auto_mode.clone()),
     );
@@ -463,13 +468,17 @@ pub async fn run(
     let raw_config = xai_grok_shell::config::load_effective_config()
         .map_err(|e| anyhow::anyhow!("Failed to load config: {e}"))?;
     let prefetch_elapsed = startup_start.elapsed();
-    let (use_leader, policy_disable_reason) = resolve_use_leader(
-        args.leader,
-        args.no_leader,
-        &raw_config,
-        remote_settings.as_ref(),
-        true,
-    );
+    let (use_leader, policy_disable_reason) = if direct_simplicio_agent {
+        (false, None)
+    } else {
+        resolve_use_leader(
+            args.leader,
+            args.no_leader,
+            &raw_config,
+            remote_settings.as_ref(),
+            true,
+        )
+    };
     tracing::info!(
         use_leader,
         ?policy_disable_reason,

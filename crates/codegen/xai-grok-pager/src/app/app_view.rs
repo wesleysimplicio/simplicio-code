@@ -3876,8 +3876,7 @@ impl AppView {
         };
         let zdr_blocked_for_draw = self.is_zdr_blocked();
         let has_access = self.has_access();
-        let simplicio_code_agent_first = std::env::var("SIMPLICIO_CODE_AGENT_FIRST")
-            .is_ok_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+        let ecosystem_billing_enabled = crate::app::dispatch::ecosystem_billing_enabled();
         let voice_available = self.voice_available();
         let voice_on_surface = self.voice_target_on_active_surface();
         let voice_listening = voice_on_surface && self.voice_listening();
@@ -4021,13 +4020,13 @@ impl AppView {
                             session_picker_grouped: self.session_picker_grouped,
                             session_picker_source_filter: self.session_picker_source_filter,
                             chat_mode: self.chat_mode,
-                            credit_balance: (!simplicio_code_agent_first)
+                            credit_balance: ecosystem_billing_enabled
                                 .then_some(self.credit_balance.as_ref())
                                 .flatten(),
-                            auto_topup: (!simplicio_code_agent_first)
+                            auto_topup: ecosystem_billing_enabled
                                 .then_some(self.auto_topup.as_ref())
                                 .flatten(),
-                            usage_visible: self.usage_visible && !simplicio_code_agent_first,
+                            usage_visible: self.usage_visible && ecosystem_billing_enabled,
                             is_api_key_auth: self.is_api_key_auth,
                             changelog_bullets: &self.changelog_bullets,
                             changelog_has_full_notes: self.changelog_markdown.is_some(),
@@ -4210,9 +4209,8 @@ impl AppView {
                             d.overlay_next_hit.set(header.and_then(|c| c.next_rect));
                         }
                         if let Some(agent) = agents.get_mut(&id) {
-                            let (agent_content_area, agent_panel_area) =
-                                crate::views::agent_attention_panel::split_agent_area(agent_area);
-                            agent_attention.panel_area = agent_panel_area;
+                            let agent_content_area = agent_area;
+                            agent_attention.panel_area = None;
                             let announcement_banner_h =
                                 crate::views::announcements::session_banner_height(
                                     &self.active_announcements,
@@ -4251,13 +4249,6 @@ impl AppView {
                                 voice_listening,
                                 voice_interim.as_deref(),
                             );
-                            if let Some(panel_area) = agent_panel_area {
-                                crate::views::agent_attention_panel::render_agent_attention_panel(
-                                    panel_area,
-                                    f.buffer_mut(),
-                                    agent_attention,
-                                );
-                            }
                             if let Some(modal) = self.import_claude_modal.as_mut() {
                                 let theme = crate::theme::Theme::current();
                                 crate::views::import_claude_modal::render_import_claude_modal(
@@ -4315,9 +4306,8 @@ impl AppView {
                                     caption: crate::views::announcements::usable_cta_caption(owner),
                                 },
                             );
-                            let (dashboard_area, agent_panel_area) =
-                                crate::views::agent_attention_panel::split_agent_area(view_area);
-                            agent_attention.panel_area = agent_panel_area;
+                            let dashboard_area = view_area;
+                            agent_attention.panel_area = None;
                             let dash_cursor = crate::views::dashboard::render_dashboard(
                                 f.buffer_mut(),
                                 dashboard_area,
@@ -4379,13 +4369,6 @@ impl AppView {
                                 Self::dashboard_stale_image_clears(agents, drawn_popup_agent);
                             let popup_post_flush =
                                 Self::merge_post_flush(stale_clears, popup_post_flush);
-                            if let Some(panel_area) = agent_panel_area {
-                                crate::views::agent_attention_panel::render_agent_attention_panel(
-                                    panel_area,
-                                    f.buffer_mut(),
-                                    agent_attention,
-                                );
-                            }
                             if let Some(fps) = &fps_overlay {
                                 fps.render(full_area, f.buffer_mut());
                             }
