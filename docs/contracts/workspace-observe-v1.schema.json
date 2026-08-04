@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simplicio.dev/contracts/workspace-observe/v1",
+  "title": "Simplicio workspace observation page",
+  "type": "object",
+  "required": ["schema", "workspace_id", "events", "next_cursor", "truncated"],
+  "properties": {
+    "schema": { "const": "simplicio.workspace.observe/v1" },
+    "workspace_id": { "$ref": "#/$defs/safeText" },
+    "events": { "type": "array", "maxItems": 128, "items": { "$ref": "#/$defs/observation" } },
+    "next_cursor": { "type": "integer", "minimum": 0 },
+    "truncated": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "safeText": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\u0000-\u001F\u007F]*$" },
+    "evidence": { "type": "string", "minLength": 1, "maxLength": 512, "pattern": "^[^\u0000-\u001F\u007F]*$" },
+    "observation": {
+      "type": "object",
+      "required": ["schema", "sequence", "workspace_id", "kind", "source", "evidence", "generation", "ts_wall_ns"],
+      "properties": {
+        "schema": { "const": "simplicio.workspace.observe/v1" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "workspace_id": { "$ref": "#/$defs/safeText" },
+        "kind": { "enum": ["test_failure", "stale_contract", "acceptance_gap"] },
+        "source": { "enum": ["mapper", "runtime", "agent"] },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "generation": { "type": "integer", "minimum": 1 },
+        "ts_wall_ns": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

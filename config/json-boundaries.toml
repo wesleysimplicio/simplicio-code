@@ -1904,3 +1904,19 @@ target_format = "versioned external packaging and Markdown proof"
 status = "exception"
 reason = "PyPI companion package ships doctor/quality probes; internal domain state remains HBI/HBP."
 expires = "2027-07-28"
+
+
+[[boundary]]
+paths = [
+  'docs/contracts/workspace-observe-request-v1.schema.json',
+  'docs/contracts/workspace-observe-v1.schema.json',
+]
+category = "external_protocol_contract"
+owner = "agent-ux"
+producer = "Code AgentHost workspace observation boundary"
+consumer = "AgentHost capability adapter and contract reviewers"
+lifecycle = "versioned source-controlled schema; never workspace, session, queue, cache, or execution state"
+target_format = "versioned external JSON contract"
+status = "exception"
+reason = "These schemas freeze the bounded Code-side workspace observation request/page at the AgentHost protocol boundary; production emission remains an external dependency."
+expires = "2099-12-31"

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simplicio.dev/contracts/workspace-observe-request/v1",
+  "title": "Simplicio workspace observation request",
+  "type": "object",
+  "required": ["schema", "workspace_id", "session_id", "after", "consent", "max_events"],
+  "properties": {
+    "schema": { "const": "simplicio.workspace.observe/v1" },
+    "workspace_id": { "$ref": "#/$defs/safeText" },
+    "session_id": { "$ref": "#/$defs/safeText" },
+    "after": { "type": "integer", "minimum": 0 },
+    "consent": { "enum": ["off", "read_only"] },
+    "max_events": { "type": "integer", "minimum": 1, "maximum": 128 }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "safeText": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\u0000-\u001F\u007F]*$" }
+  }
+}

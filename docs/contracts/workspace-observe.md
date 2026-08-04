@@ -20,6 +20,9 @@ presentation-only. An observation cannot execute, schedule, approve, or inject
 a tool call; any action requires an explicit Agent turn, policy approval, and
 the Runtime effect boundary.
 
-This contract is a Code-side gate, not proof that a production AgentHost emits
-observations. AgentHost capability negotiation and four-surface E2E evidence
-are still required before closing issue #326.
+The machine-readable request and page contracts are
+`docs/contracts/workspace-observe-request-v1.schema.json` and
+`docs/contracts/workspace-observe-v1.schema.json`. They are Code-side gates,
+not proof that a production AgentHost emits observations. AgentHost capability
+negotiation, the neutral advisory surface, and four-surface E2E evidence are
+still required before closing issue #326.
