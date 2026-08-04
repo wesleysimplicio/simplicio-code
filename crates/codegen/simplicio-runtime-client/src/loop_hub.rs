@@ -596,10 +596,24 @@ fn validate_process_request(
             "Runtime process workspace must not be empty".into(),
         ));
     }
+    if workspace.bytes().any(|byte| byte == 0) {
+        return Err(HubError::InvalidRequest(
+            "Runtime process workspace must be NUL-free".into(),
+        ));
+    }
     if handle.is_some_and(|value| value.trim().is_empty()) {
         return Err(HubError::InvalidRequest(
             "Runtime process handle must not be empty".into(),
         ));
+    }
+    Ok(())
+}
+
+fn validate_process_idempotency_key(value: &str, operation: &str) -> Result<(), HubError> {
+    if value.trim().is_empty() || value.len() > 256 || value.bytes().any(|byte| byte == 0) {
+        return Err(HubError::InvalidRequest(format!(
+            "Runtime process {operation} requires a valid idempotency_key"
+        )));
     }
     Ok(())
 }
@@ -629,13 +643,10 @@ fn validate_process_start_request(request: &RuntimeProcessStartRequest) -> Resul
             "Runtime process cwd must be non-empty and NUL-free".into(),
         ));
     }
-    if request.idempotency_key.trim().is_empty()
-        || request.idempotency_key.len() > 256
-        || request.idempotency_key.bytes().any(|byte| byte == 0)
-        || request.timeout_ms == 0
-    {
+    validate_process_idempotency_key(&request.idempotency_key, "start")?;
+    if request.timeout_ms == 0 {
         return Err(HubError::InvalidRequest(
-            "Runtime process start requires a valid idempotency_key and timeout_ms".into(),
+            "Runtime process start requires a valid timeout_ms".into(),
         ));
     }
     if request.env.keys().any(|key| {
@@ -890,11 +901,12 @@ impl SharedHubServiceHandle {
             ));
         }
         validate_process_request(&request.schema, &request.workspace, Some(&request.handle))?;
-        if request.reason.trim().is_empty() || request.idempotency_key.trim().is_empty() {
+        if request.reason.trim().is_empty() || request.reason.bytes().any(|byte| byte == 0) {
             return Err(HubError::InvalidRequest(
-                "Runtime process cancel requires reason and idempotency_key".into(),
+                "Runtime process cancel requires a non-empty, NUL-free reason".into(),
             ));
         }
+        validate_process_idempotency_key(&request.idempotency_key, "cancel")?;
         if !self.session.handshake.runtime_process.cancel {
             return Err(HubError::TransportUnavailable(
                 "Runtime process.cancel/v1 capability is unavailable".into(),
@@ -1683,10 +1695,45 @@ mod tests {
         ));
 
         invalid.cwd = ".".into();
+        invalid.workspace = "workspace\u{0}".into();
+        assert!(matches!(
+            runtime.process_start(&invalid),
+            Err(HubError::InvalidRequest(message)) if message.contains("workspace")
+        ));
+
+        invalid.workspace = "workspace".into();
+        invalid.idempotency_key = "x".repeat(257);
+        assert!(matches!(
+            runtime.process_start(&invalid),
+            Err(HubError::InvalidRequest(message)) if message.contains("idempotency_key")
+        ));
+
+        invalid.idempotency_key = "start-1".into();
         invalid.env.insert("BAD-KEY".into(), "value".into());
         assert!(matches!(
             runtime.process_start(&invalid),
             Err(HubError::InvalidRequest(message)) if message.contains("environment")
+        ));
+
+        assert!(matches!(
+            runtime.process_cancel(&RuntimeProcessCancelRequest {
+                schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+                workspace: "workspace".into(),
+                handle: "handle-1".into(),
+                reason: "cancel\u{0}".into(),
+                idempotency_key: "cancel-1".into(),
+            }),
+            Err(HubError::InvalidRequest(message)) if message.contains("reason")
+        ));
+        assert!(matches!(
+            runtime.process_cancel(&RuntimeProcessCancelRequest {
+                schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+                workspace: "workspace".into(),
+                handle: "handle-1".into(),
+                reason: "operator".into(),
+                idempotency_key: "cancel-1".repeat(257),
+            }),
+            Err(HubError::InvalidRequest(message)) if message.contains("idempotency_key")
         ));
 
         assert!(matches!(
