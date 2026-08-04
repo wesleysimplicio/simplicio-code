@@ -135,12 +135,19 @@ where
 }
 
 fn open_lock_file(path: &Path) -> io::Result<File> {
-    OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(path)
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+
+    // Windows otherwise denies a second handle to the lock file before fs2
+    // can report the intended `WouldBlock` contention result. Keep sharing
+    // enabled for the lock handle; exclusivity is provided by fs2 below.
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.share_mode(0x0000_0007); // FILE_SHARE_READ|WRITE|DELETE
+    }
+
+    options.open(path)
 }
 
 fn read_data_file(path: &Path) -> io::Result<Vec<ActiveSession>> {

@@ -82,11 +82,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: Enforce source version status
+        run: python3 scripts/status_snapshot.py --root . --check
+      - name: Enforce workspace access boundary
+        run: python3 scripts/audit_workspace_access.py --root . > workspace-access-audit.json
       - name: Run scoped struct-initializer review report
         continue-on-error: true
         run: python3 scripts/check_unused_struct_locals.py --json > struct-initializer-report.json
-      - name: Generate offline headless invocation matrix
-        run: python3 scripts/headless_invocation_matrix.py --json > headless-invocation-matrix.json
+      - name: Enforce deterministic initializer invariants
+        run: python3 scripts/check_deterministic_invariants.py --root . --json > deterministic-invariants.json
+      - name: Build the real Code binary for headless validation
+        run: cargo build -p xai-grok-pager-bin --bin simplicio-code
+      - name: Generate real headless invocation matrix with local provider
+        run: python3 scripts/headless_invocation_matrix.py --binary target/debug/simplicio-code --mock-provider --timeout-seconds 30 --json > headless-invocation-matrix.json
       - name: Validate failure-diagnostics artifact path
         run: |
           python3 -m py_compile scripts/ci_diagnostics.py scripts/tests/test_ci_diagnostics.py
@@ -116,6 +126,8 @@ jobs:
           name: simplicio-owned-reports
           path: |
             struct-initializer-report.json
+            deterministic-invariants.json
+            workspace-access-audit.json
             headless-invocation-matrix.json
 
   # Fails the build on any secret-shaped string introduced by this push/PR.

@@ -946,7 +946,9 @@ impl Renderable for EntryRenderer<'_> {
             let ts_width = ts_str.len() as u16;
             if content_area.width > ts_width + 1 && first_content_y < max_row {
                 let ts_x = content_area.x + content_area.width - ts_width;
-                let ts_style = Style::default().fg(self.theme.gray);
+                let ts_style = Style::default()
+                    .fg(self.theme.gray)
+                    .bg(bg_color.unwrap_or(self.fallback_bg()));
                 buf.set_string_safe(ts_x, first_content_y, &ts_str, ts_style);
             }
         }
@@ -1074,9 +1076,18 @@ mod tests {
         renderer.render(area, &mut buf);
 
         // Accent at column 0
-        assert_eq!(buf.cell((0, 0)).unwrap().symbol(), "┃");
-        assert_eq!(buf.cell((0, 1)).unwrap().symbol(), "┃");
-        assert_eq!(buf.cell((0, 2)).unwrap().symbol(), "┃");
+        assert_eq!(
+            buf.cell((0, 0)).unwrap().symbol(),
+            crate::glyphs::accent_bar()
+        );
+        assert_eq!(
+            buf.cell((0, 1)).unwrap().symbol(),
+            crate::glyphs::accent_bar()
+        );
+        assert_eq!(
+            buf.cell((0, 2)).unwrap().symbol(),
+            crate::glyphs::accent_bar()
+        );
 
         // Left padding at columns 1-2 (empty space)
         assert_eq!(buf.cell((1, 1)).unwrap().symbol(), " ");
@@ -1121,7 +1132,7 @@ mod tests {
             let cell = buf.cell((3, 0)).unwrap();
             assert_eq!(
                 cell.symbol(),
-                "◆",
+                crate::glyphs::diamond_filled(),
                 "pending tool must keep the Diamond bullet at tick {tick}"
             );
             match first_fg {
@@ -1152,7 +1163,10 @@ mod tests {
         let renderer = EntryRenderer::new(&entry, &theme).with_tick(7);
         renderer.render(area, &mut buf);
 
-        assert_eq!(buf.cell((3, 0)).unwrap().symbol(), "◆");
+        assert_eq!(
+            buf.cell((3, 0)).unwrap().symbol(),
+            crate::glyphs::diamond_filled()
+        );
     }
 
     /// Collect the symbols from a row range in the buffer into a String.
@@ -1492,7 +1506,9 @@ mod tests {
             "test premise: block bg must differ from base bg"
         );
         let entry = ScrollbackEntry::new(RenderBlock::user_prompt("hello"));
-        let renderer = EntryRenderer::new(&entry, &theme);
+        let mut appearance = AppearanceConfig::default();
+        appearance.scrollback.blocks.prompt.bg = BlockBackground::Light;
+        let renderer = EntryRenderer::new(&entry, &theme).with_appearance(appearance);
 
         let width: u16 = 80;
         let height = renderer.desired_height(width);

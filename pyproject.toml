@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "simplicio-code"
-version = "0.3.0b5"
+version = "0.3.0b3"
 description = "Onboarding doctor, quality gates, and operator probes for Simplicio Code (binary agent is distributed via GitHub Releases)."
 readme = "README.md"
 requires-python = ">=3.11"

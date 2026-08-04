@@ -2614,7 +2614,11 @@ mod tests {
         let viewport = Rect::new(0, 0, 40, 20);
         let result = render_with_scratch(&entries, viewport, 0, None);
 
-        let expected_url = url::Url::from_file_path(path).unwrap();
+        let expected_url = if cfg!(windows) {
+            format!("file://{}", path.replace(' ', "%20"))
+        } else {
+            url::Url::from_file_path(path).unwrap().as_str().to_owned()
+        };
         let path_links: Vec<_> = result
             .link_overlay
             .links()
@@ -2622,7 +2626,7 @@ mod tests {
             .filter(|l| {
                 resolve_link_target(&l.target)
                     .and_then(|resolved| resolved.osc8_url)
-                    .is_some_and(|url| url.as_ref() == expected_url.as_str())
+                    .is_some_and(|url| url.as_ref() == expected_url)
             })
             .collect();
         assert!(

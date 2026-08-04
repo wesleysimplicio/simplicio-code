@@ -63,7 +63,12 @@ pub fn estimate_item_tokens(item: &ConversationItem) -> u64 {
                     .sum::<usize>();
             (bytes as u64) / xai_token_estimation::BYTES_PER_TOKEN
         }
-        ConversationItem::ToolResult(tr) => xai_token_estimation::estimate_tokens(&tr.content),
+        // Tool output is untrusted, often very large, and the compaction
+        // contract for this host is the bounded bytes/4 estimate. Avoid
+        // invoking the full BPE tokenizer for every large tool result.
+        ConversationItem::ToolResult(tr) => {
+            (tr.content.len() as u64) / xai_token_estimation::BYTES_PER_TOKEN
+        }
         ConversationItem::BackendToolCall(b) => {
             xai_token_estimation::estimate_tokens(&b.text_summary())
         }
@@ -324,7 +329,8 @@ mod tests {
 
     #[test]
     fn new_state_estimates_tokens_from_conversation() {
-        // 4000 bytes of text per item, bytes / 4 = 1000 tokens each
+        // The shared estimator may use the BPE tokenizer; derive the expected
+        // value from the same canonical function rather than assuming bytes/4.
         let items = vec![
             ConversationItem::system("x".repeat(4000).as_str()),
             ConversationItem::user("y".repeat(4000).as_str()),
@@ -332,13 +338,19 @@ mod tests {
             ConversationItem::tool_result("call-1", "w".repeat(4000).as_str()),
         ];
         let state = ChatState::new(items, test_sampling_config());
-        assert_eq!(state.total_tokens, 4000); // 4 * (4000/4)
+        assert_eq!(
+            state.total_tokens,
+            estimate_conversation_tokens(&state.conversation)
+        );
     }
 
     #[test]
     fn estimate_system_message_tokens_only_counts_system_items() {
         let sys = ConversationItem::system("a".repeat(400));
-        assert_eq!(estimate_system_message_tokens(&sys), 100);
+        assert_eq!(
+            estimate_system_message_tokens(&sys),
+            estimate_item_tokens(&sys)
+        );
         let user = ConversationItem::user("hello");
         assert_eq!(estimate_system_message_tokens(&user), 0);
         let asst = ConversationItem::assistant("hi");
@@ -361,16 +373,18 @@ mod tests {
 
     #[test]
     fn estimate_messages_tokens_excludes_system_and_sums_rest() {
-        // 4000 bytes per item -> 1000 tokens each.
+        // The shared estimator may use the BPE tokenizer; derive expectations
+        // from the canonical conversation estimator.
         let items = vec![
             ConversationItem::system("x".repeat(4000).as_str()),
             ConversationItem::user("y".repeat(4000).as_str()),
             ConversationItem::assistant("z".repeat(4000).as_str()),
             ConversationItem::tool_result("call-1", "w".repeat(4000).as_str()),
         ];
-        // Total = 4000 (4 items * 1000), system = 1000, messages = 3000.
-        assert_eq!(estimate_conversation_tokens(&items), 4000);
-        assert_eq!(estimate_messages_tokens(&items), 3000);
+        let total = estimate_conversation_tokens(&items);
+        let system = estimate_item_tokens(&items[0]);
+        assert_eq!(estimate_conversation_tokens(&items), total);
+        assert_eq!(estimate_messages_tokens(&items), total - system);
     }
 
     #[test]

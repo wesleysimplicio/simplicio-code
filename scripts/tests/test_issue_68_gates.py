@@ -10,7 +10,9 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
 from check_unused_struct_locals import scan_source  # noqa: E402
-from headless_invocation_matrix import build_cases  # noqa: E402
+from headless_invocation_matrix import FATAL_PROCESS_CODES, PERMISSION_MODES, build_cases, execute  # noqa: E402
+from audit_workspace_access import audit  # noqa: E402
+from check_deterministic_invariants import check as check_deterministic_invariants  # noqa: E402
 
 
 def main() -> int:
@@ -43,9 +45,21 @@ fn build() {
     check("correctly wired field is not reported", not scan_source(source_with_use, "fixture.rs"))
 
     cases = build_cases()
-    check("matrix covers all combinations", len(cases) == 8)
+    check("matrix covers all combinations", len(cases) == 28)
     check("matrix includes positional always-approve", any("positional-always-approve" in case.name for case in cases))
     check("matrix includes no-tty and tty", {case.tty for case in cases} == {False, True})
+    check(
+        "matrix includes every permission mode",
+        all(any(mode in case.approval_args for case in cases) for mode in PERMISSION_MODES),
+    )
+    check("fatal Windows process code is classified as crash", 0xC00000FD in FATAL_PROCESS_CODES)
+
+    access = audit(REPO, REPO / "docs/contracts/workspace-access-manifest.json")
+    check(
+        "workspace audit does not leak cfg(test) context",
+        access["status"] == "passed" and not access["violations"] and not access["unclassified"],
+    )
+    check("deterministic initializer invariants pass", not check_deterministic_invariants(REPO))
 
     print(f"selftest: {'PASS' if all(checks) else 'FAIL'} ({sum(checks)}/{len(checks)})")
     return 0 if all(checks) else 1

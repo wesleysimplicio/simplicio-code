@@ -145,7 +145,8 @@ pub fn canonical_name(value: &str) -> Option<&'static str> {
 pub fn display_name_for_canonical(value: &str) -> &str {
     match value {
         "auto" => "Auto",
-        "simplicio-brasil" | "groknight" => "Simplicio Brasil",
+        "simplicio-brasil" => "Simplicio Brasil",
+        "groknight" => "Grok Night",
         "grokday" => "Grok Day",
         "tokyonight" => "Tokyo Night",
         "rosepine-moon" => "Rose Pine Moon",

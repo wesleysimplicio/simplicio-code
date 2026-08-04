@@ -86,6 +86,15 @@ pub fn check_mark() -> &'static str {
     }
 }
 
+/// Warning marker, with an ASCII fallback on legacy ConHost.
+pub fn warning_mark() -> &'static str {
+    if is_legacy_windows_console() {
+        "!"
+    } else {
+        "\u{26A0}"
+    }
+}
+
 /// `"↗"` (U+2197 NORTH EAST ARROW) normally, `"o"` on legacy ConHost.
 /// Always 1 column wide.
 ///
@@ -672,6 +681,7 @@ mod tests {
 
     // On the (non-Windows) test host the helpers must return the fancy
     // glyphs, and the `char` helpers must agree with their `&str` siblings.
+    #[cfg(not(windows))]
     #[test]
     fn glyph_helpers_return_fancy_on_non_legacy() {
         assert!(!is_legacy_windows_console());
@@ -725,6 +735,7 @@ mod tests {
 
     // On the (non-Windows) test host the funnel must be a zero-copy borrow
     // so non-legacy toasts are byte-identical to the input.
+    #[cfg(not(windows))]
     #[test]
     fn legacy_glyph_fallback_is_borrow_on_non_legacy() {
         assert!(!is_legacy_windows_console());

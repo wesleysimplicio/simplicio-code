@@ -48,10 +48,19 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
             continue
         for path in sorted(p for p in scope_path.rglob("*") if p.is_file() and p.suffix in {".rs", ".py", ".ts", ".tsx"}):
             rel = path.relative_to(root).as_posix()
-            in_cfg_test = False
+            brace_depth = 0
+            test_module_end: int | None = None
+            pending_cfg_test = False
             for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
                 if re.search(r"^\s*#\[cfg\(test\)\]", line):
-                    in_cfg_test = True
+                    pending_cfg_test = True
+                stripped = line.strip()
+                if pending_cfg_test and re.search(r"\bmod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{", line):
+                    test_module_end = brace_depth + line.count("{") - line.count("}")
+                    pending_cfg_test = False
+                elif pending_cfg_test and stripped and not stripped.startswith("#"):
+                    pending_cfg_test = False
+                in_cfg_test = test_module_end is not None
                 for kind, pattern in DEFAULT_PATTERNS.items():
                     if not pattern.search(line):
                         continue
@@ -77,6 +86,9 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
                         "owner": rule.get("owner") if rule else None,
                         "rationale": rule.get("rationale") if rule else None,
                     })
+                brace_depth += line.count("{") - line.count("}")
+                if test_module_end is not None and brace_depth < test_module_end:
+                    test_module_end = None
 
     violations = [f for f in findings if f["classification"] == "violation"]
     unclassified = [f for f in findings if f["owner"] is None]

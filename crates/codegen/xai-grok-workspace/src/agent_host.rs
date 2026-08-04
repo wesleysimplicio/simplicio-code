@@ -6,7 +6,7 @@
 
 use simplicio_agent_client::{
     AdvisoryPage, AgentTurnCancelOutcome, AgentTurnResult, CausalIdentity, CoordinatorSnapshot,
-    Error,
+    Error, WorkspaceObservationPage, WorkspaceObserveRequest,
 };
 use xai_grok_agent::SimplicioAgentCoordinator;
 
@@ -46,6 +46,13 @@ impl WorkspaceAgentCoordinator {
 
     pub fn replay(&mut self, after: Option<u64>) -> Result<AdvisoryPage, Error> {
         self.inner.replay(after)
+    }
+
+    pub fn observe_workspace(
+        &mut self,
+        request: &WorkspaceObserveRequest,
+    ) -> Result<WorkspaceObservationPage, Error> {
+        self.inner.observe_workspace(request)
     }
 
     pub fn snapshot(&self) -> CoordinatorSnapshot {

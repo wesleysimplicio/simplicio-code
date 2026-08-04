@@ -1221,9 +1221,9 @@ fn render_agents_tab(
                 }
                 let mut x = content_area.x;
                 let indicator = if entry.expanded {
-                    "\u{25bc} "
+                    format!("{} ", crate::glyphs::disclosure_open())
                 } else {
-                    "\u{25b6} "
+                    format!("{} ", crate::glyphs::disclosure_closed())
                 };
                 let ind_style = Style::default().fg(theme.gray_dim);
                 let ind_style = if let Some(bg_color) = bg {
@@ -1496,9 +1496,9 @@ fn render_personas_tab(
                 }
                 let mut x = content_area.x;
                 let indicator = if is_expanded {
-                    "\u{25bc} "
+                    format!("{} ", crate::glyphs::disclosure_open())
                 } else {
-                    "\u{25b6} "
+                    format!("{} ", crate::glyphs::disclosure_closed())
                 };
                 let mut ind_style = Style::default().fg(theme.gray_dim);
                 if let Some(bg_color) = bg {

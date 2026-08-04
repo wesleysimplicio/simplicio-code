@@ -5,6 +5,8 @@
 //! gates, the preflight overflow check, and every client renderer use to talk
 //! about context-window usage. Provider-reported usage remains authoritative.
 
+use std::sync::OnceLock;
+
 /// Bytes per token under the rough character-based heuristic.
 pub const BYTES_PER_TOKEN: u64 = 4;
 
@@ -19,9 +21,12 @@ pub fn estimate_tokens(s: &str) -> u64 {
     if s.is_empty() {
         return 0;
     }
-    tiktoken_rs::o200k_base()
+    static O200K: OnceLock<Option<tiktoken_rs::CoreBPE>> = OnceLock::new();
+    O200K
+        .get_or_init(|| tiktoken_rs::o200k_base().ok())
+        .as_ref()
         .map(|encoding| encoding.encode_with_special_tokens(s).len() as u64)
-        .unwrap_or_else(|_| (s.len() as u64) / BYTES_PER_TOKEN)
+        .unwrap_or_else(|| (s.len() as u64) / BYTES_PER_TOKEN)
 }
 
 /// Inverse of [`estimate_tokens`]: convert a token budget into a character

@@ -59,7 +59,13 @@ fn write_receipt(path: &str, receipt: serde_json::Value) {
 
 #[test]
 fn worker_adapter_e2e_uses_real_loop_hub() {
-    let phase = required_env("SIMPLICIO_WORKER_E2E_PHASE");
+    let Ok(phase) = env::var("SIMPLICIO_WORKER_E2E_PHASE") else {
+        // This is an opt-in external system test; the normal package test
+        // suite remains hermetic and must not fail when the Loop Hub harness
+        // is not installed.
+        eprintln!("skipping external worker E2E: SIMPLICIO_WORKER_E2E_PHASE is unset");
+        return;
+    };
     let endpoint = required_env("SIMPLICIO_WORKER_E2E_ENDPOINT");
     let output = required_env("SIMPLICIO_WORKER_E2E_OUTPUT");
     let transport = Arc::new(

@@ -11,7 +11,8 @@ use crate::loop_hub::{
     AdmissionReceipt, CancelRequest, HubError, HubHandshake, HubHandshakeRequest, HubTransport,
     HubTransportFactory, LOOP_HUB_CLIENT_SCHEMA, LOOP_HUB_PROTOCOL, LifecycleReceipt,
     ProgressRequest, ProgressSnapshot, ResumeRequest, RuntimeExecuteReceipt, RuntimeExecuteRequest,
-    SubmitRequest,
+    RuntimeProcessCancelRequest, RuntimeProcessHandleRequest, RuntimeProcessReceipt,
+    RuntimeProcessStartRequest, RuntimeProcessWaitRequest, SubmitRequest,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -492,6 +493,54 @@ impl HubTransport for SocketPipeHubTransport {
             ));
         }
         Ok(receipt)
+    }
+
+    fn process_start(
+        &self,
+        request: &RuntimeProcessStartRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        self.value(
+            "process_start",
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
+            false,
+        )
+    }
+
+    fn process_status(
+        &self,
+        request: &RuntimeProcessHandleRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        self.value(
+            "process_status",
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
+            true,
+        )
+    }
+
+    fn process_cancel(
+        &self,
+        request: &RuntimeProcessCancelRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        self.value(
+            "process_cancel",
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
+            false,
+        )
+    }
+
+    fn process_wait(
+        &self,
+        request: &RuntimeProcessWaitRequest,
+    ) -> Result<RuntimeProcessReceipt, HubError> {
+        self.value(
+            "process_wait",
+            &serde_json::to_value(request)
+                .map_err(|error| HubError::Protocol(error.to_string()))?,
+            true,
+        )
     }
 }
 

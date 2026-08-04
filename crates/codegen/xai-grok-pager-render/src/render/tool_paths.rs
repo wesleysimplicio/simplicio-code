@@ -64,12 +64,8 @@ pub(crate) fn resolve_tool_path_target_with_home(
 }
 
 fn non_empty_rel(rel: &Path) -> Option<String> {
-    let value = rel.to_string_lossy();
-    if value.is_empty() {
-        None
-    } else {
-        Some(value.into_owned())
-    }
+    let value = rel.to_string_lossy().replace('\\', "/");
+    if value.is_empty() { None } else { Some(value) }
 }
 
 fn home_dir() -> Option<&'static Path> {
@@ -110,14 +106,14 @@ fn path_for_fullscreen_header(path: &str, cwd: Option<&Path>) -> String {
     resolve_tool_path(path, cwd)
         .display_path
         .to_string_lossy()
-        .into_owned()
+        .replace('\\', "/")
 }
 
 fn path_for_expanded_header(path: &str, cwd: Option<&Path>) -> String {
     let resolved = resolve_tool_path(path, cwd);
     resolved
         .relative_to_cwd
-        .unwrap_or_else(|| resolved.display_path.to_string_lossy().into_owned())
+        .unwrap_or_else(|| resolved.display_path.to_string_lossy().replace('\\', "/"))
 }
 
 /// Shorten a file path to fit within `budget` display columns using fish-style
@@ -282,6 +278,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn expanded_surface_normalizes_and_classifies_against_cwd() {
         let cwd = Path::new("/Users/me/project");
@@ -348,6 +345,7 @@ mod tests {
         assert_eq!(unresolved.relative_to_cwd, None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn expanded_outside_cwd_stays_normalized_target() {
         let cwd = Path::new("/Users/me/project");
@@ -358,6 +356,7 @@ mod tests {
         assert!(!got.starts_with("/Users/me/project"), "got {got}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn expanded_surface_uses_worktree_cwd() {
         let cwd = Path::new("/Users/me/.grok/worktrees/foo");
@@ -368,6 +367,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn fullscreen_surface_uses_anchored_or_honestly_relative_target() {
         let cwd = Path::new("/Users/me/project");

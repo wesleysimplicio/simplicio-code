@@ -7,6 +7,7 @@ use tokio::sync::mpsc;
 use xai_grok_sampling_types::{ConversationItem, SamplingConfig};
 
 use crate::actor::ChatStateActor;
+use crate::actor::state::estimate_item_tokens;
 use crate::events::ChatStateEvent;
 use crate::persistence::{MockChatPersistence, MockPersistenceReceiver, PersistenceRecord};
 
@@ -313,12 +314,12 @@ async fn estimated_tokens_tracks_tool_result_delta() {
     let h = TestHarness::new();
     h.handle.record_token_usage(100_000);
 
-    // Push a tool result with 4000 chars → ~1000 estimated tokens
-    h.handle
-        .push_tool_result(ConversationItem::tool_result("call-1", "x".repeat(4000)));
+    let item = ConversationItem::tool_result("call-1", "x".repeat(4000));
+    let delta = estimate_item_tokens(&item);
+    h.handle.push_tool_result(item);
 
     let estimated = h.handle.get_estimated_total_tokens().await;
-    assert_eq!(estimated, 101_000); // 100K model-reported + 1K delta
+    assert_eq!(estimated, 100_000 + delta);
 
     // model-reported total_tokens is unchanged
     let actual = h.handle.get_total_tokens().await;
@@ -329,10 +330,11 @@ async fn estimated_tokens_tracks_tool_result_delta() {
 async fn estimated_tokens_resets_on_model_response() {
     let h = TestHarness::new();
     h.handle.record_token_usage(100_000);
-    h.handle
-        .push_tool_result(ConversationItem::tool_result("call-1", "x".repeat(4000)));
+    let item = ConversationItem::tool_result("call-1", "x".repeat(4000));
+    let delta = estimate_item_tokens(&item);
+    h.handle.push_tool_result(item);
 
-    assert_eq!(h.handle.get_estimated_total_tokens().await, 101_000);
+    assert_eq!(h.handle.get_estimated_total_tokens().await, 100_000 + delta);
 
     // Model responds with a new total — delta resets
     h.handle.record_token_usage(105_000);
@@ -371,15 +373,12 @@ async fn estimated_tokens_tracks_real_user_message_and_resets_on_response() {
     let h = TestHarness::new();
     h.handle.record_token_usage(100_000);
 
-    // Real user turn — 4000 chars / 4 = ~1000 tokens.
-    h.handle
-        .push_user_message(ConversationItem::user("u".repeat(4000)));
+    let item = ConversationItem::user("u".repeat(4000));
+    let delta = estimate_item_tokens(&item);
+    h.handle.push_user_message(item);
 
     let pre = h.handle.get_estimated_total_tokens().await;
-    assert!(
-        (101_000..=101_010).contains(&pre),
-        "expected ~101K after user push, got {pre}",
-    );
+    assert_eq!(pre, 100_000 + delta);
 
     // Model responds; the API's `usage.total_tokens` already includes
     // the new user message. Delta must reset to zero.
@@ -414,10 +413,11 @@ async fn estimated_tokens_resets_on_truncate() {
     h.handle.increment_prompt_index();
     h.handle
         .push_assistant_response(ConversationItem::assistant("a1"));
-    h.handle
-        .push_tool_result(ConversationItem::tool_result("call-1", "x".repeat(4000)));
+    let item = ConversationItem::tool_result("call-1", "x".repeat(4000));
+    let delta = estimate_item_tokens(&item);
+    h.handle.push_tool_result(item);
 
-    assert_eq!(h.handle.get_estimated_total_tokens().await, 101_000);
+    assert_eq!(h.handle.get_estimated_total_tokens().await, 100_000 + delta);
 
     // Rewind removes the tool result — delta must reset
     h.drain_events();

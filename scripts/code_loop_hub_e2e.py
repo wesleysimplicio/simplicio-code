@@ -28,28 +28,45 @@ def git_revision(root: Path) -> str:
     return subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=root, text=True).strip()
 
 
-def wait_for_socket(path: Path, process: subprocess.Popen[str]) -> None:
+def wait_for_endpoint(endpoint: str, process: subprocess.Popen[str], transport: str) -> None:
     for _ in range(500):
         if process.poll() is not None:
-            raise RuntimeError("Loop Hub exited before creating its socket")
-        if path.exists():
-            probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            stderr = process.stderr.read() if process.stderr is not None else ""
+            raise RuntimeError(f"Loop Hub exited before becoming ready: {stderr[-4000:]}")
+        ready = transport == "tcp" and _tcp_probe(endpoint)
+        if transport == "unix" and Path(endpoint).exists():
+            ready = True
+        if ready:
+            probe = socket.socket(socket.AF_INET if transport == "tcp" else socket.AF_UNIX, socket.SOCK_STREAM)
             try:
                 probe.settimeout(0.1)
-                probe.connect(str(path))
+                if transport == "tcp":
+                    host, raw_port = endpoint.rsplit(":", 1)
+                    probe.connect((host, int(raw_port)))
+                else:
+                    probe.connect(endpoint)
                 return
             except OSError:
                 pass
             finally:
                 probe.close()
         time.sleep(0.02)
-    raise RuntimeError("Loop Hub did not create its socket")
+    raise RuntimeError(f"Loop Hub did not create its {transport} endpoint")
 
 
-def start_hub(loop_root: Path, env: dict[str, str], lock: Path, endpoint: Path) -> subprocess.Popen[str]:
+def _tcp_probe(endpoint: str) -> bool:
+    host, raw_port = endpoint.rsplit(":", 1)
+    try:
+        with socket.create_connection((host, int(raw_port)), timeout=0.1):
+            return True
+    except OSError:
+        return False
+
+
+def start_hub(loop_root: Path, env: dict[str, str], lock: Path, endpoint: str, transport: str) -> subprocess.Popen[str]:
     return subprocess.Popen(
         [sys.executable, "-c", "from simplicio_loop.hub_daemon import main; raise SystemExit(main())",
-         "serve", "--lock", str(lock), "--endpoint", str(endpoint), "--transport", "unix"],
+         "serve", "--lock", str(lock), "--endpoint", endpoint, "--transport", transport],
         cwd=loop_root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
 
@@ -63,8 +80,12 @@ def stop_hub(hub: subprocess.Popen[str]) -> None:
         hub.wait(timeout=5)
 
 
-def process_sample(pid: int) -> tuple[int, float, float]:
+def process_sample(pid: int) -> tuple[int | None, float | None, float | None]:
     """Return (process_count, rss_kib, cpu_percent) for the Hub tree."""
+    if os.name == "nt":
+        # The Unix ps/pgrep probes are not portable. Do not turn missing
+        # observations into zero-valued performance claims.
+        return None, None, None
     try:
         status = subprocess.run(
             ["ps", "-o", "rss=,pcpu=", "-p", str(pid)],
@@ -101,21 +122,27 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="simplicio-code-loop-hub-e2e-") as directory:
         root = Path(directory)
         lock = root / "hub.lock"
-        endpoint = root / "hub.sock"
+        transport = "tcp" if os.name == "nt" else "unix"
+        if transport == "tcp":
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as allocator:
+                allocator.bind(("127.0.0.1", 0))
+                endpoint = f"127.0.0.1:{allocator.getsockname()[1]}"
+        else:
+            endpoint = str(root / "hub.sock")
         env = dict(os.environ)
         env["PYTHONPATH"] = str(loop_root) + os.pathsep + env.get("PYTHONPATH", "")
         startup_started = time.perf_counter()
         restart_ready = root / "restart.ready"
         restart_complete = root / "restart.complete"
-        hub = start_hub(loop_root, env, lock, endpoint)
+        hub = start_hub(loop_root, env, lock, endpoint, transport)
         hub_pids = [hub.pid]
         restart_downtime_ms: float | None = None
         try:
-            wait_for_socket(endpoint, hub)
+            wait_for_endpoint(endpoint, hub, transport)
             startup_ms = round((time.perf_counter() - startup_started) * 1000, 3)
             test_env = dict(
                 env,
-                SIMPLICIO_LOOP_HUB_ENDPOINT=f"unix://{endpoint}",
+                SIMPLICIO_LOOP_HUB_ENDPOINT=f"{transport}://{endpoint}",
                 SIMPLICIO_LOOP_HUB_RESTART_READY=str(restart_ready),
                 SIMPLICIO_LOOP_HUB_RESTART_COMPLETE=str(restart_complete),
             )
@@ -129,9 +156,9 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
                 if restart_ready.exists() and restart_downtime_ms is None:
                     restart_started = time.perf_counter()
                     stop_hub(hub)
-                    hub = start_hub(loop_root, env, lock, endpoint)
+                    hub = start_hub(loop_root, env, lock, endpoint, transport)
                     hub_pids.append(hub.pid)
-                    wait_for_socket(endpoint, hub)
+                    wait_for_endpoint(endpoint, hub, transport)
                     restart_downtime_ms = round((time.perf_counter() - restart_started) * 1000, 3)
                     restart_complete.write_text("ready\n", encoding="utf-8")
                 time.sleep(0.02)
@@ -151,16 +178,16 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
                 "proof_kind": "external_loop_daemon",
                 "code_revision": git_revision(code_root),
                 "loop_revision": git_revision(loop_root),
-                "endpoint_scheme": "unix",
+                "endpoint_scheme": transport,
                 "hub_identity_receipt": line,
                 "stdout_sha256": digest(output),
                 "startup_ms": startup_ms,
                 "test_ms": test_ms,
                 "restart_downtime_ms": restart_downtime_ms,
                 "hub_pid_rotated": len(set(hub_pids)) == 2,
-                "hub_processes_max": max((sample[0] for sample in samples), default=1),
-                "hub_rss_kib_max": max((sample[1] for sample in samples), default=0.0),
-                "hub_cpu_percent_max": max((sample[2] for sample in samples), default=0.0),
+            "hub_processes_max": max((sample[0] for sample in samples if sample[0] is not None), default=None),
+            "hub_rss_kib_max": max((sample[1] for sample in samples if sample[1] is not None), default=None),
+            "hub_cpu_percent_max": max((sample[2] for sample in samples if sample[2] is not None), default=None),
                 "provider_free": True,
                 "local_llm_started": False,
                 "deepseek_started": False,
@@ -197,9 +224,9 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             "test_ms_p95": percentile(test, 0.95) if runs >= 2 else None,
             "restart_downtime_ms_p50": percentile(restart, 0.50),
             "restart_downtime_ms_p95": percentile(restart, 0.95) if runs >= 2 else None,
-            "hub_processes_max": max(int(receipt["hub_processes_max"]) for receipt in receipts),
-            "hub_rss_kib_max": max(float(receipt["hub_rss_kib_max"]) for receipt in receipts),
-            "hub_cpu_percent_max": max(float(receipt["hub_cpu_percent_max"]) for receipt in receipts),
+            "hub_processes_max": max((int(receipt["hub_processes_max"]) for receipt in receipts if receipt["hub_processes_max"] is not None), default=None),
+            "hub_rss_kib_max": max((float(receipt["hub_rss_kib_max"]) for receipt in receipts if receipt["hub_rss_kib_max"] is not None), default=None),
+            "hub_cpu_percent_max": max((float(receipt["hub_cpu_percent_max"]) for receipt in receipts if receipt["hub_cpu_percent_max"] is not None), default=None),
         },
         "run_receipts": receipts,
         "provider_free": True,

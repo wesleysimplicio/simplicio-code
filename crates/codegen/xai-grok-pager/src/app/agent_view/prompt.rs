@@ -311,16 +311,11 @@ impl AgentView {
                     }
                     _ => {}
                 }
-            } else if cfg!(not(windows))
-                && key!(Tab).matches(key)
+            } else if key!(Tab).matches(key)
                 && self.prompt_input_mode == PromptInputMode::Bash
                 && !self.prompt.text().is_empty()
             {
                 // Priority 5: terminal-like Tab in bash mode — always on.
-                // Windows keeps the legacy focus-cycling Tab instead: the
-                // completion stack's tokenizer/quoting is POSIX-only (see
-                // the shell crate's `shell_token`), so the keystroke must
-                // not be eaten by a surface that emits misparsed lines.
                 // Usable candidates complete now (insta-accept / fill /
                 // dropdown, per `tab_decision`); `Nothing` (none fetched, or
                 // outdated by an edit or cursor move) fires a deterministic

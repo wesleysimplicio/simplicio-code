@@ -154,8 +154,7 @@ pub fn select_provider(
     forbid_direct_backend(requested)?;
 
     let local = discovered.iter().find(|p| {
-        p.id == requested
-            && matches!(p.health, ProviderHealth::Ready | ProviderHealth::Degraded)
+        p.id == requested && matches!(p.health, ProviderHealth::Ready | ProviderHealth::Degraded)
     });
 
     if let Some(cap) = local {
@@ -296,7 +295,8 @@ mod tests {
         let err = select_provider(true, "runtime://provider/missing", &[local_ready()], false)
             .unwrap_err();
         assert_eq!(err, LiteRtError::ConsentRequired);
-        let sel = select_provider(true, "runtime://provider/missing", &[local_ready()], true).unwrap();
+        let sel =
+            select_provider(true, "runtime://provider/missing", &[local_ready()], true).unwrap();
         assert_eq!(sel.path, InferencePath::RuntimeRemote);
     }
 

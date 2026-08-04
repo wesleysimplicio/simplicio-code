@@ -503,13 +503,14 @@ impl SessionActor {
             skill_information: skill_info,
             images: mut raw_images,
             is_cursor,
-        } = match parse_prompt_with_skills(
+        } = match crate::session::prompt_parser::parse_prompt_with_skills_using_fs(
             &prompt_blocks,
             self.tool_context.cwd.to_path_buf(),
             &self.session_info,
             verbatim,
             self.is_cursor_harness(),
             pending_skill_information.take().unwrap_or_default(),
+            Some(&self.tool_context.fs),
         )
         .await
         {

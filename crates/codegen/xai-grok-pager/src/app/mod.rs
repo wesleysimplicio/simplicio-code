@@ -1724,9 +1724,9 @@ mod tests {
         assert!(!args.no_alt_screen);
     }
     #[test]
-    fn cli_command_name_is_grok() {
+    fn cli_command_name_is_simplicio_code() {
         use clap::CommandFactory;
-        assert_eq!(PagerArgs::command().get_name(), "grok");
+        assert_eq!(PagerArgs::command().get_name(), "simplicio_code");
     }
     #[test]
     fn cli_help_output_header() {
@@ -1738,7 +1738,7 @@ mod tests {
             vec![
                 "Simplicio Code TUI",
                 "",
-                "Usage: grok [OPTIONS] [PROMPT] [COMMAND]",
+                "Usage: simplicio_code [OPTIONS] [PROMPT] [COMMAND]",
                 "",
                 "Arguments:",
             ]

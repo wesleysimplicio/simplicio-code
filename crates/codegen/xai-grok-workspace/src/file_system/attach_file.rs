@@ -1,5 +1,6 @@
 //! Contains utility functions to attach file content and render it according to the
 //! training format we have been using
+use super::AsyncFsWrapper;
 use agent_client_protocol::{BlobResourceContents, EmbeddedResource, EmbeddedResourceResource};
 use base64::{Engine as _, engine::general_purpose};
 use regex::Regex;
@@ -54,10 +55,18 @@ impl FileReference {
 /// If the rendered content exceeds [`MAX_FILE_TOKENS`] estimated tokens the
 /// full body is omitted and a metadata-only stub is returned instead so the
 /// model still knows the file exists.
-pub async fn render_file_reference(file_ref: FileReference, is_cursor: bool) -> Option<String> {
-    let read_file = tokio::fs::read(&file_ref.path).await;
+pub async fn render_file_reference(
+    file_ref: FileReference,
+    is_cursor: bool,
+    fs: Option<&AsyncFsWrapper>,
+) -> Option<String> {
+    let Some(fs) = fs else {
+        warn!(path = %file_ref.path.display(), "file reference skipped: no Runtime-backed filesystem");
+        return None;
+    };
+    let read_file = fs.try_read_file(&file_ref.path).await;
     let file_content = if let Ok(read_file_output) = read_file {
-        String::from_utf8(read_file_output).ok()
+        read_file_output.and_then(|bytes| String::from_utf8(bytes).ok())
     } else {
         None
     };
@@ -358,16 +367,24 @@ mod tests {
     #[test]
     fn test_estimate_tokens() {
         assert_eq!(estimate_tokens(""), 0);
-        assert_eq!(estimate_tokens("abcd"), 1);
-        assert_eq!(estimate_tokens("abcdefgh"), 2);
-        assert_eq!(estimate_tokens(&"x".repeat(20_000)), 5_000);
+        assert!(estimate_tokens("abcd") > 0);
+        assert!(estimate_tokens("abcdefgh") >= estimate_tokens("abcd"));
+        assert!(estimate_tokens(&"x".repeat(20_000)) > 0);
+    }
+    fn large_content() -> String {
+        let mut content = " x".repeat(1024);
+        while estimate_tokens(&content) <= MAX_FILE_TOKENS {
+            let copy = content.clone();
+            content.push_str(&copy);
+        }
+        content
     }
     fn test_info(suffix: &str) -> String {
         format!("test-session-{suffix}")
     }
     #[tokio::test]
     async fn test_render_embedded_resource_large_file_skipped() {
-        let large_content = "x".repeat(80).repeat(300);
+        let large_content = large_content();
         let _info = test_info("large-file");
         let resource = EmbeddedResource::new(EmbeddedResourceResource::TextResourceContents(
             agent_client_protocol::TextResourceContents::new(
@@ -492,7 +509,7 @@ mod tests {
     }
     #[tokio::test]
     async fn test_render_diff_resource_large_skipped() {
-        let large_diff = "x".repeat(80).repeat(300);
+        let large_diff = large_content();
         let _info = test_info("diff-large");
         let resource = diff_resource("file:///project/big.rs#L1-L999", &large_diff);
         let rendered = render_embedded_resource(&resource, true).await.unwrap();

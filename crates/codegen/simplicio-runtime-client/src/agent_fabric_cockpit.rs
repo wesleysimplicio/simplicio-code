@@ -258,7 +258,10 @@ pub fn project_from_ledger(
     let gaps = gaps
         .into_iter()
         .map(|mut g| {
-            if g.receipt.as_ref().is_some_and(|r| r.tampered || !r.hbp_valid) {
+            if g.receipt
+                .as_ref()
+                .is_some_and(|r| r.tampered || !r.hbp_valid)
+            {
                 g.blocked = true;
                 g.freshness = Freshness::Stale;
             }
@@ -418,7 +421,10 @@ mod tests {
         let snap = CockpitSnapshot::unavailable("repo", "loop_hub_missing");
         assert!(snap.gaps.is_empty());
         assert!(!snap.quorum.satisfied());
-        assert_eq!(snap.cost.reason_if_null.as_deref(), Some("loop_hub_missing"));
+        assert_eq!(
+            snap.cost.reason_if_null.as_deref(),
+            Some("loop_hub_missing")
+        );
         assert!(!snap.has_green_when_unknown());
     }
 

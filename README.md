@@ -53,9 +53,11 @@ Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.
 
 ## Instalando o binário
 
-A partir da `0.3.0-beta.1`, releases assinadas (prerelease no GitHub) passam
-a ser publicadas por [`.github/workflows/release.yml`](.github/workflows/release.yml),
-com checksum, SBOM e manifest assinado — veja
+O workflow de release em [`.github/workflows/release.yml`](.github/workflows/release.yml)
+prepara prereleases com checksum, SBOM e manifest assinado. A chave usada hoje é
+um placeholder efêmero de desenvolvimento; este checkout não prova uma release
+publicada com trust root de produção, build Windows ou execução real nos três
+sistemas. Veja
 [`RELEASE_NOTES_0.3.0-beta.3.md`](RELEASE_NOTES_0.3.0-beta.3.md) para o que
 já funciona e o que ainda falta (chave de assinatura de produção, build
 Windows, rollout gradual). Instale com:
@@ -129,6 +131,9 @@ Simplicio-specific docs (start here for this fork):
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — client, Runtime, and gateway boundaries
 - [docs/audits/issue-139-report.md](docs/audits/issue-139-report.md) — reproducible issue specification audit and closure decisions; its [hash-guarded rewrite bundle](docs/audits/issue-139-rewrites.json) provides owner-review drafts without mutating or closing issues
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — login, Runtime, mapa, rede, updater
+- [docs/status/current.md](docs/status/current.md) — status gerado do checkout, versão e evidência de release
+- [docs/LOCAL_HTML_PREVIEW.md](docs/LOCAL_HTML_PREVIEW.md) — workaround bounded para preview HTML local
+- [docs/perf/code-loop-hub-benchmark-2026-08-01.md](docs/perf/code-loop-hub-benchmark-2026-08-01.md) — benchmark externo Code → Loop Hub com p50/p95
 - [docs/privacy/telemetry.md](docs/privacy/telemetry.md) — what telemetry exists, opt-out, `privacy diagnose`
 - [docs/privacy/network-destinations.md](docs/privacy/network-destinations.md) — every network destination the client can contact, the telemetry-scoped allowlist, and the network-capture test
 - [docs/migration/legacy-login-migration.md](docs/migration/legacy-login-migration.md) — design for the future login/entitlement migration (pending #3/#4)

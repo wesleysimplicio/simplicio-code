@@ -1732,11 +1732,23 @@ fn main() {
             "Found crashed sessions from a previous run"
         );
     }
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap_or_else(|e| panic!("failed to start tokio runtime: {e}"));
-    let result = run_and_shutdown(runtime, async_main(), RUNTIME_SHUTDOWN_GRACE);
+    // The composed CLI future is large enough to exhaust the small default
+    // Windows main-thread stack before its first poll. Keep the process entry
+    // point small and run the async surface on an explicitly bounded stack.
+    let worker = std::thread::Builder::new()
+        .name("simplicio-code-runtime".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .unwrap_or_else(|e| panic!("failed to start tokio runtime: {e}"));
+            run_and_shutdown(runtime, async_main(), RUNTIME_SHUTDOWN_GRACE)
+        })
+        .unwrap_or_else(|e| panic!("failed to spawn runtime thread: {e}"));
+    let result = worker
+        .join()
+        .unwrap_or_else(|_| Err(anyhow::anyhow!("runtime thread panicked")));
     xai_grok_telemetry::debug_log::flush();
     if let Err(e) = result {
         xai_tty_utils::restore_native_stderr();

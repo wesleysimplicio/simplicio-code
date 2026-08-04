@@ -481,7 +481,13 @@ fn set_yolo_mode_on_under_plan_uses_plan_aware_toast() {
         .as_ref()
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
-    assert_eq!(toast, YOLO_ON_UNDER_PLAN_TOAST);
+    assert_eq!(
+        toast,
+        format!(
+            "{} Always-approve ON: plan mode still blocks file edits until you exit plan mode",
+            crate::glyphs::warning_mark()
+        )
+    );
 
     // Pending (optimistic) plan state counts too — same as the flag renderer.
     let mut app = test_app_with_agent();
@@ -492,7 +498,13 @@ fn set_yolo_mode_on_under_plan_uses_plan_aware_toast() {
         .as_ref()
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
-    assert_eq!(toast, YOLO_ON_UNDER_PLAN_TOAST);
+    assert_eq!(
+        toast,
+        format!(
+            "{} Always-approve ON: plan mode still blocks file edits until you exit plan mode",
+            crate::glyphs::warning_mark()
+        )
+    );
 
     // Without plan mode the standard destructive toast is unchanged.
     let mut app = test_app_with_agent();
@@ -504,7 +516,10 @@ fn set_yolo_mode_on_under_plan_uses_plan_aware_toast() {
         .expect("toast must be set");
     assert_eq!(
         toast,
-        "\u{26A0} Always-approve ON: all tool actions auto-run"
+        format!(
+            "{} Always-approve ON: all tool actions auto-run",
+            crate::glyphs::warning_mark()
+        )
     );
 }
 
@@ -526,7 +541,13 @@ fn set_permission_mode_always_approve_under_plan_uses_plan_aware_toast() {
         .as_ref()
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
-    assert_eq!(toast, YOLO_ON_UNDER_PLAN_TOAST);
+    assert_eq!(
+        toast,
+        format!(
+            "{} Always-approve ON: plan mode still blocks file edits until you exit plan mode",
+            crate::glyphs::warning_mark()
+        )
+    );
 }
 
 #[test]
@@ -1070,7 +1091,10 @@ fn set_yolo_mode_toast_format() {
         .expect("toast must be set");
     assert_eq!(
         toast,
-        "\u{26A0} Always-approve ON: all tool actions auto-run"
+        format!(
+            "{} Always-approve ON: all tool actions auto-run",
+            crate::glyphs::warning_mark()
+        )
     );
 
     let _ = dispatch(Action::SetYoloMode(false), &mut app);
@@ -1079,7 +1103,10 @@ fn set_yolo_mode_toast_format() {
         .as_ref()
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
-    assert_eq!(toast, "\u{2713} Always-approve: off");
+    assert_eq!(
+        toast,
+        format!("{} Always-approve: off", crate::glyphs::check_mark())
+    );
 }
 
 #[test]
@@ -1535,7 +1562,8 @@ fn set_permission_mode_default_overrides_canonical_to_default() {
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
     assert_eq!(
-        toast, "\u{2713} Permission mode: Default",
+        toast,
+        format!("{} Permission mode: Default", crate::glyphs::check_mark()),
         "PR 11 R1 G-3 #12: Default toast is value-neutral; no parenthetical that lies \
              about runtime equivalence",
     );
@@ -1599,7 +1627,11 @@ fn set_permission_mode_always_approve_from_default_captures_prev_canonical() {
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
     assert_eq!(
-        toast, "\u{26A0} Always-approve ON: all tool actions auto-run",
+        toast,
+        format!(
+            "{} Always-approve ON: all tool actions auto-run",
+            crate::glyphs::warning_mark()
+        ),
         "AlwaysApprove arm preserves the destructive yolo_toast(true) — the warning \
              weight is correct for the YOLO transition",
     );
@@ -1655,17 +1687,20 @@ fn permission_mode_toast_returns_brand_consistent_strings() {
     use crate::app::actions::PermissionModeKind;
     assert_eq!(
         permission_mode_toast(PermissionModeKind::Default),
-        "\u{2713} Permission mode: Default",
+        format!("{} Permission mode: Default", crate::glyphs::check_mark()),
     );
     assert_eq!(
         permission_mode_toast(PermissionModeKind::Ask),
-        "\u{2713} Permission mode: Ask",
+        format!("{} Permission mode: Ask", crate::glyphs::check_mark()),
     );
     // AlwaysApprove still goes through `yolo_toast(true)` —
     // destructive variant.
     assert_eq!(
         permission_mode_toast(PermissionModeKind::AlwaysApprove),
-        "\u{26A0} Always-approve ON: all tool actions auto-run",
+        format!(
+            "{} Always-approve ON: all tool actions auto-run",
+            crate::glyphs::warning_mark()
+        ),
     );
 }
 
@@ -2187,7 +2222,7 @@ fn set_plan_mode_idempotent_on() {
         "idempotent ON toast must surface the value: {toast}",
     );
     assert!(
-        toast.contains('\u{2713}'),
+        toast.contains(crate::glyphs::check_mark()),
         "plan_mode toast uses ✓ (non-destructive in both directions): {toast}",
     );
 }
@@ -2222,7 +2257,7 @@ fn set_plan_mode_idempotent_off() {
     let toast = read_toast(&app);
     assert!(toast.contains("Plan mode"));
     assert!(toast.contains("off"));
-    assert!(toast.contains('\u{2713}'));
+    assert!(toast.contains(crate::glyphs::check_mark()));
 }
 
 /// Toast format contract: both directions
@@ -2246,7 +2281,7 @@ fn plan_mode_toast_format() {
         !toast.contains(": On"),
         "ON toast must NOT use capital 'On' (PR 10 R1 G-3 #1 fix): {toast}",
     );
-    assert!(toast.contains('\u{2713}'));
+    assert!(toast.contains(crate::glyphs::check_mark()));
 
     // Bring the agent into plan mode for the OFF toast assertion.
     // (The previous SetPlanMode(On) set pending = Some(true); we

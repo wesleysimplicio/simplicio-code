@@ -546,7 +546,11 @@ impl TaskEntry {
     /// prefix is the same width as an item's 2-space indent).
     fn header(group: GroupKind, count: usize, collapsed: bool) -> Self {
         let theme = Theme::current();
-        let chevron = if collapsed { "\u{25B8} " } else { "\u{25BE} " };
+        let chevron = if collapsed {
+            format!("{} ", crate::glyphs::disclosure_closed())
+        } else {
+            format!("{} ", crate::glyphs::disclosure_open())
+        };
         let styled = Line::from(vec![
             Span::styled(chevron, Style::default().fg(theme.gray)),
             Span::styled(
@@ -2301,7 +2305,7 @@ mod tests {
                         .unwrap_or_default()
                 })
                 .collect();
-            if let Some(x) = row.iter().position(|s| s == "\u{2717}") {
+            if let Some(x) = row.iter().position(|s| s == crate::glyphs::ballot_x()) {
                 found = true;
                 for cell in &row[x + 2..] {
                     assert!(
@@ -2311,7 +2315,7 @@ mod tests {
                 }
             }
         }
-        assert!(found, "expected a `✗` kill button on the loop row");
+        assert!(found, "expected a kill button on the loop row");
     }
 
     #[test]

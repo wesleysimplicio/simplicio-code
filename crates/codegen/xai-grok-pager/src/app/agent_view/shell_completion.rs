@@ -202,6 +202,11 @@ mod shell_suggestion_key_tests {
     fn bash_agent(text: &str) -> AgentView {
         let mut agent = bash_agent_always_on(text);
         agent.prompt.suggestions.enabled = true;
+        // The fixture represents a response that has already landed for the
+        // current draft. Keep the dropdown generation aligned with the
+        // controller so `tab_decision` exercises completion semantics rather
+        // than the stale-response guard.
+        agent.prompt.suggestions.dropdown.generation = agent.prompt.suggestions.generation();
         agent
     }
 
@@ -214,6 +219,8 @@ mod shell_suggestion_key_tests {
         agent.prompt.textarea.insert_str(text);
         agent.prompt.suggestions.dropdown.request_text = text.to_owned();
         agent.prompt.suggestions.dropdown.request_cursor = text.len();
+        // The fixture represents the current draft, not a stale response.
+        agent.prompt.suggestions.dropdown.generation = agent.prompt.suggestions.generation();
         agent
     }
 

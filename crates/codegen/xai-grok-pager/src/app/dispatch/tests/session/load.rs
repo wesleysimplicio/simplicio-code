@@ -422,7 +422,7 @@ fn session_loaded_with_restore_failure_shows_warning_banner() {
     });
     let text = warn.expect("warning banner missing").as_str();
     assert!(
-        text.starts_with('\u{26A0}'),
+        text.starts_with(crate::glyphs::warning_mark()),
         "expected ⚠ prefix, got: {text}"
     );
     assert!(text.contains("MERGE_HEAD present"));

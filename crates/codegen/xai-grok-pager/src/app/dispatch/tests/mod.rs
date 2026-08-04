@@ -38,8 +38,7 @@ use super::dashboard::{
     dispatch_open_dashboard, ensure_dashboard_state, resolve_location_input,
 };
 use super::modes::{
-    YOLO_ON_UNDER_PLAN_TOAST, active_agent_plan_nudge_state, dispatch_cycle_mode_and_sync,
-    permission_mode_toast,
+    active_agent_plan_nudge_state, dispatch_cycle_mode_and_sync, permission_mode_toast,
 };
 use super::permissions::drain_permission_queue;
 use super::prompt::{

@@ -404,7 +404,8 @@ fn set_permission_mode_ask_emits_brand_consistent_toast() {
         .map(|(s, _)| s.clone())
         .expect("toast must be set");
     assert_eq!(
-        toast, "\u{2713} Permission mode: Ask",
+        toast,
+        format!("{} Permission mode: Ask", crate::glyphs::check_mark()),
         "PR 11 R1 G-3 #11: Ask toast must brand as 'Permission mode' not 'Always-approve'",
     );
 

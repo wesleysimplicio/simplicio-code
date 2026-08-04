@@ -4464,9 +4464,13 @@ mod tests {
             content.contains("Add responsiveness to /context"),
             "title must render, got: {content:?}",
         );
-        for chip in ["[‹]", "[›]", "[Dashboard]"] {
+        for chip in [
+            format!("[{}]", crate::glyphs::chevron_left()),
+            format!("[{}]", crate::glyphs::chevron()),
+            "[Dashboard]".to_string(),
+        ] {
             assert!(
-                content.contains(chip),
+                content.contains(&chip),
                 "overlay must paint `{chip}`, got: {content:?}",
             );
         }
@@ -4515,8 +4519,12 @@ mod tests {
         // The rendered row should literally contain the adjacent
         // pair `[‹][›]` (no internal whitespace).
         assert!(
-            content.contains("[‹][›]"),
-            "row must contain `[‹][›]` as a single adjacent group, got: {content:?}",
+            content.contains(&format!(
+                "[{}][{}]",
+                crate::glyphs::chevron_left(),
+                crate::glyphs::chevron()
+            )),
+            "row must contain adjacent navigation chips, got: {content:?}",
         );
         let close = chrome.close_rect.unwrap();
         let close_cell = &buf[(close.x, close.y)];
@@ -4865,9 +4873,13 @@ mod tests {
             content.contains("Add responsiveness to /context"),
             "title must render, got: {content:?}",
         );
-        for chip in ["[‹]", "[›]", "[Dashboard]"] {
+        for chip in [
+            format!("[{}]", crate::glyphs::chevron_left()),
+            format!("[{}]", crate::glyphs::chevron()),
+            "[Dashboard]".to_string(),
+        ] {
             assert!(
-                content.contains(chip),
+                content.contains(&chip),
                 "header must paint `{chip}`, got: {content:?}",
             );
         }
@@ -5168,8 +5180,8 @@ mod tests {
         );
         let content = buf_to_text(&buf);
         assert!(
-            content.contains('\u{2717}'),
-            "close affordance [✗] missing, got: {content:?}",
+            content.contains(crate::glyphs::ballot_x()),
+            "close affordance missing, got: {content:?}",
         );
         let close_rect = state
             .popup_close_rect
@@ -6361,7 +6373,7 @@ mod tests {
         );
         assert_eq!(
             buf[(2, 0)].symbol(),
-            "\u{2e2c}",
+            crate::glyphs::dot_spinner_frames()[2],
             "row 0 col 2 must be the spinner glyph `⸬` at tick=8",
         );
         assert_eq!(
