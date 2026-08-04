@@ -304,6 +304,9 @@ def validate_rendered_document(root: Path, data: dict[str, object]) -> None:
             raise ValueError(f"status document is missing capability {item['capability']}")
     residual = data["residual_inventory"]
     assert isinstance(residual, dict)
+    source_revision_match = re.search(r"^- Source revision: `([^`]+)`$", text, re.MULTILINE)
+    if not source_revision_match or source_revision_match.group(1) != residual.get("source_revision"):
+        raise ValueError("status document source revision drifted")
     for item in residual["issues"]:
         row_prefix = f"| #{item['number']} | `{item['state']}` |"
         if row_prefix not in text:
