@@ -349,6 +349,12 @@ def collect(
         status in {"UNAVAILABLE", "UNVERIFIED"} for status in tool_statuses
     ) or validation["status"] == "UNVERIFIED"
     clean = before["dirty"] is False and after["dirty"] is False
+    stable_revision = (
+        isinstance(before.get("commit"), str)
+        and before.get("commit") == after.get("commit")
+    )
+    if not stable_revision:
+        hard_fail = True
     if before["dirty"] is None or after["dirty"] is None:
         unverified = True
     if not clean:
@@ -374,6 +380,7 @@ def collect(
         "tools": tools,
         "local_validation": validation,
         "boundaries": {
+            "workspace_revision_stable": stable_revision,
             "network": "NOT_USED",
             "github_actions": "NOT_REQUIRED_FOR_LOCAL_LANE",
             "remote_ci": "UNVERIFIED",
