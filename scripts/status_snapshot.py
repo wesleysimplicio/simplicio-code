@@ -8,6 +8,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -320,6 +321,8 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root.resolve()
     data = snapshot(root)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if args.output:
         output = args.output if args.output.is_absolute() else root / args.output
         output.parent.mkdir(parents=True, exist_ok=True)
