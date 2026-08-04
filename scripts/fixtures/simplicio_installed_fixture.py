@@ -191,7 +191,7 @@ def serve_runtime() -> None:  # pragma: no cover - system subprocess boundary
         if request_id is None:
             continue
         if method == "initialize":
-            result = {"protocolVersion": "2024-11-05", "serverInfo": {"name": "simplicio", "version": "code-e2e-fixture/1"}}
+            result = {"protocolVersion": "2024-11-05", "serverInfo": {"name": "simplicio", "version": "code-e2e-fixture/1"}, "capabilities": {"runtime_process": {"start": True, "status": True, "cancel": True, "wait": True}}}
         elif method == "tools/list":
             result = {"tools": [{"name": tool} for tool in TOOLS]}
         elif method == "tools/call":

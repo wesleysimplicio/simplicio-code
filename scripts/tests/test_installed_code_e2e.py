@@ -185,7 +185,7 @@ class InstalledCodeE2ETest(unittest.TestCase):
             (lambda: MODULE.validate_runtime_contract(None, None), "runtime_missing"),
             (
                 lambda: MODULE.validate_runtime_contract(
-                    {"protocolVersion": "2024-11-05"}, {"tools": []}
+                    {"protocolVersion": "2024-11-05", "capabilities": {"runtime_process": {name: True for name in MODULE.REQUIRED_RUNTIME_PROCESS_CAPABILITIES}}}, {"tools": []}
                 ),
                 "runtime_incompatible",
             ),
@@ -197,8 +197,13 @@ class InstalledCodeE2ETest(unittest.TestCase):
                 probe()
 
 
+    def test_missing_runtime_process_capability_fails_closed(self):
+        initialized = {"protocolVersion": "2024-11-05", "capabilities": {"runtime_process": {"start": True}}}
+        with self.assertRaisesRegex(RuntimeError, "runtime_process_incompatible"):
+            MODULE.validate_runtime_process_capabilities(initialized)
+
     def test_runtime_36_contract_matches_current_mcp_tools(self):
-        initialized = {"protocolVersion": "2024-11-05"}
+        initialized = {"protocolVersion": "2024-11-05", "capabilities": {"runtime_process": {name: True for name in MODULE.REQUIRED_RUNTIME_PROCESS_CAPABILITIES}}}
         tools = {
             "tools": [{"name": name} for name in MODULE.REQUIRED_RUNTIME_TOOLS]
         }
