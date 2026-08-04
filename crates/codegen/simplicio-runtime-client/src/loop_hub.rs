@@ -662,6 +662,7 @@ fn validate_process_receipt(
     receipt: &RuntimeProcessReceipt,
     workspace: &str,
     handle: Option<&str>,
+    idempotency_key: Option<&str>,
 ) -> Result<(), HubError> {
     validate_process_request(&receipt.schema, workspace, Some(&receipt.handle))?;
     if receipt.workspace != workspace || handle.is_some_and(|expected| expected != receipt.handle) {
@@ -672,6 +673,13 @@ fn validate_process_receipt(
     if receipt.receipt_id.trim().is_empty() {
         return Err(HubError::Protocol(
             "Runtime process receipt has no receipt_id".into(),
+        ));
+    }
+    if let Some(expected) = idempotency_key
+        && receipt.idempotency_key.as_deref() != Some(expected)
+    {
+        return Err(HubError::Protocol(
+            "Runtime process receipt has a mismatched idempotency_key".into(),
         ));
     }
     Ok(())
@@ -843,7 +851,12 @@ impl SharedHubServiceHandle {
             ));
         }
         let receipt = self.session.transport.process_start(request)?;
-        validate_process_receipt(&receipt, &request.workspace, None)?;
+        validate_process_receipt(
+            &receipt,
+            &request.workspace,
+            None,
+            Some(&request.idempotency_key),
+        )?;
         Ok(receipt)
     }
 
@@ -863,7 +876,7 @@ impl SharedHubServiceHandle {
             ));
         }
         let receipt = self.session.transport.process_status(request)?;
-        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle))?;
+        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle), None)?;
         Ok(receipt)
     }
 
@@ -888,7 +901,7 @@ impl SharedHubServiceHandle {
             ));
         }
         let receipt = self.session.transport.process_cancel(request)?;
-        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle))?;
+        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle), None)?;
         Ok(receipt)
     }
 
@@ -913,7 +926,7 @@ impl SharedHubServiceHandle {
             ));
         }
         let receipt = self.session.transport.process_wait(request)?;
-        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle))?;
+        validate_process_receipt(&receipt, &request.workspace, Some(&request.handle), None)?;
         Ok(receipt)
     }
 }
@@ -1598,6 +1611,37 @@ mod tests {
         assert!(
             matches!(error, HubError::InvalidRequest(message) if message.contains("Runtime handle"))
         );
+    }
+
+    #[test]
+    fn process_effect_receipts_require_matching_idempotency_keys() {
+        let mut receipt = RuntimeProcessReceipt {
+            schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
+            workspace: "workspace".into(),
+            handle: "handle-1".into(),
+            state: RuntimeProcessState::Running,
+            receipt_id: "receipt-1".into(),
+            idempotency_key: Some("start-1".into()),
+            exit_code: None,
+            signal: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            truncated: false,
+            total_bytes: None,
+        };
+
+        assert!(validate_process_receipt(&receipt, "workspace", None, Some("start-1"),).is_ok());
+        assert!(matches!(
+            validate_process_receipt(&receipt, "workspace", None, Some("other")),
+            Err(HubError::Protocol(message)) if message.contains("idempotency_key")
+        ));
+
+        receipt.idempotency_key = None;
+        assert!(matches!(
+            validate_process_receipt(&receipt, "workspace", None, Some("start-1")),
+            Err(HubError::Protocol(message)) if message.contains("idempotency_key")
+        ));
+        assert!(validate_process_receipt(&receipt, "workspace", None, None).is_ok());
     }
 
     #[test]
