@@ -32,6 +32,168 @@ AGENT_STARTUP_TIMEOUT_S = 30.0
 REQUIRED_AGENT_CAPABILITIES = frozenset(
     ("host.advisories", "host.status", "turn.cancel", "turn.reconcile", "turn.start")
 )
+FAST_MODES = ("rust", "python", "off")
+FAST_MATRIX_SCHEMA = "simplicio.code-fast-mode-matrix/v1"
+FAST_PROBE_TIMEOUT_S = 10.0
+
+
+def _validate_fast_modes(modes: tuple[str, ...]) -> tuple[str, ...]:
+    normalized = tuple(str(mode).strip().lower() for mode in modes)
+    if not normalized or any(not mode for mode in normalized):
+        raise ValueError("fast_modes_empty")
+    unknown = sorted(set(normalized) - set(FAST_MODES))
+    if unknown:
+        raise ValueError("fast_mode_unknown:" + ",".join(unknown))
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("fast_mode_duplicate")
+    return normalized
+
+
+def parse_fast_modes(value: str | None) -> tuple[str, ...]:
+    return _validate_fast_modes(
+        FAST_MODES if value is None else tuple(value.split(","))
+    )
+
+
+def _json_payload(output: str) -> dict[str, object]:
+    try:
+        payload = json.loads(output)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        return payload
+    for line in reversed(output.splitlines()):
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _fast_mode_result(
+    mode: str,
+    *,
+    executable: str | None,
+    fixture_mode: bool,
+    runner: object,
+) -> dict[str, object]:
+    started = time.perf_counter_ns()
+    result: dict[str, object] = {
+        "mode": mode,
+        "requested_engine": mode,
+        "outcome": "blocked",
+        "probe_status": "not_executed",
+        "selected_engine": None,
+        "version": None,
+        "reason": None,
+        "effect_attempted": False,
+        "local_llm_started": False,
+    }
+    if mode == "off":
+        result.update(
+            outcome="not_executed",
+            reason="fast_disabled_by_request",
+        )
+    elif fixture_mode:
+        result.update(
+            outcome="not_executed",
+            reason="hermetic_fixture_does_not_start_fast",
+        )
+    elif executable is None:
+        result.update(
+            outcome="blocked",
+            reason="fast_binary_missing",
+        )
+    else:
+        try:
+            completed = runner(
+                [
+                    executable,
+                    "--fast-engine",
+                    mode,
+                    "capabilities",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=FAST_PROBE_TIMEOUT_S,
+                check=False,
+            )
+            payload = _json_payload(
+                str(getattr(completed, "stdout", ""))
+            )
+            engine = payload.get("engine")
+            engine = engine if isinstance(engine, dict) else {}
+            selected = payload.get("selected_engine")
+            if not isinstance(selected, str):
+                selected = engine.get("selected_engine")
+            version = payload.get("version")
+            if not isinstance(version, str):
+                manifest = engine.get("manifest")
+                manifest = manifest if isinstance(manifest, dict) else {}
+                version = manifest.get("version")
+            result.update(
+                outcome=(
+                    "ready"
+                    if getattr(completed, "returncode", 1) == 0
+                    and selected == mode
+                    else "blocked"
+                ),
+                probe_status=(
+                    "passed"
+                    if getattr(completed, "returncode", 1) == 0
+                    else "failed"
+                ),
+                selected_engine=selected if isinstance(selected, str) else None,
+                version=version if isinstance(version, str) else None,
+                reason=(
+                    None
+                    if getattr(completed, "returncode", 1) == 0
+                    and selected == mode
+                    else payload.get("reason", "fast_engine_unavailable")
+                ),
+            )
+        except (OSError, subprocess.SubprocessError, TypeError):
+            result.update(
+                outcome="blocked",
+                probe_status="failed",
+                reason="fast_probe_failed",
+            )
+    result["elapsed_ms"] = round(
+        (time.perf_counter_ns() - started) / 1_000_000, 3
+    )
+    return result
+
+
+def build_fast_mode_matrix(
+    modes: tuple[str, ...] = FAST_MODES,
+    *,
+    fixture_mode: bool = False,
+    executable: str | None = None,
+    runner: object = subprocess.run,
+) -> dict[str, object]:
+    normalized = _validate_fast_modes(tuple(modes))
+    if executable is None and not fixture_mode:
+        executable = (
+            os.environ.get("SIMPLICIO_FAST_BIN")
+            or shutil.which("simplicio-fast")
+        )
+    return {
+        "schema": FAST_MATRIX_SCHEMA,
+        "requested_modes": list(normalized),
+        "results": [
+            _fast_mode_result(
+                mode,
+                executable=executable,
+                fixture_mode=fixture_mode,
+                runner=runner,
+            )
+            for mode in normalized
+        ],
+        "productive_flow_attempted": False,
+    }
+
 
 
 def validate_agent_status(status: dict[str, object] | None) -> None:
@@ -579,7 +741,9 @@ def run(
     installed_binary: Path | None = None,
     *,
     fixture_mode: bool = False,
+    fast_modes: tuple[str, ...] = FAST_MODES,
 ) -> dict[str, object]:
+    fast_modes = _validate_fast_modes(tuple(fast_modes))
     if installed_binary is not None and fixture_mode:
         raise RuntimeError("installed_binary_conflicts_with_fixture")
     fixture = root / "scripts/fixtures/simplicio_installed_fixture.py"
@@ -966,6 +1130,10 @@ def run(
             elapsed = time.perf_counter_ns() - started
             negative_gates = negative_dependency_gates()
             scenario_count = len(surfaces) + len(negative_gates) + 9
+            fast_matrix = build_fast_mode_matrix(
+                fast_modes,
+                fixture_mode=fixture_mode,
+            )
             return {
                 "schema": "simplicio.code-installed-e2e-receipt/v1",
                 "proof_kind": (
@@ -1024,6 +1192,7 @@ def run(
                     "effect_state": "completed" if exec_completed and test_payload.get("exit_code") == 0 else "failed",
                 },
                 "surfaces": surfaces,
+                "fast_matrix": fast_matrix,
                 "profile_isolation": len({item["session_id"] for item in surfaces})
                 == len(SURFACES),
                 "negative_dependency_gates": negative_gates,
@@ -1073,6 +1242,11 @@ def main() -> None:  # pragma: no cover - exercised by the documented system com
         help="exercise an actually installed simplicio binary instead of external env commands",
     )
     parser.add_argument(
+        "--fast-modes",
+        default=",".join(FAST_MODES),
+        help="comma-separated Fast modes to probe: rust,python,off",
+    )
+    parser.add_argument(
         "--diagnose-installed",
         action="store_true",
         help="probe installed executables without starting productive processes",
@@ -1082,7 +1256,10 @@ def main() -> None:  # pragma: no cover - exercised by the documented system com
         receipt = diagnose_installed_dependencies()
     else:
         receipt = run(
-            args.root.resolve(), args.installed, fixture_mode=args.fixture
+            args.root.resolve(),
+            args.installed,
+            fixture_mode=args.fixture,
+            fast_modes=parse_fast_modes(args.fast_modes),
         )
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.output:

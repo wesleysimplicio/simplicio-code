@@ -19,6 +19,83 @@ FIXTURE_SPEC.loader.exec_module(FIXTURE)
 
 
 class InstalledCodeE2ETest(unittest.TestCase):
+    def test_fast_mode_parser_rejects_duplicate_and_unknown_modes(self):
+        self.assertEqual(
+            MODULE.parse_fast_modes("rust, python, off"),
+            ("rust", "python", "off"),
+        )
+        with self.assertRaisesRegex(ValueError, "fast_mode_duplicate"):
+            MODULE.parse_fast_modes("rust,python,rust")
+        with self.assertRaisesRegex(ValueError, "fast_mode_unknown"):
+            MODULE.parse_fast_modes("rust,wasm")
+
+    def test_fast_fixture_matrix_has_explicit_not_executed_results(self):
+        matrix = MODULE.build_fast_mode_matrix(
+            MODULE.parse_fast_modes("rust,python,off"),
+            fixture_mode=True,
+        )
+        self.assertEqual(matrix["schema"], MODULE.FAST_MATRIX_SCHEMA)
+        self.assertEqual(
+            matrix["requested_modes"], ["rust", "python", "off"]
+        )
+        self.assertEqual(
+            [result["mode"] for result in matrix["results"]],
+            ["rust", "python", "off"],
+        )
+        self.assertTrue(
+            all(result["outcome"] == "not_executed" for result in matrix["results"])
+        )
+        self.assertTrue(
+            all(not result["effect_attempted"] for result in matrix["results"])
+        )
+        self.assertTrue(
+            all(not result["local_llm_started"] for result in matrix["results"])
+        )
+
+    def test_fast_probe_receipt_records_ready_and_blocked_outcomes(self):
+        def fake_runner(command, **kwargs):
+            mode = command[2]
+            if mode == "rust":
+                return MODULE.subprocess.CompletedProcess(
+                    command,
+                    1,
+                    stdout=json.dumps(
+                        {
+                            "selected_engine": "unavailable",
+                            "reason": "rust_executable_missing",
+                        },
+                        indent=2,
+                    ),
+                    stderr="",
+                )
+            return MODULE.subprocess.CompletedProcess(
+                command,
+                0,
+                stdout=json.dumps(
+                    {"selected_engine": "python", "version": "2.0.24"},
+                    indent=2,
+                ),
+                stderr="",
+            )
+
+        matrix = MODULE.build_fast_mode_matrix(
+            ("rust", "python"),
+            executable="simplicio-fast",
+            runner=fake_runner,
+        )
+        self.assertEqual(
+            [result["outcome"] for result in matrix["results"]],
+            ["blocked", "ready"],
+        )
+        self.assertEqual(matrix["results"][1]["version"], "2.0.24")
+        self.assertTrue(
+            all(not result["local_llm_started"] for result in matrix["results"])
+        )
+        self.assertEqual(
+            json.loads(json.dumps(matrix))["schema"],
+            MODULE.FAST_MATRIX_SCHEMA,
+        )
+
     def test_installed_fixture_covers_every_productive_surface_and_effect(self):
         receipt = MODULE.run(ROOT, fixture_mode=True)
         self.assertEqual(receipt["schema"], "simplicio.code-installed-e2e-receipt/v1")

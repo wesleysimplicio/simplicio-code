@@ -28,6 +28,19 @@ The repository-owned no-network fixture remains available for regression tests:
 python3 scripts/installed_code_e2e.py --fixture --output fixture-receipt.json
 ```
 
+The same receipt exposes an explicit Fast engine matrix. It probes only the
+capability-selection surface; it never reads mmap offsets, starts a local LLM,
+or applies an effect. The hermetic fixture records each requested mode as
+`not_executed`; an installed run records `ready` or `blocked` with a reason and
+per-mode elapsed time:
+
+```console
+python3 scripts/installed_code_e2e.py --fixture --fast-modes rust,python,off
+```
+
+Use `--fast-modes` with a comma-separated subset for a bounded diagnostic run.
+Duplicate or unknown modes fail closed.
+
 This fixture is external to Code's productive process, but it is **not** a
 replacement implementation of AgentHost or Runtime. It refuses to start
 without the runner's private `SIMPLICIO_CODE_E2E_FIXTURE=1` opt-in, is never
