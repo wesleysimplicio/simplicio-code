@@ -204,6 +204,59 @@ class InstalledCodeE2ETest(unittest.TestCase):
         }
         MODULE.validate_runtime_contract(initialized, tools)
 
+
+    def test_runtime_release_identity_records_redacted_manifest_and_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "simplicio.exe"
+            executable.write_bytes(b"runtime-binary")
+            payload = {
+                "schema": MODULE.RUNTIME_RELEASE_SCHEMA,
+                "binary": "simplicio",
+                "runtime": {
+                    "name": "simplicio-runtime",
+                    "version": "3.6.0",
+                    "commit": "abc123",
+                    "target": "windows-x86_64",
+                },
+                "capabilities": ["serve-mcp", "edit"],
+                "secret": "must-not-escape",
+            }
+
+            def runner(command, **kwargs):
+                return MODULE.subprocess.CompletedProcess(
+                    command, 0, json.dumps(payload), ""
+                )
+
+            identity = MODULE.read_runtime_release_identity(
+                str(executable), runner=runner
+            )
+        self.assertEqual(identity["version"], "3.6.0")
+        self.assertEqual(identity["capabilities"], ["edit", "serve-mcp"])
+        self.assertEqual(
+            identity["sha256"],
+            MODULE.hashlib.sha256(b"runtime-binary").hexdigest(),
+        )
+        self.assertNotIn("must-not-escape", json.dumps(identity))
+
+
+    def test_runtime_release_identity_rejects_incompatible_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "simplicio.exe"
+            executable.write_bytes(b"runtime-binary")
+
+            def runner(command, **kwargs):
+                return MODULE.subprocess.CompletedProcess(
+                    command,
+                    0,
+                    json.dumps({"schema": "future/v9", "capabilities": []}),
+                    "",
+                )
+
+            with self.assertRaisesRegex(
+                RuntimeError, "release manifest missing version/capabilities"
+            ):
+                MODULE.read_runtime_release_identity(str(executable), runner=runner)
+
     def test_explicit_installed_mode_never_falls_back_to_fixture(self):
         with tempfile.TemporaryDirectory() as directory:
             missing = Path(directory) / "missing-simplicio"

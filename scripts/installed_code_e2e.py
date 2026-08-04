@@ -35,6 +35,7 @@ REQUIRED_AGENT_CAPABILITIES = frozenset(
 FAST_MODES = ("rust", "python", "off")
 FAST_MATRIX_SCHEMA = "simplicio.code-fast-mode-matrix/v1"
 FAST_PROBE_TIMEOUT_S = 10.0
+RUNTIME_RELEASE_SCHEMA = "simplicio.release-manifest/v1"
 
 
 def _validate_fast_modes(modes: tuple[str, ...]) -> tuple[str, ...]:
@@ -422,6 +423,61 @@ def read_component_version(executable: str | None) -> str | None:
         return line[:200]
     return None
 
+def read_runtime_release_identity(
+    executable: str | None,
+    *,
+    runner: object = subprocess.run,
+) -> dict[str, object]:
+    """Probe and redact the installed Runtime release identity before effects."""
+    if not executable:
+        raise RuntimeError("runtime_missing: executable is unavailable")
+    try:
+        result = runner(
+            [executable, "version", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError, TypeError) as error:
+        raise RuntimeError("runtime_incompatible: release manifest probe failed") from error
+    payload = _json_payload(
+        str(getattr(result, "stdout", ""))
+        + "\n"
+        + str(getattr(result, "stderr", ""))
+    )
+    runtime = payload.get("runtime")
+    capabilities = payload.get("capabilities")
+    if (
+        getattr(result, "returncode", 1) != 0
+        or payload.get("schema") != RUNTIME_RELEASE_SCHEMA
+        or not isinstance(runtime, dict)
+        or not isinstance(runtime.get("name"), str)
+        or not runtime["name"]
+        or not isinstance(runtime.get("version"), str)
+        or not runtime["version"]
+        or not isinstance(capabilities, list)
+        or not capabilities
+        or not all(isinstance(item, str) and item for item in capabilities)
+    ):
+        raise RuntimeError(
+            "runtime_incompatible: release manifest missing version/capabilities"
+        )
+    try:
+        digest = hashlib.sha256(Path(executable).resolve().read_bytes()).hexdigest()
+    except OSError as error:
+        raise RuntimeError("runtime_incompatible: cannot hash Runtime executable") from error
+    return {
+        "schema": RUNTIME_RELEASE_SCHEMA,
+        "name": runtime["name"],
+        "version": runtime["version"],
+        "commit": runtime.get("commit"),
+        "target": runtime.get("target"),
+        "binary": payload.get("binary"),
+        "capabilities": sorted(capabilities),
+        "sha256": digest,
+    }
+
 
 def negative_dependency_gates() -> list[dict[str, object]]:
     """Record the same deterministic fail-closed cases for every surface."""
@@ -768,6 +824,10 @@ def run(
         ]
     else:
         agent_template, runtime_command = _external_dependencies()
+    runtime_release_identity = None
+    if not fixture_mode:
+        runtime_release_identity = read_runtime_release_identity(runtime_command[0])
+
     started = time.perf_counter_ns()
     with tempfile.TemporaryDirectory(prefix="simplicio-code-e2e-") as temporary:
         temp = Path(temporary)
@@ -1171,6 +1231,7 @@ def run(
                     "restart_reconnected": True,
                 },
                 "runtime": {
+                    "release_identity": runtime_release_identity,
                     "server": initialized["serverInfo"],
                     "tools": sorted(tool["name"] for tool in tools["tools"]),
                     "restart": {
