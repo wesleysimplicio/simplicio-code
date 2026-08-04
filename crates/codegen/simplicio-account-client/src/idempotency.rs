@@ -71,6 +71,8 @@ pub enum Decision {
     /// side effects again, but per the contract should still acknowledge
     /// (HTTP 200) so the sender stops retrying.
     SkipDuplicate,
+    /// The event id is empty and must not be applied.
+    RejectInvalid,
 }
 
 /// Decides whether a webhook event with the given `event_id` should be
@@ -82,6 +84,9 @@ pub enum Decision {
 /// signature verification (that belongs to the transport layer that isn't
 /// implemented yet), just the at-most-once decision.
 pub fn decide(store: &mut dyn SeenEventStore, event_id: &str) -> Decision {
+    if event_id.trim().is_empty() {
+        return Decision::RejectInvalid;
+    }
     if store.has_seen(event_id) {
         return Decision::SkipDuplicate;
     }
@@ -96,6 +101,7 @@ mod tests {
     #[test]
     fn first_delivery_of_an_event_id_is_processed() {
         let mut store = InMemorySeenEventStore::new();
+        assert_eq!(decide(&mut store, ""), Decision::RejectInvalid);
         assert_eq!(decide(&mut store, "evt_1"), Decision::Process);
     }
 
