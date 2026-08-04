@@ -8,6 +8,8 @@ it does not start a Hub, scheduler, Runtime, Mapper, worker, model, or LLM.
 from __future__ import annotations
 
 import argparse
+import ctypes
+from ctypes import wintypes
 import hashlib
 import json
 import os
@@ -82,12 +84,120 @@ def stop_hub(hub: subprocess.Popen[str], lock: Path | None = None) -> None:
         lock.unlink(missing_ok=True)
 
 
+_WINDOWS_CPU_SAMPLES: dict[int, tuple[int, float]] = {}
+
+
+def _windows_filetime_value(value: wintypes.FILETIME) -> int:
+    return (value.dwHighDateTime << 32) | value.dwLowDateTime
+
+
+def _windows_process_tree_count(pid: int) -> int | None:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    class ProcessEntry32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD),
+            ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD),
+            ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD),
+            ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD),
+            ("pcPriClassBase", wintypes.LONG),
+            ("dwFlags", wintypes.DWORD),
+            ("szExeFile", wintypes.WCHAR * 260),
+        ]
+
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry32W)]
+    kernel32.Process32FirstW.restype = wintypes.BOOL
+    kernel32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry32W)]
+    kernel32.Process32NextW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x00000002, 0)
+    if snapshot in (0, -1):
+        return None
+    try:
+        entry = ProcessEntry32W()
+        entry.dwSize = ctypes.sizeof(ProcessEntry32W)
+        if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            return None
+        children: dict[int, list[int]] = {}
+        while True:
+            children.setdefault(int(entry.th32ParentProcessID), []).append(int(entry.th32ProcessID))
+            if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                break
+        pending = [pid]
+        seen = {pid}
+        count = 0
+        while pending:
+            current = pending.pop()
+            count += 1
+            for child in children.get(current, []):
+                if child not in seen:
+                    seen.add(child)
+                    pending.append(child)
+        return count
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+
+def _windows_process_sample(pid: int) -> tuple[int | None, float | None, float | None]:
+    process_count = _windows_process_tree_count(pid)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+    handle = kernel32.OpenProcess(0x0410, False, pid)
+    if not handle:
+        return process_count, None, None
+
+    class ProcessMemoryCounters(ctypes.Structure):
+        _fields_ = [
+            ("cb", wintypes.DWORD),
+            ("PageFaultCount", wintypes.DWORD),
+            ("PeakWorkingSetSize", ctypes.c_size_t),
+            ("WorkingSetSize", ctypes.c_size_t),
+            ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+            ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+            ("PagefileUsage", ctypes.c_size_t),
+            ("PeakPagefileUsage", ctypes.c_size_t),
+        ]
+
+    counters = ProcessMemoryCounters()
+    counters.cb = ctypes.sizeof(ProcessMemoryCounters)
+    working_set_kib: float | None = None
+    if psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
+        working_set_kib = round(counters.WorkingSetSize / 1024, 3)
+
+    creation = wintypes.FILETIME()
+    exit_time = wintypes.FILETIME()
+    kernel_time = wintypes.FILETIME()
+    user_time = wintypes.FILETIME()
+    cpu_percent: float | None = None
+    if kernel32.GetProcessTimes(
+        handle,
+        ctypes.byref(creation),
+        ctypes.byref(exit_time),
+        ctypes.byref(kernel_time),
+        ctypes.byref(user_time),
+    ):
+        cpu_ticks = _windows_filetime_value(kernel_time) + _windows_filetime_value(user_time)
+        now = time.perf_counter()
+        previous = _WINDOWS_CPU_SAMPLES.get(pid)
+        _WINDOWS_CPU_SAMPLES[pid] = (cpu_ticks, now)
+        if previous is not None and now > previous[1]:
+            cpu_seconds = (cpu_ticks - previous[0]) / 10_000_000
+            cpu_percent = round(100 * cpu_seconds / (now - previous[1]) / max(1, os.cpu_count() or 1), 3)
+
+    kernel32.CloseHandle(handle)
+    return process_count, working_set_kib, cpu_percent
+
+
 def process_sample(pid: int) -> tuple[int | None, float | None, float | None]:
     """Return (process_count, rss_kib, cpu_percent) for the Hub tree."""
     if os.name == "nt":
-        # The Unix ps/pgrep probes are not portable. Do not turn missing
-        # observations into zero-valued performance claims.
-        return None, None, None
+        return _windows_process_sample(pid)
     try:
         status = subprocess.run(
             ["ps", "-o", "rss=,pcpu=", "-p", str(pid)],
