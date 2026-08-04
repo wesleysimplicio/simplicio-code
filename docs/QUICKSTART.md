@@ -2,7 +2,7 @@
 
 Two languages, one doc: [Português](#português) first, [English](#english) below.
 Both sections cover the same three things — install, first run, and where to
-go when something breaks — with no OpenRouter/provider setup required (see
+go when something breaks — with no provider setup required (see
 [Estado do produto](../README.md#estado-do-produto)).
 
 ---
@@ -41,10 +41,10 @@ cd /caminho/do/seu/projeto
 simplicio-code
 ```
 
-Não é preciso fornecer uma chave de provedor (OpenRouter, xAI, etc.) para
-usar o beta: o modelo aparece como **Simplicio-1** e a credencial de
-desenvolvimento (`OPENROUTER_API_KEY`), quando necessária localmente, nunca é
-solicitada pela interface nem fica registrada no histórico. Veja
+Não é preciso fornecer uma chave de provedor para usar o beta: o modelo
+aparece como **Simplicio-1** e a sessão é autenticada pelo gateway Simplicio.
+Credenciais upstream não são solicitadas pela interface, armazenadas ou
+distribuídas pelo cliente. Veja
 [docs/ARCHITECTURE.md](ARCHITECTURE.md) para os limites do produto.
 
 ### 3. O que acontece na primeira abertura de pasta
@@ -124,10 +124,10 @@ cd /path/to/your/project
 simplicio-code
 ```
 
-No provider key (OpenRouter, xAI, etc.) is required to use the beta: the
-model shows up as **Simplicio-1**, and the local-dev credential
-(`OPENROUTER_API_KEY`), when needed, is never requested by the UI and never
-logged. See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for product boundaries.
+No provider key is required to use the beta: the model shows up as
+**Simplicio-1**, and the session is authenticated by the Simplicio gateway.
+Upstream credentials are never requested, stored, or distributed by the
+client. See [docs/ARCHITECTURE.md](ARCHITECTURE.md) for product boundaries.
 
 ### 3. What happens the first time you open a folder
 
