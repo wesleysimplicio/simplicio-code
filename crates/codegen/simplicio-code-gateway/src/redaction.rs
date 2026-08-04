@@ -74,13 +74,15 @@ mod tests {
             "code": "secret source",
             "response": "secret answer",
             "authorization": "Bearer secret",
-            "nested": {"tool_arguments": "do not retain", "retry_after": 3}
+            "nested": {"tool_arguments": "do not retain", "api_key": "secret key", "retry_after": 3}
         });
         let redacted = redact_diagnostics(&value);
         assert!(!redacted.message.contains("secret"));
         let joined = format!("{:?}", redacted.fields);
         assert!(joined.contains("status"));
         assert!(!joined.contains("prompt"));
+        assert!(!joined.contains("api_key"));
+        assert!(!joined.contains("secret key"));
         assert!(!joined.contains("secret"));
     }
 }
