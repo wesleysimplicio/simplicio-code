@@ -2240,6 +2240,21 @@ mod tests {
     }
 
     #[test]
+    fn workspace_advisory_page_bound_is_fail_closed() {
+        let mut state = WorkspaceAdvisoryState::new("workspace-1").unwrap();
+        let events: Vec<_> = (1..=MAX_WORKSPACE_ADVISORIES_PER_PAGE + 1)
+            .map(|sequence| workspace_advisory(sequence as u64, 1))
+            .collect();
+        assert!(matches!(
+            state.apply_page(
+                WorkspaceObserveConsent::ReadOnly,
+                workspace_advisory_page(events, (MAX_WORKSPACE_ADVISORIES_PER_PAGE + 1) as u64),
+            ),
+            Err(Error::InvalidResponse(_))
+        ));
+    }
+
+    #[test]
     fn workspace_advisory_page_requires_provenance_and_confidence() {
         let mut advisory = workspace_advisory(1, 1);
         advisory.confidence_bps = Some(10_001);
