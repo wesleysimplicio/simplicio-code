@@ -35,20 +35,13 @@ Versão atual: **0.3.0-beta.3**.
 - falha fechada: sem Runtime, o agente não lê diretamente do disco;
 - TUI, headless, workspace e ACP compartilham o mesmo backend de leitura;
 - ao abrir uma pasta, o Runtime inicia o mapa geral em segundo plano;
-- o modelo aparece como **Simplicio-1** e usa `tencent/hy3:free` via OpenRouter;
+- o modelo aparece como **Simplicio-1** por meio do endpoint autenticado do gateway Simplicio;
 - o tema padrão **Simplicio Brasil** usa verde e amarelo;
 - escrita/exclusão usam o Runtime; `apply_patch` envia o plano completo pelo
   contrato atômico `simplicio_edit`, sem fallback local em sessões produtivas.
 
-Para desenvolvimento local, forneça a credencial apenas pelo ambiente:
-
-```sh
-export OPENROUTER_API_KEY="..."
-```
-
-A chave nunca deve ser gravada no repositório nem distribuída no binário. A
-sincronização de login e assinatura Simplicio será adicionada numa atualização
-posterior ao beta, quando o cliente passará a consumir o gateway autenticado.
+A autenticação de inferência é feita pelo gateway autenticado do Simplicio; o
+cliente não solicita nem aceita credenciais de provedores upstream.
 
 Veja [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para as fronteiras do produto.
 

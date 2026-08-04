@@ -11,16 +11,12 @@ fit together.
 **Symptom:** `simplicio-code login` hangs or reports a device-authorization
 error.
 
-- This beta's login/entitlement sync (device authorization against the
-  Simplicio gateway) is not wired up yet — see
+- A sincronização de login/entitlement por device authorization ainda não
+  está conectada; veja
   [docs/migration/legacy-login-migration.md](migration/legacy-login-migration.md).
-  Until it lands, local development uses `OPENROUTER_API_KEY` set only in
-  the environment (never in a config file, never in the binary).
-- If you see an unrelated auth error, confirm the key is exported in the
-  *same shell* that launches `simplicio-code` (`echo $OPENROUTER_API_KEY`),
-  and that it hasn't been accidentally committed anywhere
-  (`git grep -n OPENROUTER_API_KEY` should only match docs/code, never a
-  literal key).
+  Sem uma sessão válida do gateway Simplicio, a inferência falha fechada.
+- Não exporte credenciais de provedor para iniciar o produto: sem uma sessão
+  válida do gateway Simplicio, o cliente falha fechado.
 
 ## Runtime
 
