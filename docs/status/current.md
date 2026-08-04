@@ -1,8 +1,8 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T05:53:43.181682+00:00`
-- Commit: `3212a70a106fb03ff1a0b4fdb639bca00e6ad5a6`
+- Generated: `2026-08-04T06:09:16.232369+00:00`
+- Commit: `4e0f24fcee0372a93ecb4d6cc8edf4dc9a3357c4`
 - Dirty checkout: `False`
 
 ## Version sources
@@ -38,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@65e9345d605c0d84e042396c32aace61afe25851`
-- Captured: `2026-08-04T05:52:10.8487391Z`
+- Source revision: `main@92dc358f1475166eff9545524265dcf61768066a`
+- Captured: `2026-08-04T06:08:31.5017603Z`
 
 Statuses are evidence states, not closure claims; refresh this inventory after live GitHub re-query.
 
@@ -56,10 +56,10 @@ Statuses are evidence states, not closure claims; refresh this inventory after l
 | #321 | `OPEN` | P0 | Runtime installer + Code | trust root; Windows install/update | Productive trust-root and Windows install/update/rollback evidence remains open. |
 | #322 | `OPEN` | P1 | Account/Gateway + Code | device login; entitlement backend | Device login and renewable entitlement require backend-backed proof. |
 | #323 | `OPEN` | P1 | Gateway + Runtime + Code | streaming tools cancel | OpenRouter replacement requires a governed gateway with real streaming/tools/cancel evidence. |
-| #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | Headless matrix promotion to blocking gates remains open. |
+| #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | PR #337 calibrated fail-closed invariant review and preserved the matrix as a real gate; the bounded binary build timed out without a receipt, so full cross-platform evidence remains open. |
 | #325 | `OPEN` | P1 | Code + Runtime + Loop | cold/warm benchmark harness | Startup/workspace-open/first-effect measurements and regression limits remain open. |
 | #326 | `BLOCKED` | P1 | Agent UX + Code | workspace.observe/advisory contract; productive AgentHost | Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable. |
-| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | Status/inventory gate merged in PRs #331/#332, snapshot anchor corrected in #333, live source refreshed in #334, and PR #335 validation evidence recorded; external release and full-CI evidence remain unverified. |
+| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | Status/inventory gate merged in PRs #331/#332, snapshot anchor corrected in #333, live source refreshed in #334, PR #335 validation evidence recorded, and PR #337 quality calibration merged; external release and full-CI evidence remain unverified. |
 
 ## Migration note
 
