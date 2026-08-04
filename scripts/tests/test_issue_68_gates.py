@@ -10,7 +10,7 @@ REPO = HERE.parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
 from check_unused_struct_locals import candidate_key, evaluate, scan_source  # noqa: E402
-from headless_invocation_matrix import FATAL_PROCESS_CODES, PERMISSION_MODES, build_cases, execute  # noqa: E402
+from headless_invocation_matrix import FATAL_PROCESS_CODES, PERMISSION_MODES, _classify_returncode, build_cases, execute  # noqa: E402
 from audit_workspace_access import audit  # noqa: E402
 from check_deterministic_invariants import check as check_deterministic_invariants  # noqa: E402
 
@@ -59,6 +59,10 @@ fn build() {
         all(any(mode in case.approval_args for case in cases) for mode in PERMISSION_MODES),
     )
     check("fatal Windows process code is classified as crash", 0xC00000FD in FATAL_PROCESS_CODES)
+    check("non-zero exits are failed cells", _classify_returncode(1) == ("failed", "exit_nonzero"))
+    tty_case = next(case for case in cases if case.tty)
+    tty_result = execute(sys.executable, tty_case, 1)
+    check("TTY cells cannot be reported as observed without a terminal", tty_result["outcome"] == "not_executed" and not tty_result["observed"])
 
     access = audit(REPO, REPO / "docs/contracts/workspace-access-manifest.json")
     check(

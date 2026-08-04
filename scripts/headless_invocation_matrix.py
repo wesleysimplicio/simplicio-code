@@ -4,7 +4,9 @@
 Without a model/provider this script is an offline matrix generator, suitable
 for CI and code review. With ``--binary`` it executes each combination with a
 bounded timeout and records whether the process terminates; the caller chooses
-the provider/model environment explicitly.
+the provider/model environment explicitly. A non-zero exit is a failed cell,
+and TTY cells remain ``not_executed`` until a real terminal adapter is used;
+neither can produce an all-healthy report.
 """
 from __future__ import annotations
 
@@ -122,24 +124,38 @@ def _start_mock_provider() -> tuple[ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{server.server_port}/v1"
 
 
+def _classify_returncode(returncode: int) -> tuple[str, str | None]:
+    code = returncode & 0xFFFFFFFF
+    if code in FATAL_PROCESS_CODES:
+        return "crash", f"process_crash_{code:08x}"
+    if returncode != 0:
+        return "failed", "exit_nonzero"
+    return "completed", None
+
+
 def execute(binary: str, case: Case, timeout_seconds: float, env: dict[str, str] | None = None, cwd: str | None = None) -> dict[str, object]:
     command = [binary, *case.approval_args, "--output-format", "json", *case.prompt_args]
+    if case.tty:
+        return {
+            "case": case.to_dict(), "command": command, "terminated": False,
+            "observed": False, "returncode": None, "outcome": "not_executed",
+            "reason_code": "tty_execution_unavailable",
+        }
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds, check=False, env=env, cwd=cwd)
-        code = completed.returncode & 0xFFFFFFFF
-        crashed = code in FATAL_PROCESS_CODES
+        outcome, reason_code = _classify_returncode(completed.returncode)
         return {
             "case": case.to_dict(), "command": command, "terminated": True,
-            "returncode": completed.returncode, "outcome": "crash" if crashed else "completed",
-            "reason_code": f"process_crash_{code:08x}" if crashed else None,
+            "observed": True, "returncode": completed.returncode, "outcome": outcome,
+            "reason_code": reason_code,
             "stdout_tail": _tail(completed.stdout), "stderr_tail": _tail(completed.stderr),
         }
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout if isinstance(exc.stdout, str) else ""
         stderr = exc.stderr if isinstance(exc.stderr, str) else ""
-        return {"case": case.to_dict(), "command": command, "terminated": False, "returncode": 124, "outcome": "timeout", "reason_code": "timeout", "stdout_tail": _tail(stdout or ""), "stderr_tail": _tail(stderr or "")}
+        return {"case": case.to_dict(), "command": command, "terminated": False, "observed": True, "returncode": 124, "outcome": "timeout", "reason_code": "timeout", "stdout_tail": _tail(stdout or ""), "stderr_tail": _tail(stderr or "")}
     except OSError as exc:
-        return {"case": case.to_dict(), "command": command, "terminated": True, "returncode": 127, "outcome": "not_executed", "reason_code": "binary_unavailable", "error": str(exc)}
+        return {"case": case.to_dict(), "command": command, "terminated": True, "observed": False, "returncode": 127, "outcome": "not_executed", "reason_code": "binary_unavailable", "error": str(exc)}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -198,11 +214,14 @@ def main(argv: list[str] | None = None) -> int:
         "mock_provider": args.mock_provider,
         "case_count": len(results),
         "results": results,
-        "all_terminated": all(result.get("terminated", True) for result in results),
+        "all_terminated": all(result.get("terminated", True) for result in results) if args.binary else None,
+        "all_observed": all(result.get("observed", False) for result in results) if args.binary else None,
         "all_healthy": all(result.get("outcome") == "completed" for result in results) if args.binary else None,
     }
     print(json.dumps(report, indent=2, sort_keys=True) if args.json else json.dumps(report, indent=2))
-    return 0 if report["all_terminated"] and (report["all_healthy"] is not False) else 2
+    if not args.binary:
+        return 0
+    return 0 if report["all_terminated"] and report["all_observed"] and report["all_healthy"] else 2
 
 
 if __name__ == "__main__":
