@@ -289,6 +289,9 @@ def validate_rendered_document(root: Path, data: dict[str, object]) -> None:
     commit_match = re.search(r"^- Commit: `([0-9a-f]{40})`$", text, re.MULTILINE)
     if not commit_match or not _is_ancestor(root, commit_match.group(1)):
         raise ValueError("status document commit is missing or not an ancestor of checkout")
+    dirty_match = re.search(r"^- Dirty checkout: `(True|False)`$", text, re.MULTILINE)
+    if not dirty_match or dirty_match.group(1) != str(data["dirty"]):
+        raise ValueError("status document dirty flag drifted")
     versions = data["versions"]
     assert isinstance(versions, dict)
     for key, value in versions.items():
