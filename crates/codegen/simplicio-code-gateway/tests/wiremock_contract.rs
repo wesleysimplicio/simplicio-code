@@ -24,7 +24,7 @@ use simplicio_code_gateway::{
 };
 use tokio_util::sync::CancellationToken;
 use url::Url;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{body_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn base_url(server: &MockServer) -> Url {
@@ -53,6 +53,66 @@ fn authorized_session() -> Arc<AuthSession<MemorySecretStore>> {
         )
         .unwrap();
     session
+}
+
+#[tokio::test]
+async fn refresh_session_rotates_token_and_revalidates_entitlement() {
+    let server = MockServer::start().await;
+    let store = Arc::new(MemorySecretStore::new());
+    let client = IdentityClient::new(
+        AuthEndpoints::new(base_url(&server)).unwrap(),
+        store.clone(),
+    );
+    let now = Utc::now();
+    client
+        .session
+        .install(
+            TokenResponse {
+                access_token: SecretString::new("old-access-token"),
+                refresh_token: Some(SecretString::new("old-refresh-token")),
+                expires_in: 3600,
+                token_type: "Bearer".into(),
+            },
+            Entitlement {
+                plan: "pro".into(),
+                expires_at: now + chrono::Duration::hours(1),
+                max_request_tokens: 10_000,
+                max_tool_calls: 8,
+            },
+            now,
+        )
+        .unwrap();
+
+    Mock::given(method("POST"))
+        .and(path(paths::REFRESH))
+        .and(body_json(serde_json::json!({
+            "refresh_token": "old-refresh-token"
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "access_token": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "expires_in": 3600,
+            "token_type": "Bearer"
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path(paths::ENTITLEMENT))
+        .and(header("authorization", "Bearer new-access-token"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "plan": "pro",
+            "expires_at": "2099-01-01T00:00:00Z",
+            "max_request_tokens": 20_000,
+            "max_tool_calls": 16
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    client.refresh_session().await.unwrap();
+    assert!(client.session.access_token(Utc::now()).is_ok());
+    assert!(store.load_refresh_token().unwrap().is_some());
 }
 
 #[tokio::test]
