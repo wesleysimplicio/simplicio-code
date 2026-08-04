@@ -124,6 +124,9 @@ def load_residual_inventory(root: Path) -> dict[str, object]:
         "MERGED_PENDING_CLOSURE",
         "NOT_EXECUTED",
         "UNKNOWN",
+        "HISTORICAL_CLOSED",
+        "IMPLEMENTED",
+        "VERIFIED",
     }
     for item in issues:
         if not isinstance(item, dict):
@@ -255,7 +258,7 @@ def render(data: dict[str, object]) -> str:
             f"- Source revision: `{residual['source_revision']}`",
             f"- Captured: `{residual['captured_at_utc']}`",
             "",
-            "Statuses are evidence states, not closure claims; refresh this inventory after live GitHub re-query.",
+            "Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves GitHub history without asserting current acceptance; refresh this inventory after live GitHub re-query.",
             "",
             "| Issue | State | Priority | Owner | Dependencies | Evidence |",
             "| --- | --- | --- | --- | --- | --- |",
