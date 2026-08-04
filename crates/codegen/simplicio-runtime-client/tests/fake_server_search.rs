@@ -90,6 +90,20 @@ fn fake_runtime_round_trips_search_and_keeps_read_write_delete_fail_closed_contr
         Some(ExecEffectState::Completed)
     );
 
+    let zero_timeout = client.exec(
+        repo.path(),
+        Path::new("."),
+        &["printf".to_owned(), "hello".to_owned()],
+        &BTreeMap::new(),
+        0,
+        4096,
+        "zero-timeout",
+    );
+    assert!(
+        matches!(zero_timeout, Err(Error::ExecRejected(message)) if message.contains("timeout_ms")),
+        "zero timeout must fail before the Runtime effect boundary"
+    );
+
     // A lost acknowledgement is not proof that an effect did not happen.
     // Preserve the Runtime's terminal uncertainty so the productive adapter
     // can refuse an automatic retry with the same or a new idempotency key.
