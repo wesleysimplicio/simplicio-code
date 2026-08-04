@@ -1,12 +1,12 @@
 {
   "schema": "simplicio.code-residual-issues/v1",
   "source": "GitHub live issue list for wesleysimplicio/simplicio-code",
-  "source_revision": "main@7f3c1091fdd2637794b62092b96a4dc755cf0892",
-  "captured_at_utc": "2026-08-04T17:01:29.5906653Z",
+  "source_revision": "main@5b0edd4aa974ac66f60a3579ce0d5c06e09ef574",
+  "captured_at_utc": "2026-08-04T18:22:00Z",
   "states": ["OPEN", "IN_PROGRESS", "BLOCKED", "MERGED_PENDING_CLOSURE", "NOT_EXECUTED", "UNKNOWN", "HISTORICAL_CLOSED", "IMPLEMENTED", "VERIFIED"],
   "issues": [
     {"number": 313, "state": "BLOCKED", "priority": "UNSET", "owner": "Code + external hosts", "dependencies": ["Agent", "Runtime", "Loop"], "evidence": "Real host A/B adoption evidence is required; local Code has no canonical UWP/SKILL surface."},
-    {"number": 314, "state": "BLOCKED", "priority": "UNSET", "owner": "Code + external browser tooling", "dependencies": ["browser pane", "Runtime"], "evidence": "PR #378 merged bounded URL/duration regression coverage; external browser verification remains unavailable and issue is still open."},
+    {"number": 314, "state": "HISTORICAL_CLOSED", "priority": "UNSET", "owner": "Code + external browser tooling", "dependencies": ["browser pane", "Runtime"], "evidence": "GitHub state is closed/completed after the Code-owned bounded loopback preview and file-url fail-fast evidence; the external Browser pane remains outside Code ownership."},
     {"number": 315, "state": "OPEN", "priority": "P0", "owner": "Code + Simplicio ecosystem", "dependencies": ["#317", "#318", "#319", "#320", "#321", "#322", "#323", "#324", "#325", "#326", "#327"], "evidence": "Parent recovery objective remains open until child ACs have merged evidence."},
     {"number": 316, "state": "HISTORICAL_CLOSED", "priority": "P0", "owner": "Code CI/toolchain", "dependencies": ["Rust 1.94.1", "GitHub CI"], "evidence": "GitHub state is closed/completed; PR #335 local receipt/cancellation hardening is merged, but full cargo check/test and CI/release evidence remain unverified."},
     {"number": 317, "state": "OPEN", "priority": "P0", "owner": "Runtime + Code", "dependencies": ["Runtime process capabilities", "Agent"], "evidence": "PRs #379, #393, #399 and #405 merged fail-closed runtime_process validation, idempotency-bound process receipts, cancel-input validation and zero-timeout exec rejection; productive Runtime/Loop Hub lifecycle evidence remains open."},
