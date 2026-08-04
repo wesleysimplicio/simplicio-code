@@ -160,12 +160,15 @@ async fn chat_stream_success_over_real_sse_http() {
     );
     Mock::given(method("POST"))
         .and(path(paths::CHAT_COMPLETIONS))
+        .and(header("x-request-id", "req-42"))
+        .and(header("idempotency-key", "req-42"))
         .respond_with(ResponseTemplate::new(200).set_body_string(body))
         .mount(&server)
         .await;
 
     let gateway = PrivateGateway::new(base_url(&server), authorized_session()).unwrap();
-    let request = ChatRequest::new(Vec::new(), 5);
+    let mut request = ChatRequest::new(Vec::new(), 5);
+    request.request_id = Some("req-42".into());
     let limits = GatewayLimits {
         max_request_tokens: 10_000,
         max_tool_calls: 8,
