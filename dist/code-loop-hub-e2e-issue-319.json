@@ -1,0 +1,84 @@
+{
+  "code_revision": "0b27887bc13a5647ec82d1527d32c5d64711f3ff",
+  "deepseek_started": false,
+  "hub_pid_rotated": true,
+  "lifecycle": [
+    "handshake",
+    "attach",
+    "submit",
+    "progress",
+    "cancel",
+    "resume",
+    "replay"
+  ],
+  "local_llm_started": false,
+  "loop_revision": "a0f9cbe886346db0a40a893fba6a9710f6121e1c",
+  "mapper_started_by_code": false,
+  "metrics": {
+    "hub_cpu_percent_max": null,
+    "hub_processes_max": null,
+    "hub_rss_kib_max": null,
+    "restart_downtime_ms_p50": 2187.551,
+    "restart_downtime_ms_p95": null,
+    "startup_ms_p50": 1423.48,
+    "startup_ms_p95": null,
+    "test_ms_p50": 198215.528,
+    "test_ms_p95": null
+  },
+  "proof_kind": "external_loop_daemon",
+  "provider_free": true,
+  "restart_reconnected": true,
+  "run_receipts": [
+    {
+      "code_revision": "0b27887bc13a5647ec82d1527d32c5d64711f3ff",
+      "deepseek_started": false,
+      "endpoint_scheme": "tcp",
+      "hub_cpu_percent_max": null,
+      "hub_identity_receipt": "hub_id=loop-hub:d109b2488f6b4499a36af4b9f1f63fdf runtime_id=runtime:d109b2488f6b4499a36af4b9f1f63fdf mapper_id=mapper:d109b2488f6b4499a36af4b9f1f63fdf surfaces=4 tui_sessions=2 headless=1 acp=1 replay=true resume=true cancelled=true restart_reconnected=true reconnect_ms=58 single_hub_identity=true",
+      "hub_pid_rotated": true,
+      "hub_processes_max": null,
+      "hub_rss_kib_max": null,
+      "lifecycle": [
+        "handshake",
+        "attach",
+        "submit",
+        "progress",
+        "cancel",
+        "resume",
+        "replay"
+      ],
+      "local_llm_started": false,
+      "loop_revision": "a0f9cbe886346db0a40a893fba6a9710f6121e1c",
+      "mapper_started_by_code": false,
+      "proof_kind": "external_loop_daemon",
+      "provider_free": true,
+      "restart_downtime_ms": 2187.551,
+      "restart_reconnected": true,
+      "runtime_started_by_code": false,
+      "scheduler_started_by_code": false,
+      "schema": "simplicio.code-loop-hub-e2e/v1",
+      "single_hub_identity": true,
+      "startup_ms": 1423.48,
+      "stdout_sha256": "871eb9a55e2676ee018004df5cee93238fd59fd31aba89b377ada746f3e8a9af",
+      "surfaces": [
+        "tui-1",
+        "tui-2",
+        "headless",
+        "acp"
+      ],
+      "test_ms": 198215.528
+    }
+  ],
+  "runs": 1,
+  "runtime_started_by_code": false,
+  "scheduler_started_by_code": false,
+  "schema": "simplicio.code-loop-hub-e2e/v1",
+  "single_hub_identity": true,
+  "stdout_sha256": "cb682add119591e944014727ccb0030b64782148c7e5dcd4ecd0e6e8ff39ea06",
+  "surfaces": [
+    "tui-1",
+    "tui-2",
+    "headless",
+    "acp"
+  ]
+}
