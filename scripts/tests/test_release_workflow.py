@@ -112,5 +112,14 @@ class ReleaseWorkflowTests(unittest.TestCase):
             package,
         )
         self.assertIn("production trust root required for stable release", package)
+    def test_release_workflow_rejects_historical_beta5(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn(
+            'if [ "${{ steps.ver.outputs.version }}" = "0.3.0-beta.5" ]; then',
+            text,
+        )
+        self.assertIn("historical beta.5 is not publishable", text)
+
+
 if __name__ == "__main__":
     unittest.main()
