@@ -3,12 +3,14 @@ from __future__ import annotations
 import struct
 from pathlib import Path
 
+import pytest
+
 import sys
 
 ROOT = Path(__file__).parents[2]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from benchmark_snake import receipt_payload  # noqa: E402
+from benchmark_snake import MIN_REPETITIONS, receipt_payload, validate_repetitions  # noqa: E402
 from hbp_receipt import _content_hash, decode_records, write_ledger_atomic  # noqa: E402
 
 
@@ -67,3 +69,10 @@ def test_benchmark_reader_rejects_tampering(tmp_path: Path) -> None:
         assert "hash" in str(error)
     else:
         raise AssertionError("tampered HBP ledger was accepted")
+
+
+def test_benchmark_requires_ten_repetitions_for_comparable_metrics() -> None:
+    assert MIN_REPETITIONS == 10
+    assert validate_repetitions(10) == 10
+    with pytest.raises(ValueError, match="repetitions must be >= 10"):
+        validate_repetitions(9)
