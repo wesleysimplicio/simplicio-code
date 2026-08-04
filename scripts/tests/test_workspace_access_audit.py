@@ -93,6 +93,7 @@ def test_baseline_allows_removing_an_occurrence(tmp_path):
     [
         ({"schema": "wrong"}, "unsupported manifest schema"),
         ({"rules": {}}, "manifest rules must be a list"),
+        ({"rules": [{"path": "src/**", "kind": "process", "classification": "bootstrap-allowlisted", "owner": ""}]}, "requires owner and rationale"),
         ({"baseline": {}}, "manifest baseline must be a list"),
         ({"baseline": ["bad"]}, "baseline entries must be objects"),
         ({"baseline": [{}]}, "baseline entries require"),
