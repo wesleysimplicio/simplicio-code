@@ -23,6 +23,18 @@ class InstalledCodeE2ETest(unittest.TestCase):
         receipt = MODULE.run(ROOT, fixture_mode=True)
         self.assertEqual(receipt["schema"], "simplicio.code-installed-e2e-receipt/v1")
         self.assertEqual(receipt["proof_kind"], "hermetic_fixture_non_proof")
+        component_manifest = receipt["component_manifest"]
+        self.assertEqual(
+            component_manifest["schema"], "simplicio.installed-components/v1"
+        )
+        self.assertEqual(
+            component_manifest["proof_kind"], "hermetic_fixture_non_proof"
+        )
+        self.assertEqual(component_manifest["surfaces"], list(MODULE.SURFACES))
+        self.assertEqual(
+            component_manifest["runtime"]["protocol_version"], "2024-11-05"
+        )
+        self.assertIn("simplicio_edit", component_manifest["runtime"]["tools"])
         self.assertEqual(
             [item["surface"] for item in receipt["surfaces"]], list(MODULE.SURFACES)
         )

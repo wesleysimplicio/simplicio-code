@@ -67,6 +67,33 @@ def validate_runtime_contract(
         raise RuntimeError("runtime_incompatible")
 
 
+def build_component_manifest(
+    status: dict[str, object],
+    initialized: dict[str, object],
+    tools: dict[str, object],
+    *,
+    fixture_mode: bool,
+) -> dict[str, object]:
+    """Describe the independently observed components behind this receipt."""
+    return {
+        "schema": "simplicio.installed-components/v1",
+        "proof_kind": (
+            "hermetic_fixture_non_proof" if fixture_mode else "external_installed"
+        ),
+        "agent_host": {
+            "protocol_schema": status["protocol_schema"],
+            "agent_protocol": status["agent_protocol"],
+            "capabilities": sorted(status["capabilities"]),
+            "profile": status["profile"],
+        },
+        "runtime": {
+            "protocol_version": initialized["protocolVersion"],
+            "server": initialized["serverInfo"],
+            "tools": sorted(tool["name"] for tool in tools["tools"]),
+        },
+        "surfaces": list(SURFACES),
+    }
+
 def negative_dependency_gates() -> list[dict[str, object]]:
     """Record the same deterministic fail-closed cases for every surface."""
     cases = (
@@ -597,6 +624,9 @@ def run(
                 ),
                 "mode": "fixture" if fixture_mode else "installed",
                 "fixture_sha256": digest,
+                "component_manifest": build_component_manifest(
+                    status, initialized, tools, fixture_mode=fixture_mode
+                ),
                 "agent_host": {
                     "protocol": status["protocol_schema"],
                     "host_instance_id": status["host_instance_id"],
