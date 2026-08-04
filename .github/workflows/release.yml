@@ -83,6 +83,14 @@ jobs:
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Reject historical beta.5
+        shell: bash
+        run: |
+          if [ "${{ steps.ver.outputs.version }}" = "0.3.0-beta.5" ]; then
+            echo "historical beta.5 is not publishable; choose a new SHA-tied version" >&2
+            exit 1
+          fi
+
       - name: Install Rust toolchain (pinned by rust-toolchain.toml)
         uses: dtolnay/rust-toolchain@stable
 
