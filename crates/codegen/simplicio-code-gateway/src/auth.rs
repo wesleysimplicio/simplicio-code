@@ -247,7 +247,9 @@ impl Entitlement {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AuthState {
     SignedOut,
+    Pending,
     Authorized,
+    Expired,
     Revoked,
 }
 
@@ -283,6 +285,34 @@ impl<S: SecretStore> AuthSession<S> {
             .unwrap_or(AuthState::Revoked)
     }
 
+    /// Mark a device authorization flow as pending. Volatile access state is
+    /// cleared so a pending login can never reuse an older access token.
+    pub fn mark_pending(&self) -> Result<(), AuthError> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| AuthError::Storage("lock poisoned".into()))?;
+        inner.access_token = None;
+        inner.access_expires_at = None;
+        inner.entitlement = None;
+        inner.state = AuthState::Pending;
+        Ok(())
+    }
+
+    /// Mark the in-memory session expired while retaining the refresh token
+    /// in the OS store for a subsequent rotation.
+    pub fn mark_expired(&self) -> Result<(), AuthError> {
+        let mut inner = self
+            .inner
+            .lock()
+            .map_err(|_| AuthError::Storage("lock poisoned".into()))?;
+        inner.access_token = None;
+        inner.access_expires_at = None;
+        inner.entitlement = None;
+        inner.state = AuthState::Expired;
+        Ok(())
+    }
+
     pub fn install(
         &self,
         token: TokenResponse,
@@ -308,12 +338,15 @@ impl<S: SecretStore> AuthSession<S> {
     }
 
     pub fn access_token(&self, now: DateTime<Utc>) -> Result<SecretString, AuthError> {
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| AuthError::Storage("lock poisoned".into()))?;
         if inner.state == AuthState::Revoked {
             return Err(AuthError::Revoked);
+        }
+        if inner.state == AuthState::Expired {
+            return Err(AuthError::AccessExpired);
         }
         if inner.state != AuthState::Authorized {
             return Err(AuthError::EntitlementRequired);
@@ -323,19 +356,27 @@ impl<S: SecretStore> AuthSession<S> {
             .as_ref()
             .is_some_and(|e| e.is_valid_at(now))
         {
+            inner.state = AuthState::Expired;
+            inner.access_token = None;
+            inner.access_expires_at = None;
+            inner.entitlement = None;
             return Err(AuthError::EntitlementRequired);
         }
         if inner
             .access_expires_at
             .is_none_or(|e| now + CLOCK_SKEW >= e)
         {
+            inner.state = AuthState::Expired;
+            inner.access_token = None;
+            inner.access_expires_at = None;
+            inner.entitlement = None;
             return Err(AuthError::AccessExpired);
         }
         inner.access_token.clone().ok_or(AuthError::AccessExpired)
     }
 
     pub fn entitlement(&self, now: DateTime<Utc>) -> Result<Entitlement, AuthError> {
-        let inner = self
+        let mut inner = self
             .inner
             .lock()
             .map_err(|_| AuthError::Storage("lock poisoned".into()))?;
@@ -345,6 +386,12 @@ impl<S: SecretStore> AuthSession<S> {
                 .as_ref()
                 .is_some_and(|e| e.is_valid_at(now))
         {
+            if inner.state == AuthState::Authorized {
+                inner.state = AuthState::Expired;
+                inner.access_token = None;
+                inner.access_expires_at = None;
+                inner.entitlement = None;
+            }
             return Err(AuthError::EntitlementRequired);
         }
         inner
@@ -433,7 +480,9 @@ impl<S: SecretStore> IdentityClient<S> {
             .json(&serde_json::json!({"scope": "code"}))
             .send()
             .await?;
-        decode_response(response).await
+        let device = decode_response(response).await?;
+        self.session.mark_pending()?;
+        Ok(device)
     }
 
     pub async fn poll_device_authorization(
@@ -448,6 +497,7 @@ impl<S: SecretStore> IdentityClient<S> {
                 return Err(AuthError::Cancelled);
             }
             if Utc::now() + CLOCK_SKEW >= deadline {
+                let _ = self.session.mark_expired();
                 return Err(AuthError::DeviceExpired);
             }
             let response = self
@@ -651,6 +701,67 @@ mod tests {
             expires_in: 300,
             token_type: "Bearer".into(),
         }
+    }
+
+    #[test]
+    fn pending_and_expired_states_fail_closed() {
+        let session = AuthSession::new(Arc::new(MemorySecretStore::new()));
+        assert_eq!(session.state(), AuthState::SignedOut);
+
+        session.mark_pending().unwrap();
+        assert_eq!(session.state(), AuthState::Pending);
+        assert!(matches!(
+            session.access_token(Utc::now()),
+            Err(AuthError::EntitlementRequired)
+        ));
+
+        session.mark_expired().unwrap();
+        assert_eq!(session.state(), AuthState::Expired);
+        assert!(matches!(
+            session.access_token(Utc::now()),
+            Err(AuthError::AccessExpired)
+        ));
+    }
+
+    #[test]
+    fn entitlement_expiry_clears_volatile_state_but_refresh_recovers() {
+        let store = Arc::new(MemorySecretStore::new());
+        let session = AuthSession::new(store.clone());
+        let now = Utc::now();
+        session
+            .install(
+                token("access", "refresh"),
+                entitlement(now + Duration::seconds(31)),
+                now,
+            )
+            .unwrap();
+
+        assert!(session.entitlement(now + Duration::seconds(2)).is_err());
+        assert_eq!(session.state(), AuthState::Expired);
+        assert!(matches!(
+            session.access_token(now + Duration::seconds(2)),
+            Err(AuthError::AccessExpired)
+        ));
+
+        session
+            .rotate_refresh_with_entitlement(
+                &token("new-access", "rotated-refresh"),
+                entitlement(now + Duration::hours(1)),
+                now + Duration::seconds(2),
+            )
+            .unwrap();
+        assert_eq!(session.state(), AuthState::Authorized);
+        assert_eq!(
+            store.load_refresh_token().unwrap().unwrap().expose(),
+            "rotated-refresh"
+        );
+        assert_eq!(
+            session
+                .access_token(now + Duration::seconds(2))
+                .unwrap()
+                .expose(),
+            "new-access"
+        );
     }
 
     #[test]
