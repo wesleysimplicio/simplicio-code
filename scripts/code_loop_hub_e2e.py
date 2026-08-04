@@ -24,6 +24,14 @@ import time
 
 MIN_P95_RUNS = 2
 
+REQUIRED_SURFACES = ("tui-1", "tui-2", "headless", "acp")
+
+
+def validate_surfaces(surfaces: object) -> tuple[str, ...]:
+    if not isinstance(surfaces, list) or tuple(surfaces) != REQUIRED_SURFACES:
+        raise ValueError("installed surface inventory is incomplete or out of order")
+    return tuple(surfaces)
+
 
 def validate_runs(runs: int) -> int:
     if runs < MIN_P95_RUNS:
@@ -329,6 +337,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     loop_root = args.loop_root.resolve()
     runs = validate_runs(args.runs)
     receipts = [run_once(code_root, loop_root) for _ in range(runs)]
+    for receipt in receipts:
+        validate_surfaces(receipt.get("surfaces"))
     startup = [float(receipt["startup_ms"]) for receipt in receipts]
     test = [float(receipt["test_ms"]) for receipt in receipts]
     restart = [float(receipt["restart_downtime_ms"]) for receipt in receipts]
