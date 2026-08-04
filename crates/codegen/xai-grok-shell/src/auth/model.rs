@@ -100,13 +100,13 @@ pub struct GrokAuth {
 impl std::fmt::Debug for GrokAuth {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GrokAuth")
-            .field("key", &token_suffix(&self.key))
+            .field("key", &"<redacted>")
             .field("auth_mode", &self.auth_mode)
             .field("user_id", &self.user_id)
             .field("expires_at", &self.expires_at)
             .field(
                 "refresh_token",
-                &self.refresh_token.as_deref().map(token_suffix),
+                &self.refresh_token.as_ref().map(|_| "<redacted>"),
             )
             .finish_non_exhaustive()
     }
@@ -448,6 +448,17 @@ mod tests {
         let mut map = AuthStore::new();
         map.insert("scope".into(), make_auth(AuthMode::ApiKey));
         assert!(lookup_auth(&map, "scope").is_some());
+    }
+    #[test]
+    fn debug_redacts_oauth_secrets() {
+        let mut auth = make_auth(AuthMode::Oidc);
+        auth.key = "access-canary-token-00000000".into();
+        auth.refresh_token = Some("refresh-canary-token-11111111".into());
+
+        let debug = format!("{auth:?}");
+        assert!(!debug.contains("access-canary-token-00000000"));
+        assert!(!debug.contains("refresh-canary-token-11111111"));
+        assert!(debug.contains("<redacted>"));
     }
 
     /// subscriptionTier present → deserializes to Some.
