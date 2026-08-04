@@ -1,9 +1,9 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T05:14:38.033610+00:00`
-- Commit: `e1114ccb0aa26f0d75573744e423abaec3a935fc`
-- Dirty checkout: `True`
+- Generated: `2026-08-04T05:53:43.181682+00:00`
+- Commit: `3212a70a106fb03ff1a0b4fdb639bca00e6ad5a6`
+- Dirty checkout: `False`
 
 ## Version sources
 
@@ -38,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@db5fccf3eaaeea6f65c6048cdc0732fecf8ec634`
-- Captured: `2026-08-04T05:13:43.3099084Z`
+- Source revision: `main@65e9345d605c0d84e042396c32aace61afe25851`
+- Captured: `2026-08-04T05:52:10.8487391Z`
 
 Statuses are evidence states, not closure claims; refresh this inventory after live GitHub re-query.
 
@@ -48,7 +48,7 @@ Statuses are evidence states, not closure claims; refresh this inventory after l
 | #313 | `BLOCKED` | UNSET | Code + external hosts | Agent; Runtime; Loop | Real host A/B adoption evidence is required; local Code has no canonical UWP/SKILL surface. |
 | #314 | `BLOCKED` | UNSET | Code + external browser tooling | browser pane; Runtime | Bounded loopback preview merged; external browser verification remains unavailable and issue is still open. |
 | #315 | `OPEN` | P0 | Code + Simplicio ecosystem | #317; #318; #319; #320; #321; #322; #323; #324; #325; #326; #327 | Parent recovery objective remains open until child ACs have merged evidence. |
-| #316 | `BLOCKED` | P0 | Code CI/toolchain | Rust 1.94.1; GitHub CI | Gate-recovery slice merged; full cargo test and CI evidence are not green. |
+| #316 | `BLOCKED` | P0 | Code CI/toolchain | Rust 1.94.1; GitHub CI | PR #335 merged local receipt/cancellation hardening; full cargo check/test timed out and CI/release evidence remain unverified. |
 | #317 | `OPEN` | P0 | Runtime + Code | Runtime process capabilities; Agent | Foreground/background/cancel/reconcile contracts require Runtime-owned capabilities and installed E2E. |
 | #318 | `BLOCKED` | P0 | Code + Runtime | Runtime workspace contract; audit gate | Scoped audit passes, but broad production-looking workspace accesses remain outside the manifest; full migration and adversarial evidence are not proven. |
 | #319 | `OPEN` | P0 | Code + Agent + Runtime + Loop | installed four-surface E2E | Installed AgentHost/Runtime/Loop Hub proof is not yet a merged, four-surface receipt. |
@@ -59,7 +59,7 @@ Statuses are evidence states, not closure claims; refresh this inventory after l
 | #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | Headless matrix promotion to blocking gates remains open. |
 | #325 | `OPEN` | P1 | Code + Runtime + Loop | cold/warm benchmark harness | Startup/workspace-open/first-effect measurements and regression limits remain open. |
 | #326 | `BLOCKED` | P1 | Agent UX + Code | workspace.observe/advisory contract; productive AgentHost | Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable. |
-| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | Status/inventory gate merged in PR #331; onboarding drift reconciliation is in progress, while external release and full-CI evidence remain unverified. |
+| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | Status/inventory gate merged in PRs #331/#332, snapshot anchor corrected in #333, live source refreshed in #334, and PR #335 validation evidence recorded; external release and full-CI evidence remain unverified. |
 
 ## Migration note
 

@@ -1,14 +1,14 @@
 {
   "schema": "simplicio.code-residual-issues/v1",
   "source": "GitHub live issue list for wesleysimplicio/simplicio-code",
-  "source_revision": "main@6454e3c345c5ad3f4572d91eef972b6cc2e3f6dc",
-  "captured_at_utc": "2026-08-04T05:24:57.9145791Z",
+  "source_revision": "main@65e9345d605c0d84e042396c32aace61afe25851",
+  "captured_at_utc": "2026-08-04T05:52:10.8487391Z",
   "states": ["OPEN", "IN_PROGRESS", "BLOCKED", "MERGED_PENDING_CLOSURE", "NOT_EXECUTED", "UNKNOWN"],
   "issues": [
     {"number": 313, "state": "BLOCKED", "priority": "UNSET", "owner": "Code + external hosts", "dependencies": ["Agent", "Runtime", "Loop"], "evidence": "Real host A/B adoption evidence is required; local Code has no canonical UWP/SKILL surface."},
     {"number": 314, "state": "BLOCKED", "priority": "UNSET", "owner": "Code + external browser tooling", "dependencies": ["browser pane", "Runtime"], "evidence": "Bounded loopback preview merged; external browser verification remains unavailable and issue is still open."},
     {"number": 315, "state": "OPEN", "priority": "P0", "owner": "Code + Simplicio ecosystem", "dependencies": ["#317", "#318", "#319", "#320", "#321", "#322", "#323", "#324", "#325", "#326", "#327"], "evidence": "Parent recovery objective remains open until child ACs have merged evidence."},
-    {"number": 316, "state": "BLOCKED", "priority": "P0", "owner": "Code CI/toolchain", "dependencies": ["Rust 1.94.1", "GitHub CI"], "evidence": "Gate-recovery slice merged; full cargo test and CI evidence are not green."},
+    {"number": 316, "state": "BLOCKED", "priority": "P0", "owner": "Code CI/toolchain", "dependencies": ["Rust 1.94.1", "GitHub CI"], "evidence": "PR #335 merged local receipt/cancellation hardening; full cargo check/test timed out and CI/release evidence remain unverified."},
     {"number": 317, "state": "OPEN", "priority": "P0", "owner": "Runtime + Code", "dependencies": ["Runtime process capabilities", "Agent"], "evidence": "Foreground/background/cancel/reconcile contracts require Runtime-owned capabilities and installed E2E."},
     {"number": 318, "state": "BLOCKED", "priority": "P0", "owner": "Code + Runtime", "dependencies": ["Runtime workspace contract", "audit gate"], "evidence": "Scoped audit passes, but broad production-looking workspace accesses remain outside the manifest; full migration and adversarial evidence are not proven."},
     {"number": 319, "state": "OPEN", "priority": "P0", "owner": "Code + Agent + Runtime + Loop", "dependencies": ["installed four-surface E2E"], "evidence": "Installed AgentHost/Runtime/Loop Hub proof is not yet a merged, four-surface receipt."},
@@ -19,6 +19,6 @@
     {"number": 324, "state": "OPEN", "priority": "P1", "owner": "Code CI", "dependencies": ["headless matrix", "calibrated invariants"], "evidence": "Headless matrix promotion to blocking gates remains open."},
     {"number": 325, "state": "OPEN", "priority": "P1", "owner": "Code + Runtime + Loop", "dependencies": ["cold/warm benchmark harness"], "evidence": "Startup/workspace-open/first-effect measurements and regression limits remain open."},
     {"number": 326, "state": "BLOCKED", "priority": "P1", "owner": "Agent UX + Code", "dependencies": ["workspace.observe/advisory contract", "productive AgentHost"], "evidence": "Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable."},
-    {"number": 327, "state": "IN_PROGRESS", "priority": "P1", "owner": "Code governance", "dependencies": ["live GitHub re-query", "version/capability sources"], "evidence": "Status/inventory gate merged in PRs #331/#332; snapshot anchor corrected in #333, while external release and full-CI evidence remain unverified."}
+    {"number": 327, "state": "IN_PROGRESS", "priority": "P1", "owner": "Code governance", "dependencies": ["live GitHub re-query", "version/capability sources"], "evidence": "Status/inventory gate merged in PRs #331/#332, snapshot anchor corrected in #333, live source refreshed in #334, and PR #335 validation evidence recorded; external release and full-CI evidence remain unverified."}
   ]
 }
