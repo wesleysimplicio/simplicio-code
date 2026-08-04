@@ -1,8 +1,8 @@
 {
   "schema": "simplicio.code-residual-issues/v1",
   "source": "GitHub live issue list for wesleysimplicio/simplicio-code",
-  "source_revision": "main@901b805c25ccdedc833d95040d5fb355a0c8f304",
-  "captured_at_utc": "2026-08-04T04:50:06Z",
+  "source_revision": "main@db5fccf3eaaeea6f65c6048cdc0732fecf8ec634",
+  "captured_at_utc": "2026-08-04T05:13:43.3099084Z",
   "states": ["OPEN", "IN_PROGRESS", "BLOCKED", "MERGED_PENDING_CLOSURE", "NOT_EXECUTED", "UNKNOWN"],
   "issues": [
     {"number": 313, "state": "BLOCKED", "priority": "UNSET", "owner": "Code + external hosts", "dependencies": ["Agent", "Runtime", "Loop"], "evidence": "Real host A/B adoption evidence is required; local Code has no canonical UWP/SKILL surface."},
@@ -10,7 +10,7 @@
     {"number": 315, "state": "OPEN", "priority": "P0", "owner": "Code + Simplicio ecosystem", "dependencies": ["#317", "#318", "#319", "#320", "#321", "#322", "#323", "#324", "#325", "#326", "#327"], "evidence": "Parent recovery objective remains open until child ACs have merged evidence."},
     {"number": 316, "state": "BLOCKED", "priority": "P0", "owner": "Code CI/toolchain", "dependencies": ["Rust 1.94.1", "GitHub CI"], "evidence": "Gate-recovery slice merged; full cargo test and CI evidence are not green."},
     {"number": 317, "state": "OPEN", "priority": "P0", "owner": "Runtime + Code", "dependencies": ["Runtime process capabilities", "Agent"], "evidence": "Foreground/background/cancel/reconcile contracts require Runtime-owned capabilities and installed E2E."},
-    {"number": 318, "state": "OPEN", "priority": "P0", "owner": "Code + Runtime", "dependencies": ["Runtime workspace contract", "audit gate"], "evidence": "Direct legacy workspace accesses remain an open audit objective."},
+    {"number": 318, "state": "BLOCKED", "priority": "P0", "owner": "Code + Runtime", "dependencies": ["Runtime workspace contract", "audit gate"], "evidence": "Scoped audit passes, but broad production-looking workspace accesses remain outside the manifest; full migration and adversarial evidence are not proven."},
     {"number": 319, "state": "OPEN", "priority": "P0", "owner": "Code + Agent + Runtime + Loop", "dependencies": ["installed four-surface E2E"], "evidence": "Installed AgentHost/Runtime/Loop Hub proof is not yet a merged, four-surface receipt."},
     {"number": 320, "state": "OPEN", "priority": "P0", "owner": "Code release", "dependencies": ["validated SHA", "release assets", "registry evidence"], "evidence": "Replacing beta.5 requires a new SHA-tied release and public asset evidence."},
     {"number": 321, "state": "OPEN", "priority": "P0", "owner": "Runtime installer + Code", "dependencies": ["trust root", "Windows install/update"], "evidence": "Productive trust-root and Windows install/update/rollback evidence remains open."},
@@ -18,7 +18,7 @@
     {"number": 323, "state": "OPEN", "priority": "P1", "owner": "Gateway + Runtime + Code", "dependencies": ["streaming tools cancel"], "evidence": "OpenRouter replacement requires a governed gateway with real streaming/tools/cancel evidence."},
     {"number": 324, "state": "OPEN", "priority": "P1", "owner": "Code CI", "dependencies": ["headless matrix", "calibrated invariants"], "evidence": "Headless matrix promotion to blocking gates remains open."},
     {"number": 325, "state": "OPEN", "priority": "P1", "owner": "Code + Runtime + Loop", "dependencies": ["cold/warm benchmark harness"], "evidence": "Startup/workspace-open/first-effect measurements and regression limits remain open."},
-    {"number": 326, "state": "OPEN", "priority": "P1", "owner": "Agent UX + Code", "dependencies": ["workspace.observe/advisory contract"], "evidence": "Typed proactive advisory emission without a second coordinator remains open."},
-    {"number": 327, "state": "IN_PROGRESS", "priority": "P1", "owner": "Code governance", "dependencies": ["live GitHub re-query", "version/capability sources"], "evidence": "This captured inventory and generated status gate are the current implementation lane."}
+    {"number": 326, "state": "BLOCKED", "priority": "P1", "owner": "Agent UX + Code", "dependencies": ["workspace.observe/advisory contract", "productive AgentHost"], "evidence": "Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable."},
+    {"number": 327, "state": "IN_PROGRESS", "priority": "P1", "owner": "Code governance", "dependencies": ["live GitHub re-query", "version/capability sources"], "evidence": "Status/inventory gate merged in PR #331; onboarding drift reconciliation is in progress, while external release and full-CI evidence remain unverified."}
   ]
 }
