@@ -29,3 +29,8 @@ def test_current_sources_are_consistent() -> None:
 def test_dirty_checkout_is_not_release_evidence() -> None:
     data = MODULE.snapshot(ROOT)
     assert data["release_evidence_status"] == "UNKNOWN"
+
+
+def test_rendered_status_document_matches_sources() -> None:
+    data = MODULE.snapshot(ROOT)
+    MODULE.validate_rendered_document(ROOT, data)
