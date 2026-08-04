@@ -50,6 +50,7 @@ def _verify_signature(payload: dict[str, Any], signature: str, key: Path) -> Non
             result = subprocess.run(
                 ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key),
                  "-rawin", "-in", str(payload_path), "-sigfile", str(signature_path)],
+                stdin=subprocess.DEVNULL,
                 capture_output=True, text=True, check=False,
             )
         except FileNotFoundError as exc:
