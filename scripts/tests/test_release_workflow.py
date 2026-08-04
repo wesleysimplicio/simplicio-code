@@ -1,5 +1,11 @@
+import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import unittest
+
+SCRIPT = Path(__file__).parents[2] / "scripts/release/generate_manifest.py"
 
 
 WORKFLOW = Path(__file__).parents[2] / ".github" / "workflows" / "release.yml"
@@ -28,5 +34,73 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("best_effort: false", windows)
 
 
+    def test_generator_requires_every_declared_release_platform(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            for platform, suffix in (
+                ("linux-x86_64", ""),
+                ("macos-aarch64", ""),
+                ("windows-x86_64", ".exe"),
+            ):
+                (artifacts / f"simplicio-code-0.3.0-beta.4-{platform}{suffix}").write_bytes(
+                    platform.encode("ascii")
+                )
+            output = artifacts / "manifest.json"
+            command = [
+                sys.executable,
+                str(SCRIPT),
+                "--version",
+                "0.3.0-beta.4",
+                "--channel",
+                "beta",
+                "--commit-sha",
+                "a" * 40,
+                "--artifacts-dir",
+                str(artifacts),
+                "--out",
+                str(output),
+            ]
+            for platform in ("linux-x86_64", "macos-aarch64", "windows-x86_64"):
+                command.extend(("--required-platform", platform))
+            result = subprocess.run(command, capture_output=True, text=True, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            manifest = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                {entry["platform"] for entry in manifest["artifacts"]},
+                {"linux-x86_64", "macos-aarch64", "windows-x86_64"},
+            )
+
+    def test_generator_rejects_a_missing_declared_platform(self):
+        with tempfile.TemporaryDirectory() as directory:
+            artifacts = Path(directory)
+            (artifacts / "simplicio-code-0.3.0-beta.4-linux-x86_64").write_bytes(b"linux")
+            output = artifacts / "manifest.json"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--version",
+                    "0.3.0-beta.4",
+                    "--channel",
+                    "beta",
+                    "--commit-sha",
+                    "a" * 40,
+                    "--artifacts-dir",
+                    str(artifacts),
+                    "--out",
+                    str(output),
+                    "--required-platform",
+                    "linux-x86_64",
+                    "--required-platform",
+                    "windows-x86_64",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "missing required release platform(s): windows-x86_64", result.stderr
+        )
 if __name__ == "__main__":
     unittest.main()

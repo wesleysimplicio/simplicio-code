@@ -168,6 +168,9 @@ jobs:
             --version "${{ steps.ver.outputs.version }}" \
             --channel "${{ steps.ver.outputs.channel }}" \
             --commit-sha "${{ github.sha }}" \
+            --required-platform linux-x86_64 \
+            --required-platform macos-aarch64 \
+            --required-platform windows-x86_64 \
             --artifacts-dir dist \
             --out dist/manifest.json
 
