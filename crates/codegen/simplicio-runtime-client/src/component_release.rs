@@ -333,14 +333,68 @@ pub struct SignedReleaseEvent {
     pub payload: ReleaseEvent,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ReleaseTrustPolicy {
+    trusted_keys: BTreeMap<String, Vec<u8>>,
+    revoked_key_ids: BTreeSet<String>,
+    minimum_sequence: u64,
+}
+
+impl ReleaseTrustPolicy {
+    pub fn from_trusted_keys<I>(keys: I) -> Self
+    where
+        I: IntoIterator<Item = (String, Vec<u8>)>,
+    {
+        Self {
+            trusted_keys: keys.into_iter().collect(),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_revoked_key(mut self, key_id: impl Into<String>) -> Self {
+        self.revoked_key_ids.insert(key_id.into());
+        self
+    }
+
+    pub fn with_minimum_sequence(mut self, minimum_sequence: u64) -> Self {
+        self.minimum_sequence = minimum_sequence;
+        self
+    }
+
+    fn from_borrowed(trusted_keys: &[(&str, &[u8])]) -> Self {
+        Self::from_trusted_keys(
+            trusted_keys
+                .iter()
+                .map(|(key_id, key)| ((*key_id).to_owned(), (*key).to_vec())),
+        )
+    }
+}
+
 impl SignedReleaseEvent {
     pub fn verify(&self, trusted_keys: &[(&str, &[u8])]) -> Result<&ReleaseEvent, ReleaseError> {
+        let policy = ReleaseTrustPolicy::from_borrowed(trusted_keys);
+        self.verify_with_policy(&policy)
+    }
+
+    pub fn verify_with_policy(
+        &self,
+        policy: &ReleaseTrustPolicy,
+    ) -> Result<&ReleaseEvent, ReleaseError> {
         if self.key_id.trim().is_empty() {
             return Err(ReleaseError::Signature("key_id is required".into()));
         }
-        let (_, public_key) = trusted_keys
-            .iter()
-            .find(|(key_id, _)| *key_id == self.key_id)
+        if policy.revoked_key_ids.contains(&self.key_id) {
+            return Err(ReleaseError::RevokedKey(self.key_id.clone()));
+        }
+        if self.payload.sequence < policy.minimum_sequence {
+            return Err(ReleaseError::TrustFloor(format!(
+                "release sequence {} is below minimum {}",
+                self.payload.sequence, policy.minimum_sequence
+            )));
+        }
+        let public_key = policy
+            .trusted_keys
+            .get(&self.key_id)
             .ok_or_else(|| ReleaseError::UnknownKey(self.key_id.clone()))?;
         let signature = base64::engine::general_purpose::STANDARD
             .decode(self.signature.trim())
@@ -386,6 +440,10 @@ pub enum ReleaseError {
     Signature(String),
     #[error("release event key is not trusted: {0}")]
     UnknownKey(String),
+    #[error("release event key is revoked: {0}")]
+    RevokedKey(String),
+    #[error("release event sequence is below the trust floor: {0}")]
+    TrustFloor(String),
     #[error("release event conflicts with an already applied event: {0}")]
     EventConflict(String),
     #[error("release event is stale: {0}")]
@@ -503,12 +561,26 @@ impl BundleStore {
         event: &SignedReleaseEvent,
         trusted_keys: &[(&str, &[u8])],
         source: &Path,
+        canary: F,
+    ) -> Result<ReleaseEventOutcome, ReleaseError>
+    where
+        F: FnMut(&Path) -> Result<(), String>,
+    {
+        let policy = ReleaseTrustPolicy::from_borrowed(trusted_keys);
+        self.ingest_release_event_with_policy(event, &policy, source, canary)
+    }
+
+    pub fn ingest_release_event_with_policy<F>(
+        &self,
+        event: &SignedReleaseEvent,
+        policy: &ReleaseTrustPolicy,
+        source: &Path,
         mut canary: F,
     ) -> Result<ReleaseEventOutcome, ReleaseError>
     where
         F: FnMut(&Path) -> Result<(), String>,
     {
-        let payload = event.verify(trusted_keys)?;
+        let payload = event.verify_with_policy(policy)?;
         let _lock = UpdateLock::acquire(&self.root)?;
         let state_path = self.root.join("release-event-state.json");
         let state_exists = state_path.is_file();
@@ -1287,9 +1359,48 @@ mod tests {
     }
 
     #[test]
+    fn release_trust_policy_enforces_rotation_revocation_and_floor() {
+        let active_key = test_key_pair();
+        let rotated_key = test_key_pair();
+        let policy = ReleaseTrustPolicy::from_trusted_keys(vec![
+            (
+                "release-key-1".into(),
+                active_key.public_key().as_ref().to_vec(),
+            ),
+            (
+                "release-key-2".into(),
+                rotated_key.public_key().as_ref().to_vec(),
+            ),
+        ]);
+
+        let active = signed_event(manifest("RuntimeProtocol/v1"), "evt-1", 1, &active_key);
+        active.verify_with_policy(&policy).unwrap();
+
+        let mut rotated = signed_event(manifest("RuntimeProtocol/v1"), "evt-2", 2, &rotated_key);
+        rotated.key_id = "release-key-2".into();
+        rotated.verify_with_policy(&policy).unwrap();
+
+        let revoked = policy.clone().with_revoked_key("release-key-2");
+        assert!(matches!(
+            rotated.verify_with_policy(&revoked),
+            Err(ReleaseError::RevokedKey(key)) if key == "release-key-2"
+        ));
+
+        let floored = policy.with_minimum_sequence(2);
+        assert!(matches!(
+            active.verify_with_policy(&floored),
+            Err(ReleaseError::TrustFloor(_))
+        ));
+    }
+
+    #[test]
     fn release_event_promotion_is_durable_and_deduplicated() {
         let key_pair = test_key_pair();
         let trusted = [("release-key-1", key_pair.public_key().as_ref())];
+        let policy = ReleaseTrustPolicy::from_trusted_keys(vec![(
+            "release-key-1".into(),
+            key_pair.public_key().as_ref().to_vec(),
+        )]);
         let temp = tempfile::tempdir().unwrap();
         let source = temp.path().join("source");
         fs::create_dir(&source).unwrap();
@@ -1298,7 +1409,7 @@ mod tests {
         let event = signed_event(manifest("RuntimeProtocol/v1"), "evt-1", 1, &key_pair);
         let canary_calls = std::cell::Cell::new(0);
         let promoted = store
-            .ingest_release_event(&event, &trusted, &source, |_| {
+            .ingest_release_event_with_policy(&event, &policy, &source, |_| {
                 canary_calls.set(canary_calls.get() + 1);
                 Ok(())
             })
