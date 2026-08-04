@@ -94,6 +94,51 @@ def build_component_manifest(
         "surfaces": list(SURFACES),
     }
 
+
+def build_process_observations(
+    first_agent_pid: int | None,
+    agent_pid: int | None,
+    runtime_pid: int | None,
+    agent_command: list[str],
+    runtime_command: list[str],
+    *,
+    fixture_mode: bool,
+) -> dict[str, object]:
+    return {
+        "schema": "simplicio.process-observations/v1",
+        "proof_kind": (
+            "hermetic_fixture_non_proof" if fixture_mode else "external_installed"
+        ),
+        "independent": (
+            agent_pid is not None
+            and runtime_pid is not None
+            and agent_pid != runtime_pid
+        ),
+        "restart": {
+            "initial_agent_pid": first_agent_pid,
+            "restarted_agent_pid": agent_pid,
+            "rotated": (
+                first_agent_pid is not None
+                and agent_pid is not None
+                and first_agent_pid != agent_pid
+            ),
+        },
+        "processes": [
+            {
+                "role": "agent_host",
+                "pid": agent_pid,
+                "executable": agent_command[0] if agent_command else None,
+                "transport": "unix_socket",
+            },
+            {
+                "role": "runtime",
+                "pid": runtime_pid,
+                "executable": runtime_command[0] if runtime_command else None,
+                "transport": "stdio",
+            },
+        ],
+    }
+
 def negative_dependency_gates() -> list[dict[str, object]]:
     """Record the same deterministic fail-closed cases for every surface."""
     cases = (
@@ -315,6 +360,7 @@ def run(
         )
         try:
             wait_for_agent_socket(agent, agent_socket)
+            first_agent_pid = agent.pid
             status = request(agent_socket, {"op": "host.status"})
             validate_agent_status(status)
 
@@ -624,9 +670,19 @@ def run(
                 ),
                 "mode": "fixture" if fixture_mode else "installed",
                 "fixture_sha256": digest,
-                "component_manifest": build_component_manifest(
-                    status, initialized, tools, fixture_mode=fixture_mode
-                ),
+                "component_manifest": {
+                    **build_component_manifest(
+                        status, initialized, tools, fixture_mode=fixture_mode
+                    ),
+                    "process_observations": build_process_observations(
+                        first_agent_pid,
+                        agent.pid,
+                        runtime.pid,
+                        agent_command,
+                        runtime_command,
+                        fixture_mode=fixture_mode,
+                    ),
+                },
                 "agent_host": {
                     "protocol": status["protocol_schema"],
                     "host_instance_id": status["host_instance_id"],

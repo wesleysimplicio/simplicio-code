@@ -35,6 +35,20 @@ class InstalledCodeE2ETest(unittest.TestCase):
             component_manifest["runtime"]["protocol_version"], "2024-11-05"
         )
         self.assertIn("simplicio_edit", component_manifest["runtime"]["tools"])
+        process_observations = component_manifest["process_observations"]
+        self.assertEqual(
+            process_observations["schema"], "simplicio.process-observations/v1"
+        )
+        self.assertTrue(process_observations["independent"])
+        self.assertTrue(process_observations["restart"]["rotated"])
+        self.assertEqual(
+            {item["role"] for item in process_observations["processes"]},
+            {"agent_host", "runtime"},
+        )
+        self.assertEqual(
+            {item["transport"] for item in process_observations["processes"]},
+            {"unix_socket", "stdio"},
+        )
         self.assertEqual(
             [item["surface"] for item in receipt["surfaces"]], list(MODULE.SURFACES)
         )
