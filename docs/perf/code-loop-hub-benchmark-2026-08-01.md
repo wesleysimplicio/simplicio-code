@@ -22,32 +22,35 @@ Observed environment:
 
 | Input | Value |
 | --- | --- |
-| Code SHA | `68327f340883359a8b27d2decd054e3726d36033` |
-| Loop SHA | `3b00cfadf5c519916526c71fc6a129f2de2e8e02` |
+| Code SHA | `b9aae7035e8e7cb6cb6a8c7a0e532ce5b779dd5a` |
+| Loop SHA | `a0f9cbe886346db0a40a893fba6a9710f6121e1c` |
 | Runs | `10` |
 | Transport | `tcp://127.0.0.1:<ephemeral-port>` on Windows |
-| Receipt SHA-256 | `D92BF111DA5508CE1C43DBCEAE53CCCB0AC113E8040488110E579C18DCE90A5B` |
+| Receipt | [`docs/evidence/issue-325-code-loop-hub-10.json`](../evidence/issue-325-code-loop-hub-10.json) |
+| Receipt SHA-256 | `839dd8bb7c5e0f8d463a60d1f64da96ffc58d35ada9092582fd4c0222b3e3445` |
 
 ## Measured metrics
 
 | Metric | p50 (ms) | p95 (ms) |
 | --- | ---: | ---: |
-| Hub startup | 423.844 | 651.910 |
-| Code client lifecycle test | 2,612.684 | 4,232.416 |
-| Hub restart/reconnect downtime | 551.335 | 676.307 |
+| Hub startup | 438.532 | 559.324 |
+| Code client lifecycle test | 2,938.487 | 3,275.900 |
+| Hub restart/reconnect downtime | 543.725 | 571.854 |
 
 Every run reported one Hub identity, successful restart/reconnect, and the
 lifecycle `handshake → attach → submit → progress → cancel → resume → replay`.
-Every run reported `tui-1`, `tui-2`, `headless`, and `acp` surfaces. Provider and
-local-LLM startup were both false.
+Every run reported `tui-1`, `tui-2`, `headless`, and `acp` surfaces. The measured
+maximums were one Hub process, 38,072 KiB RSS, and 8.965% CPU. Provider and
+local-LLM startup were both false; Code did not start Runtime, Mapper, or the
+scheduler.
 
 ## Explicit limits
 
-The benchmark now has a Windows-native process sampler using Toolhelp32,
-GetProcessMemoryInfo, and GetProcessTimes; unavailable observations remain
-`null` rather than zero or estimates. A fresh 10-run receipt using this sampler
-is still required before process/RSS/CPU metrics can become gates. The restart
-cleanup now removes only the owned temporary lock after the Hub process exits;
-all 10 restart/reconnect cycles completed. This
+The Windows-native sampler used Toolhelp32, GetProcessMemoryInfo, and
+GetProcessTimes for this receipt; unavailable observations remain `null` rather
+than zero or estimates. The restart cleanup removes only the owned temporary
+lock after the Hub process exits; all 10 restart/reconnect cycles completed.
+The receipt still does not prove the separately required installed
+AgentHost/Runtime/Loop matrix or a production release. This
 benchmark also does not claim AgentHost or Runtime effects; those remain
 separate installed-E2E requirements.
