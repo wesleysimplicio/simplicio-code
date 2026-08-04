@@ -244,6 +244,16 @@ def percentile(values: list[float], fraction: float) -> float | None:
     return round(ordered[index], 3)
 
 
+def validate_receipt_set(receipts: list[dict[str, object]]) -> None:
+    if len(receipts) < MIN_P95_RUNS:
+        raise ValueError("benchmark receipt set is insufficient for p95 metrics")
+    for receipt in receipts:
+        if receipt.get("single_hub_identity") is not True:
+            raise ValueError("benchmark receipt lost single-hub ownership")
+        if receipt.get("restart_reconnected") is not True:
+            raise ValueError("benchmark receipt omitted restart reconciliation")
+
+
 def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
     cargo = shutil.which("cargo")
     if cargo is None:
@@ -339,6 +349,7 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     receipts = [run_once(code_root, loop_root) for _ in range(runs)]
     for receipt in receipts:
         validate_surfaces(receipt.get("surfaces"))
+    validate_receipt_set(receipts)
     startup = [float(receipt["startup_ms"]) for receipt in receipts]
     test = [float(receipt["test_ms"]) for receipt in receipts]
     restart = [float(receipt["restart_downtime_ms"]) for receipt in receipts]
