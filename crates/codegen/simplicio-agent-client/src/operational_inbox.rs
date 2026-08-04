@@ -213,6 +213,9 @@ impl OperationalInbox {
                 for value in evidence_refs {
                     validate_token("evidence_ref", value)?;
                 }
+                if evidence_refs.is_empty() {
+                    return Err(InboxError::InvalidField("evidence_refs"));
+                }
                 if self
                     .items
                     .get(session_id)
