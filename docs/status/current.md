@@ -1,8 +1,8 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T15:20:55.396714+00:00`
-- Commit: `d0e09b270f9f2625b7c8fa708c450207979deee8`
+- Generated: `2026-08-04T15:40:30.858437+00:00`
+- Commit: `7d02b9ed98c82b92a9fad456a3d8b19b37745bd2`
 - Dirty checkout: `True`
 
 ## Version sources
@@ -38,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@d0e09b270f9f2625b7c8fa708c450207979deee8`
-- Captured: `2026-08-04T15:20:29.1746628Z`
+- Source revision: `main@7d02b9ed98c82b92a9fad456a3d8b19b37745bd2`
+- Captured: `2026-08-04T15:39:39.130Z`
 
 Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves GitHub history without asserting current acceptance; refresh this inventory after live GitHub re-query.
 
@@ -53,13 +53,13 @@ Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves Gi
 | #318 | `BLOCKED` | P0 | Code + Runtime | Runtime workspace contract; audit gate | Scoped audit passes, but broad production-looking workspace accesses remain outside the manifest; full migration and adversarial evidence are not proven. |
 | #319 | `OPEN` | P0 | Code + Agent + Runtime + Loop | installed four-surface E2E | PR #387 committed a real external Loop Hub receipt covering four surfaces, single identity, restart/reconnect and PID rotation; installed AgentHost/Runtime/Mapper/Fast version matrix, PTY/workspace/concurrency and release-grade cross-platform closure remain open. |
 | #320 | `OPEN` | P0 | Code release | validated SHA; release assets; registry evidence | PR #386 now blocks accidental publication of historical beta.5; a new SHA-tied release with public assets, trust-root, install, update and rollback evidence remains open. |
-| #321 | `OPEN` | P0 | Runtime installer + Code | trust root; Windows install/update | PR #380 merged actionable missing-OpenSSL blocking; trust-root, Windows install/update/rollback and public release evidence remain open. |
-| #322 | `OPEN` | P1 | Account/Gateway + Code | device login; entitlement backend | Device login and renewable entitlement require backend-backed proof. |
+| #321 | `OPEN` | P0 | Runtime installer + Code | trust root; Windows install/update | PR #380 merged actionable missing-OpenSSL blocking and PR #389 isolated Windows pytest/OpenSSL stdin; trust-root, Windows install/update/rollback and public release evidence remain open. |
+| #322 | `OPEN` | P1 | Account/Gateway + Code | device login; entitlement backend | PR #390 adds fail-closed Pending/Expired session states and refresh recovery; the real device-auth/entitlement backend, production deployment, cross-OS keychain receipts and surface parity remain unverified. |
 | #323 | `OPEN` | P1 | Gateway + Runtime + Code | streaming tools cancel | PR #384 merged onboarding removal of provider-key instructions and adds a guard; production gateway deployment with real streaming/tools/cancel receipts remains open. |
 | #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | PR #381 merged deterministic 28-cell matrix regression coverage; built-binary, TTY, permissions and cross-platform evidence remain open. |
 | #325 | `OPEN` | P1 | Code + Runtime + Loop | cold/warm benchmark harness | PR #339 merged the 10-run Loop Hub restart benchmark and cleanup fix; S0-S3 Agent→Runtime→Loop matrix, installed AgentHost/Runtime proof, Windows process/RSS/CPU sampling, and Runtime issue-gate remain unverified. |
 | #326 | `BLOCKED` | P1 | Agent UX + Code | workspace.observe/advisory contract; productive AgentHost | Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable. |
-| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | PRs #331/#332/#333/#334/#335/#337/#338/#339/#350/#351/#382/#383/#384/#386/#387 merged status, quality, benchmark, installed-E2E, onboarding and external Loop receipt slices; live issue state and main SHA are refreshed here, while external release provenance/full CI and residual ownership evidence remain unverified. |
+| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | PRs #331/#332/#333/#334/#335/#337/#338/#339/#350/#351/#382/#383/#384/#386/#387/#388/#389/#390 merged status, quality, benchmark, installed-E2E, onboarding, external Loop receipt, release and auth-state slices; live issue state and main SHA are refreshed here, while external release provenance/full CI and residual ownership evidence remain unverified. |
 
 ## Migration note
 
