@@ -50,6 +50,19 @@ def test_explicit_violation_is_reported(tmp_path):
     assert result["violations"][0]["kind"] == "filesystem"
 
 
+def test_symlink_access_is_a_filesystem_finding(tmp_path):
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "main.rs").write_text(
+        "std::os::unix::fs::symlink(outside, link).unwrap();\n",
+        encoding="utf-8",
+    )
+    result = audit(tmp_path, _manifest(tmp_path / "manifest.json", []))
+    assert result["status"] == "failed"
+    assert result["summary"]["total"] == 1
+    assert result["summary"]["unclassified"] == 1
+    assert result["findings"][0]["kind"] == "filesystem"
+
+
 def test_cfg_test_access_is_classified_as_fixture_without_hiding_productive_access(tmp_path):
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "main.rs").write_text(
