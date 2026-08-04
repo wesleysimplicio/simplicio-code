@@ -46,11 +46,14 @@ def _verify_signature(payload: dict[str, Any], signature: str, key: Path) -> Non
         signature_path = Path(directory, "signature.bin")
         payload_path.write_bytes(canonical(payload))
         signature_path.write_bytes(signature_bytes)
-        result = subprocess.run(
-            ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key),
-             "-rawin", "-in", str(payload_path), "-sigfile", str(signature_path)],
-            capture_output=True, text=True, check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["openssl", "pkeyutl", "-verify", "-pubin", "-inkey", str(key),
+                 "-rawin", "-in", str(payload_path), "-sigfile", str(signature_path)],
+                capture_output=True, text=True, check=False,
+            )
+        except FileNotFoundError as exc:
+            raise BumpRejected("openssl executable unavailable; install OpenSSL before verifying a release event") from exc
     if result.returncode:
         raise BumpRejected("signature verification failed; verify publisher key and payload")
 
