@@ -149,7 +149,11 @@ def dirty_checkout(root: Path) -> bool:
     entries = []
     for line in run_git(root, "status", "--porcelain").splitlines():
         path = line[3:] if len(line) > 3 else ""
-        if path == ".simplicio-lease.json" or path.startswith(".simplicio/"):
+        if (
+            path == ".simplicio-lease.json"
+            or path.startswith(".simplicio/")
+            or path == "docs/status/current.md"
+        ):
             continue
         entries.append(line)
     return bool(entries)
