@@ -116,11 +116,14 @@ pelos dois componentes: `list`/`stat`/`exec`, alguns caminhos diretos de
 fatias. Essa fronteira é registrada explicitamente para não confundir contrato
 P0 real com integração total ainda não entregue.
 
-Também permanece pendente o contrato neutro de proatividade real:
-`workspace.observe` + `workspace.advisory` com finding/risk/suggestion,
-privacidade e aprovação. Os eventos atuais são apenas saúde/backpressure/
-resultado do host; não observam o que o desenvolvedor está fazendo e não devem
-ser apresentados como a lateral proativa completa.
+O boundary Code-side de observação está congelado em `workspace.observe/v1`, com
+schemas machine-readable para request/page, consentimento explícito, três
+categorias, provenance e limite de 128 eventos. Isso não fecha o contrato
+neutro de proatividade real nem prova emissão produtiva pelo AgentHost:
+`workspace.advisory` com finding/risk/suggestion, privacidade, aprovação e
+E2E nas quatro superfícies continuam dependentes do AgentHost produtivo. Os
+eventos atuais não observam o que o desenvolvedor está fazendo e não devem ser
+apresentados como a lateral proativa completa.
 
 ## Gateway Simplicio
 
