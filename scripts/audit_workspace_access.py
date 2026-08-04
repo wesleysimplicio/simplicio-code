@@ -114,6 +114,15 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
         if count < 0 or key in allowed:
             raise ValueError("baseline entries must have unique keys and non-negative max_count")
         allowed[key] = count
+    # A violation is never an allowed baseline. Keeping a positive count here
+    # would make the report look green after the finding disappears while
+    # silently permitting the same direct access to return.
+    for key, count in sorted(allowed.items()):
+        if key[2] == "violation" and count != 0:
+            baseline_errors.append({
+                "path": key[0], "kind": key[1], "classification": key[2],
+                "observed": observed.get(key, 0), "max_count": count,
+            })
     if baseline:
         for key, count in sorted(observed.items()):
             maximum = allowed.get(key)
