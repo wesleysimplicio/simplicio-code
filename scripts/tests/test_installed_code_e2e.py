@@ -145,6 +145,31 @@ class InstalledCodeE2ETest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "agent_host_missing"):
                 MODULE.run(ROOT)
 
+    def test_external_mode_rejects_wrapper_without_executable_target(self):
+        import os
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory) / "agent.cmd"
+            missing_target = Path(directory) / "missing-hermes.exe"
+            wrapper.write_text(
+                '@echo off' + chr(10) + f'"{missing_target}" %*' + chr(10),
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            with patch.dict(
+                os.environ,
+                {
+                    "SIMPLICIO_AGENT_HOST_E2E_COMMAND": json.dumps([str(wrapper)]),
+                    "SIMPLICIO_RUNTIME_BIN": MODULE.sys.executable,
+                },
+                clear=False,
+            ):
+                with self.assertRaisesRegex(
+                    RuntimeError, "wrapper target is not executable"
+                ):
+                    MODULE.run(ROOT)
+
     def test_fixture_rejects_invalid_identity_and_path_escape(self):
         rejected = FIXTURE.agent_response({"op": "turn.start", "turn_id": "one"}, {})
         self.assertFalse(rejected["ok"])
