@@ -148,8 +148,12 @@ def load_residual_inventory(root: Path) -> dict[str, object]:
 def dirty_checkout(root: Path) -> bool:
     entries = []
     for line in run_git(root, "status", "--porcelain").splitlines():
-        path = line[3:] if len(line) > 3 else ""
-        if path == ".simplicio-lease.json" or path.startswith(".simplicio/"):
+        path = line[2:] if len(line) > 2 else ""
+        if (
+            path == ".simplicio-lease.json"
+            or path.startswith(".simplicio/")
+            or path == "docs/status/current.md"
+        ):
             continue
         entries.append(line)
     return bool(entries)
@@ -289,6 +293,9 @@ def validate_rendered_document(root: Path, data: dict[str, object]) -> None:
     commit_match = re.search(r"^- Commit: `([0-9a-f]{40})`$", text, re.MULTILINE)
     if not commit_match or not _is_ancestor(root, commit_match.group(1)):
         raise ValueError("status document commit is missing or not an ancestor of checkout")
+    dirty_match = re.search(r"^- Dirty checkout: `(True|False)`$", text, re.MULTILINE)
+    if not dirty_match or dirty_match.group(1) != str(data["dirty"]):
+        raise ValueError("status document dirty flag drifted")
     versions = data["versions"]
     assert isinstance(versions, dict)
     for key, value in versions.items():

@@ -1,9 +1,9 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T17:02:00.114277+00:00`
-- Commit: `7f3c1091fdd2637794b62092b96a4dc755cf0892`
-- Dirty checkout: `True`
+- Generated: `2026-08-04T18:23:37.395592+00:00`
+- Commit: `6a0ef57a20da4f4a8488f316083738e2ea88dc71`
+- Dirty checkout: `False`
 
 ## Version sources
 
@@ -38,15 +38,15 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@7f3c1091fdd2637794b62092b96a4dc755cf0892`
-- Captured: `2026-08-04T17:01:29.5906653Z`
+- Source revision: `main@5b0edd4aa974ac66f60a3579ce0d5c06e09ef574`
+- Captured: `2026-08-04T18:22:00Z`
 
 Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves GitHub history without asserting current acceptance; refresh this inventory after live GitHub re-query.
 
 | Issue | State | Priority | Owner | Dependencies | Evidence |
 | --- | --- | --- | --- | --- | --- |
 | #313 | `BLOCKED` | UNSET | Code + external hosts | Agent; Runtime; Loop | Real host A/B adoption evidence is required; local Code has no canonical UWP/SKILL surface. |
-| #314 | `BLOCKED` | UNSET | Code + external browser tooling | browser pane; Runtime | PR #378 merged bounded URL/duration regression coverage; external browser verification remains unavailable and issue is still open. |
+| #314 | `HISTORICAL_CLOSED` | UNSET | Code + external browser tooling | browser pane; Runtime | GitHub state is closed/completed after the Code-owned bounded loopback preview and file-url fail-fast evidence; the external Browser pane remains outside Code ownership. |
 | #315 | `OPEN` | P0 | Code + Simplicio ecosystem | #317; #318; #319; #320; #321; #322; #323; #324; #325; #326; #327 | Parent recovery objective remains open until child ACs have merged evidence. |
 | #316 | `HISTORICAL_CLOSED` | P0 | Code CI/toolchain | Rust 1.94.1; GitHub CI | GitHub state is closed/completed; PR #335 local receipt/cancellation hardening is merged, but full cargo check/test and CI/release evidence remain unverified. |
 | #317 | `OPEN` | P0 | Runtime + Code | Runtime process capabilities; Agent | PRs #379, #393, #399 and #405 merged fail-closed runtime_process validation, idempotency-bound process receipts, cancel-input validation and zero-timeout exec rejection; productive Runtime/Loop Hub lifecycle evidence remains open. |
