@@ -1,8 +1,8 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T16:54:15.871450+00:00`
-- Commit: `88d38eba5da27ac6495c1d7fd7b7ef4ededff093`
+- Generated: `2026-08-04T17:02:00.114277+00:00`
+- Commit: `7f3c1091fdd2637794b62092b96a4dc755cf0892`
 - Dirty checkout: `True`
 
 ## Version sources
@@ -38,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@88d38eba5da27ac6495c1d7fd7b7ef4ededff093`
-- Captured: `2026-08-04T16:53:34.4337515Z`
+- Source revision: `main@7f3c1091fdd2637794b62092b96a4dc755cf0892`
+- Captured: `2026-08-04T17:01:29.5906653Z`
 
 Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves GitHub history without asserting current acceptance; refresh this inventory after live GitHub re-query.
 
@@ -49,7 +49,7 @@ Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves Gi
 | #314 | `BLOCKED` | UNSET | Code + external browser tooling | browser pane; Runtime | PR #378 merged bounded URL/duration regression coverage; external browser verification remains unavailable and issue is still open. |
 | #315 | `OPEN` | P0 | Code + Simplicio ecosystem | #317; #318; #319; #320; #321; #322; #323; #324; #325; #326; #327 | Parent recovery objective remains open until child ACs have merged evidence. |
 | #316 | `HISTORICAL_CLOSED` | P0 | Code CI/toolchain | Rust 1.94.1; GitHub CI | GitHub state is closed/completed; PR #335 local receipt/cancellation hardening is merged, but full cargo check/test and CI/release evidence remain unverified. |
-| #317 | `OPEN` | P0 | Runtime + Code | Runtime process capabilities; Agent | PRs #379, #393 and #399 merged fail-closed runtime_process validation, idempotency-bound process receipts and cancel-input validation; productive Runtime/Loop Hub lifecycle evidence remains open. |
+| #317 | `OPEN` | P0 | Runtime + Code | Runtime process capabilities; Agent | PRs #379, #393, #399 and #405 merged fail-closed runtime_process validation, idempotency-bound process receipts, cancel-input validation and zero-timeout exec rejection; productive Runtime/Loop Hub lifecycle evidence remains open. |
 | #318 | `BLOCKED` | P0 | Code + Runtime | Runtime workspace contract; audit gate | PR #401 makes positive violation baselines fail closed and removes the known positive violation inventory; broad production-looking workspace accesses remain outside the manifest, so full migration and adversarial evidence are not proven. |
 | #319 | `OPEN` | P0 | Code + Agent + Runtime + Loop | installed four-surface E2E | PRs #387 and #395 committed real external Loop Hub receipts covering four surfaces, single identity, restart/reconnect and PID rotation, including a commit-tied 10-run benchmark; installed diagnosis on 2026-08-04 returned BLOCKED with agent_host_missing, and the installed AgentHost/Runtime/Mapper/Fast version matrix, PTY/workspace/concurrency and release-grade cross-platform closure remain open. |
 | #320 | `OPEN` | P0 | Code release | validated SHA; release assets; registry evidence | PR #386 now blocks accidental publication of historical beta.5; a new SHA-tied release with public assets, trust-root, install, update and rollback evidence remains open. |
@@ -59,7 +59,7 @@ Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves Gi
 | #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | PRs #381 and #400 merge deterministic 28-cell matrix regression coverage and a non-silent invariant-report lane; built-binary, TTY, permissions and cross-platform evidence remain open. |
 | #325 | `OPEN` | P1 | Code + Runtime + Loop | cold/warm benchmark harness | PRs #392 and #395 merged Windows-native process/RSS/CPU sampling, output-directory recovery, and a commit-tied 10-run external Loop Hub receipt; S0-S3 Agent→Runtime→Loop matrix, installed AgentHost/Runtime proof, and Runtime issue-gate remain unverified. |
 | #326 | `BLOCKED` | P1 | Agent UX + Code | workspace.observe/advisory contract; productive AgentHost | Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable. |
-| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | PRs #331/#332/#333/#334/#335/#337/#338/#339/#350/#351/#382/#383/#384/#386/#387/#388/#389/#390/#391/#392/#393/#395/#396/#397/#399/#400/#401/#402/#403 merged status, quality, benchmark, installed-E2E, onboarding, external Loop receipt, release, auth-state, native sampling, receipt-integrity, Runtime process, workspace-gate, device-login, gateway-identity and commit-tied benchmark slices; live issue state and main SHA are refreshed here, while external release provenance/full CI and residual ownership evidence remain unverified. |
+| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | PRs #331/#332/#333/#334/#335/#337/#338/#339/#350/#351/#382/#383/#384/#386/#387/#388/#389/#390/#391/#392/#393/#395/#396/#397/#399/#400/#401/#402/#403/#405 merged status, quality, benchmark, installed-E2E, onboarding, external Loop receipt, release, auth-state, native sampling, receipt-integrity, Runtime process, workspace-gate, device-login, gateway-identity and commit-tied benchmark slices; live issue state and main SHA are refreshed here, while external release provenance/full CI and residual ownership evidence remain unverified. |
 
 ## Migration note
 
