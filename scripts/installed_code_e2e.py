@@ -473,6 +473,30 @@ def _external_dependencies() -> tuple[list[str], list[str]]:
     return agent, [str(runtime_path), "serve", "--mcp", "--stdio", "--json"]
 
 
+def diagnose_installed_dependencies() -> dict[str, object]:
+    """Probe executable dependencies without starting a productive process."""
+    try:
+        agent_command, runtime_command = _external_dependencies()
+    except RuntimeError as error:
+        return {
+            "schema": "simplicio.installed-dependency-diagnostic/v1",
+            "proof_kind": "installed_observation",
+            "status": "blocked",
+            "effect_attempted": False,
+            "productive_flow_verified": False,
+            "reason": str(error),
+        }
+    return {
+        "schema": "simplicio.installed-dependency-diagnostic/v1",
+        "proof_kind": "installed_observation",
+        "status": "preflight_ready",
+        "effect_attempted": False,
+        "productive_flow_verified": False,
+        "agent_executable": agent_command[0],
+        "runtime_executable": runtime_command[0],
+    }
+
+
 def run(
     root: Path,
     installed_binary: Path | None = None,
@@ -918,10 +942,18 @@ def main() -> None:  # pragma: no cover - exercised by the documented system com
         type=Path,
         help="exercise an actually installed simplicio binary instead of external env commands",
     )
-    args = parser.parse_args()
-    receipt = run(
-        args.root.resolve(), args.installed, fixture_mode=args.fixture
+    parser.add_argument(
+        "--diagnose-installed",
+        action="store_true",
+        help="probe installed executables without starting productive processes",
     )
+    args = parser.parse_args()
+    if args.diagnose_installed:
+        receipt = diagnose_installed_dependencies()
+    else:
+        receipt = run(
+            args.root.resolve(), args.installed, fixture_mode=args.fixture
+        )
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.write_text(encoded, encoding="utf-8")
