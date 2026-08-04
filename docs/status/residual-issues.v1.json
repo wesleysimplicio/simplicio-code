@@ -1,8 +1,8 @@
 {
   "schema": "simplicio.code-residual-issues/v1",
   "source": "GitHub live issue list for wesleysimplicio/simplicio-code",
-  "source_revision": "main@db5fccf3eaaeea6f65c6048cdc0732fecf8ec634",
-  "captured_at_utc": "2026-08-04T05:13:43.3099084Z",
+  "source_revision": "main@6454e3c345c5ad3f4572d91eef972b6cc2e3f6dc",
+  "captured_at_utc": "2026-08-04T05:24:57.9145791Z",
   "states": ["OPEN", "IN_PROGRESS", "BLOCKED", "MERGED_PENDING_CLOSURE", "NOT_EXECUTED", "UNKNOWN"],
   "issues": [
     {"number": 313, "state": "BLOCKED", "priority": "UNSET", "owner": "Code + external hosts", "dependencies": ["Agent", "Runtime", "Loop"], "evidence": "Real host A/B adoption evidence is required; local Code has no canonical UWP/SKILL surface."},
@@ -19,6 +19,6 @@
     {"number": 324, "state": "OPEN", "priority": "P1", "owner": "Code CI", "dependencies": ["headless matrix", "calibrated invariants"], "evidence": "Headless matrix promotion to blocking gates remains open."},
     {"number": 325, "state": "OPEN", "priority": "P1", "owner": "Code + Runtime + Loop", "dependencies": ["cold/warm benchmark harness"], "evidence": "Startup/workspace-open/first-effect measurements and regression limits remain open."},
     {"number": 326, "state": "BLOCKED", "priority": "P1", "owner": "Agent UX + Code", "dependencies": ["workspace.observe/advisory contract", "productive AgentHost"], "evidence": "Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable."},
-    {"number": 327, "state": "IN_PROGRESS", "priority": "P1", "owner": "Code governance", "dependencies": ["live GitHub re-query", "version/capability sources"], "evidence": "Status/inventory gate merged in PR #331; onboarding drift reconciliation is in progress, while external release and full-CI evidence remain unverified."}
+    {"number": 327, "state": "IN_PROGRESS", "priority": "P1", "owner": "Code governance", "dependencies": ["live GitHub re-query", "version/capability sources"], "evidence": "Status/inventory gate merged in PRs #331/#332; snapshot anchor corrected in #333, while external release and full-CI evidence remain unverified."}
   ]
 }
