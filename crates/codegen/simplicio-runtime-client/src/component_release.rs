@@ -396,6 +396,11 @@ impl SignedReleaseEvent {
             .trusted_keys
             .get(&self.key_id)
             .ok_or_else(|| ReleaseError::UnknownKey(self.key_id.clone()))?;
+        if public_key.len() != 32 {
+            return Err(ReleaseError::Signature(
+                "trusted Ed25519 public key must be 32 bytes".into(),
+            ));
+        }
         let signature = base64::engine::general_purpose::STANDARD
             .decode(self.signature.trim())
             .map_err(|_| ReleaseError::Signature("signature is not valid base64".into()))?;
