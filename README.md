@@ -133,6 +133,8 @@ Simplicio-specific docs (start here for this fork):
 - [docs/audits/issue-139-report.md](docs/audits/issue-139-report.md) — reproducible issue specification audit and closure decisions; its [hash-guarded rewrite bundle](docs/audits/issue-139-rewrites.json) provides owner-review drafts without mutating or closing issues
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) — login, Runtime, mapa, rede, updater
 - [docs/status/current.md](docs/status/current.md) — status gerado do checkout, versão e evidência de release
+- [docs/VALIDATION_LOCAL.md](docs/VALIDATION_LOCAL.md) — lane local reproduzível de validação (#316)
+- [docs/VALIDATION_LOCAL.md](docs/VALIDATION_LOCAL.md) — lane local reproduzível de validação (#316)
 - [docs/LOCAL_HTML_PREVIEW.md](docs/LOCAL_HTML_PREVIEW.md) — workaround bounded para preview HTML local
 - [docs/perf/code-loop-hub-benchmark-2026-08-01.md](docs/perf/code-loop-hub-benchmark-2026-08-01.md) — benchmark externo Code → Loop Hub com p50/p95
 - [docs/privacy/telemetry.md](docs/privacy/telemetry.md) — what telemetry exists, opt-out, `privacy diagnose`
