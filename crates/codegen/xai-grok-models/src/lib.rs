@@ -108,26 +108,23 @@ mod tests {
     /// Exercises the real, shipped `default_models.json` end to end — the same
     /// file baked into the release binary — through every public accessor.
     #[test]
-    fn real_shipped_json_resolves_default_models_without_panicking() {
-        assert_eq!(default_model(), "deepseek/deepseek-v4-flash");
-        assert_eq!(default_web_search_model(), "deepseek/deepseek-v4-flash");
-        assert_eq!(
-            default_image_description_model(),
-            "deepseek/deepseek-v4-flash"
-        );
-        assert_eq!(
-            default_session_summary_model(),
-            "deepseek/deepseek-v4-flash"
-        );
+    fn real_shipped_json_resolves_public_simplicio_model_without_panicking() {
+        assert_eq!(default_model(), "simplicio-1");
+        assert_eq!(default_web_search_model(), "simplicio-1");
+        assert_eq!(default_image_description_model(), "simplicio-1");
+        assert_eq!(default_session_summary_model(), "simplicio-1");
     }
 
     #[test]
-    fn real_shipped_json_routes_default_through_openrouter() {
+    fn real_shipped_json_has_no_upstream_model_or_credentials() {
         let root: serde_json::Value = serde_json::from_str(DEFAULT_MODELS_JSON).unwrap();
         let model = &root["models"][0];
-        assert_eq!(model["model"], "deepseek/deepseek-v4-flash");
-        assert_eq!(model["base_url"], "https://openrouter.ai/api/v1");
-        assert_eq!(model["env_key"], "OPENROUTER_API_KEY");
+        assert_eq!(model["id"], "simplicio-1");
+        assert_eq!(model["model"], "simplicio-1");
+        assert!(model.get("base_url").is_none());
+        assert!(model.get("env_key").is_none());
+        assert!(!DEFAULT_MODELS_JSON.contains("openrouter.ai"));
+        assert!(!DEFAULT_MODELS_JSON.contains("OPENROUTER_API_KEY"));
     }
 
     /// Every `models` entry's key (its `id`, or `model` when `id` is absent)
