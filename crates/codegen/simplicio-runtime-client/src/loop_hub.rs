@@ -604,6 +604,60 @@ fn validate_process_request(
     Ok(())
 }
 
+fn validate_process_start_request(request: &RuntimeProcessStartRequest) -> Result<(), HubError> {
+    if request.argv.is_empty() || request.argv.iter().any(|arg| arg.trim().is_empty()) {
+        return Err(HubError::InvalidRequest(
+            "Runtime process argv must not be empty".into(),
+        ));
+    }
+    if request.argv.iter().any(|arg| {
+        arg.bytes().any(|byte| byte == 0)
+            || arg.chars().any(|character| {
+                matches!(
+                    character,
+                    '|' | ';' | '&' | '`' | '$' | '>' | '<' | '\n' | '\r'
+                )
+            })
+    }) {
+        return Err(HubError::InvalidRequest(
+            "Runtime process argv must be NUL-free and must not contain shell metacharacters"
+                .into(),
+        ));
+    }
+    if request.cwd.trim().is_empty() || request.cwd.bytes().any(|byte| byte == 0) {
+        return Err(HubError::InvalidRequest(
+            "Runtime process cwd must be non-empty and NUL-free".into(),
+        ));
+    }
+    if request.idempotency_key.trim().is_empty()
+        || request.idempotency_key.len() > 256
+        || request.idempotency_key.bytes().any(|byte| byte == 0)
+        || request.timeout_ms == 0
+    {
+        return Err(HubError::InvalidRequest(
+            "Runtime process start requires a valid idempotency_key and timeout_ms".into(),
+        ));
+    }
+    if request.env.keys().any(|key| {
+        key.is_empty()
+            || key.bytes().any(|byte| byte == 0)
+            || !key.bytes().enumerate().all(|(index, byte)| {
+                (index == 0 && (byte == b'_' || byte.is_ascii_alphabetic()))
+                    || (index > 0 && (byte == b'_' || byte.is_ascii_alphanumeric()))
+            })
+    }) || request
+        .env
+        .values()
+        .any(|value| value.bytes().any(|byte| byte == 0))
+    {
+        return Err(HubError::InvalidRequest(
+            "Runtime process environment keys/values must be NUL-free and keys must be identifiers"
+                .into(),
+        ));
+    }
+    Ok(())
+}
+
 fn validate_process_receipt(
     receipt: &RuntimeProcessReceipt,
     workspace: &str,
@@ -782,16 +836,7 @@ impl SharedHubServiceHandle {
             ));
         }
         validate_process_request(&request.schema, &request.workspace, None)?;
-        if request.argv.is_empty() || request.argv.iter().any(|arg| arg.trim().is_empty()) {
-            return Err(HubError::InvalidRequest(
-                "Runtime process argv must not be empty".into(),
-            ));
-        }
-        if request.idempotency_key.trim().is_empty() || request.timeout_ms == 0 {
-            return Err(HubError::InvalidRequest(
-                "Runtime process start requires idempotency_key and timeout_ms".into(),
-            ));
-        }
+        validate_process_start_request(request)?;
         if !self.session.handshake.runtime_process.start {
             return Err(HubError::TransportUnavailable(
                 "Runtime process.start/v1 capability is unavailable".into(),
@@ -1565,7 +1610,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let runtime = client.shared_runtime_handle();
-        let invalid = RuntimeProcessStartRequest {
+        let mut invalid = RuntimeProcessStartRequest {
             schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
             workspace: "workspace".into(),
             cwd: ".".into(),
@@ -1579,6 +1624,27 @@ mod tests {
             runtime.process_start(&invalid),
             Err(HubError::InvalidRequest(message)) if message.contains("argv")
         ));
+
+        invalid.argv = vec!["cargo".into(), "test; whoami".into()];
+        assert!(matches!(
+            runtime.process_start(&invalid),
+            Err(HubError::InvalidRequest(message)) if message.contains("shell metacharacters")
+        ));
+
+        invalid.argv = vec!["cargo".into(), "test".into()];
+        invalid.cwd = "\u{0}".into();
+        assert!(matches!(
+            runtime.process_start(&invalid),
+            Err(HubError::InvalidRequest(message)) if message.contains("cwd")
+        ));
+
+        invalid.cwd = ".".into();
+        invalid.env.insert("BAD-KEY".into(), "value".into());
+        assert!(matches!(
+            runtime.process_start(&invalid),
+            Err(HubError::InvalidRequest(message)) if message.contains("environment")
+        ));
+
         assert!(matches!(
             runtime.process_wait(&RuntimeProcessWaitRequest {
                 schema: LOOP_HUB_RUNTIME_PROCESS_SCHEMA.into(),
