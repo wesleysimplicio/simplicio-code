@@ -123,7 +123,7 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
                 "path": key[0], "kind": key[1], "classification": key[2],
                 "observed": observed.get(key, 0), "max_count": count,
             })
-    if baseline:
+    if "baseline" in spec:
         for key, count in sorted(observed.items()):
             maximum = allowed.get(key)
             if maximum is None or count > maximum:
