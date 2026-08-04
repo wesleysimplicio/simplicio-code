@@ -215,13 +215,24 @@ def validate_agent_status(status: dict[str, object] | None) -> None:
         raise RuntimeError("agent_host_incompatible")
 
 
-def validate_runtime_process_capabilities(initialized: dict[str, object]) -> None:
+def missing_runtime_process_capabilities(initialized: dict[str, object]) -> tuple[str, ...]:
     capabilities = initialized.get("capabilities")
     capabilities = capabilities if isinstance(capabilities, dict) else {}
     process = capabilities.get("runtime_process")
     process = process if isinstance(process, dict) else {}
-    if any(process.get(name) is not True for name in REQUIRED_RUNTIME_PROCESS_CAPABILITIES):
-        raise RuntimeError("runtime_process_incompatible")
+    return tuple(
+        sorted(
+            name
+            for name in REQUIRED_RUNTIME_PROCESS_CAPABILITIES
+            if process.get(name) is not True
+        )
+    )
+
+
+def validate_runtime_process_capabilities(initialized: dict[str, object]) -> None:
+    missing = missing_runtime_process_capabilities(initialized)
+    if missing:
+        raise RuntimeError("runtime_process_incompatible:" + ",".join(missing))
 
 
 def validate_runtime_contract(
