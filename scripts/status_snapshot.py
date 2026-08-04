@@ -148,7 +148,7 @@ def load_residual_inventory(root: Path) -> dict[str, object]:
 def dirty_checkout(root: Path) -> bool:
     entries = []
     for line in run_git(root, "status", "--porcelain").splitlines():
-        path = line[3:] if len(line) > 3 else ""
+        path = line[2:] if len(line) > 2 else ""
         if (
             path == ".simplicio-lease.json"
             or path.startswith(".simplicio/")
