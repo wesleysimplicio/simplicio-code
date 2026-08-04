@@ -131,7 +131,7 @@ pub fn open_url(url: &str) -> bool {
 /// [`open_path`] so it can be unit-tested without spawning. The path is a single
 /// argument, never interpolated into a shell string. Windows uses
 /// [`reveal_in_explorer`] instead.
-#[cfg(not(target_os = "windows"))]
+#[cfg(any(not(target_os = "windows"), test))]
 fn build_open_path_command(path: &std::path::Path) -> std::process::Command {
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");
