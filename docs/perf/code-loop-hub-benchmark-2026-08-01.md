@@ -43,10 +43,11 @@ local-LLM startup were both false.
 
 ## Explicit limits
 
-Process count, RSS, and CPU remain `null`: this Windows runner does not expose the
-Unix `ps`/`pgrep` probes, and the harness does not substitute zero or estimate
-them. A future Windows process sampler is required before those metrics can
-become gates. The restart cleanup now removes only the owned temporary lock
-after the Hub process exits; all 10 restart/reconnect cycles completed. This
+The benchmark now has a Windows-native process sampler using Toolhelp32,
+GetProcessMemoryInfo, and GetProcessTimes; unavailable observations remain
+`null` rather than zero or estimates. A fresh 10-run receipt using this sampler
+is still required before process/RSS/CPU metrics can become gates. The restart
+cleanup now removes only the owned temporary lock after the Hub process exits;
+all 10 restart/reconnect cycles completed. This
 benchmark also does not claim AgentHost or Runtime effects; those remain
 separate installed-E2E requirements.
