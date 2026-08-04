@@ -85,6 +85,8 @@ class InstalledCodeE2ETest(unittest.TestCase):
         )
         self.assertEqual(receipt["runtime"]["test_run"], "simplicio.test-run/v1")
         self.assertEqual(receipt["runtime"]["effect_state"], "completed")
+        self.assertTrue(receipt["runtime"]["restart"]["reconnected"])
+        self.assertTrue(receipt["runtime"]["restart_tools_match"])
         self.assertTrue(receipt["runtime"]["prototype_artifact_idempotent_retry"])
         gates = receipt["negative_dependency_gates"]
         self.assertEqual(len(gates), len(MODULE.SURFACES) * 4)

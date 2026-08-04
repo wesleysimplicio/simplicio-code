@@ -857,6 +857,45 @@ def run(
                     runtime.stdin.close()
                 if runtime.stdout:
                     runtime.stdout.close()
+            runtime_restart = subprocess.Popen(
+                runtime_command,
+                cwd=temp,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            runtime_restart_pid = runtime_restart.pid
+            try:
+                restarted_initialized = runtime_call(
+                    runtime_restart,
+                    11,
+                    "initialize",
+                    {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {"name": "simplicio-code-e2e-restart", "version": "1"},
+                    },
+                )
+                restarted_tools = runtime_call(runtime_restart, 12, "tools/list", {})
+                validate_runtime_contract(restarted_initialized, restarted_tools)
+            finally:
+                runtime_restart.terminate()
+                runtime_restart.wait(timeout=2)
+                close_process_pipes(runtime_restart)
+            restarted_tool_names = sorted(
+                tool["name"] for tool in restarted_tools["tools"]
+            )
+            runtime_restart_match = (
+                restarted_initialized.get("serverInfo") == initialized.get("serverInfo")
+                and restarted_tool_names == sorted(
+                    tool["name"] for tool in tools["tools"]
+                )
+            )
+            if not runtime_restart_match:
+                raise RuntimeError("Runtime restart contract did not match initial handshake")
+
             map_text = runtime_text(project_map)
             edit_payload = json.loads(runtime_text(edit))
             readback_payload = json.loads(runtime_text(readback))
@@ -926,7 +965,7 @@ def run(
                 )
             elapsed = time.perf_counter_ns() - started
             negative_gates = negative_dependency_gates()
-            scenario_count = len(surfaces) + len(negative_gates) + 8
+            scenario_count = len(surfaces) + len(negative_gates) + 9
             return {
                 "schema": "simplicio.code-installed-e2e-receipt/v1",
                 "proof_kind": (
@@ -966,6 +1005,12 @@ def run(
                 "runtime": {
                     "server": initialized["serverInfo"],
                     "tools": sorted(tool["name"] for tool in tools["tools"]),
+                    "restart": {
+                        "reconnected": runtime_restart_match,
+                        "pid": runtime_restart_pid,
+                        "server": restarted_initialized["serverInfo"],
+                    },
+                    "restart_tools_match": runtime_restart_match,
                     "map": "simplicio.map-result/v1",
                     "map_bytes": len(map_text),
                     "read": readback_payload["schema"],
