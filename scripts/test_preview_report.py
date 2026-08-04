@@ -1,8 +1,9 @@
 import unittest
+from pathlib import Path
 from contextlib import redirect_stderr
 from io import StringIO
 
-from scripts.preview_report import main, validate_url
+from scripts.preview_report import main, serve, validate_url
 
 
 class PreviewReportTests(unittest.TestCase):
@@ -12,6 +13,10 @@ class PreviewReportTests(unittest.TestCase):
 
     def test_http_url_is_accepted(self) -> None:
         validate_url("http://127.0.0.1:8000/")
+
+    def test_non_positive_duration_fails_fast(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duration must be positive"):
+            serve(Path("."), duration=0)
 
     def test_cli_reports_file_url_without_traceback(self) -> None:
         stderr = StringIO()
