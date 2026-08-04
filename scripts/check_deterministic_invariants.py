@@ -35,6 +35,7 @@ def _initializer_body(source: str, initializer: str) -> str | None:
 
 
 def check(root: Path) -> list[dict[str, object]]:
+    """Return only deterministic findings; callers must fail closed on any item."""
     findings: list[dict[str, object]] = []
     for invariant in INVARIANTS:
         path = root / invariant["path"]
@@ -68,6 +69,7 @@ def main(argv: list[str] | None = None) -> int:
         "schema": "simplicio.deterministic-invariants/v1",
         "status": "FAIL" if findings else "PASS",
         "invariant_count": len(INVARIANTS),
+        "finding_count": len(findings),
         "findings": findings,
     }
     print(json.dumps(report, indent=2, sort_keys=True) if args.json else json.dumps(report))
