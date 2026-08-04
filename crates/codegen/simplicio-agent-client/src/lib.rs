@@ -309,6 +309,178 @@ impl WorkspaceObservationState {
     }
 }
 
+pub const WORKSPACE_ADVISORY_SCHEMA: &str = "simplicio.workspace.advisory/v1";
+const MAX_WORKSPACE_ADVISORIES_PER_PAGE: usize = 128;
+const MAX_WORKSPACE_ADVISORY_HISTORY: usize = 128;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceAdvisoryKind {
+    Finding,
+    Risk,
+    Suggestion,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkspaceAdvisoryProducer {
+    Mapper,
+    Runtime,
+    Agent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceAdvisory {
+    pub schema: String,
+    pub sequence: u64,
+    pub workspace_id: String,
+    pub kind: WorkspaceAdvisoryKind,
+    pub producer: WorkspaceAdvisoryProducer,
+    pub summary: String,
+    #[serde(default)]
+    pub evidence: Option<String>,
+    #[serde(default)]
+    pub confidence_bps: Option<u16>,
+    pub generation: u64,
+    pub ts_wall_ns: u64,
+}
+
+impl WorkspaceAdvisory {
+    pub fn validate_for(&self, workspace_id: &str, minimum_generation: u64) -> Result<(), Error> {
+        if self.schema != WORKSPACE_ADVISORY_SCHEMA || self.workspace_id != workspace_id {
+            return Err(Error::ProtocolMismatch(
+                "workspace advisory has an invalid schema or workspace".into(),
+            ));
+        }
+        if self.sequence == 0 || self.generation == 0 || self.generation < minimum_generation {
+            return Err(Error::InvalidResponse(
+                "workspace advisory provenance or generation is invalid".into(),
+            ));
+        }
+        validate_projection_text("workspace_advisory.summary", &self.summary, 512)?;
+        let evidence = self.evidence.as_deref().ok_or_else(|| {
+            Error::InvalidResponse("workspace advisory evidence is required".into())
+        })?;
+        validate_projection_text("workspace_advisory.evidence", evidence, 512)?;
+        let confidence = self.confidence_bps.ok_or_else(|| {
+            Error::InvalidResponse("workspace advisory confidence is required".into())
+        })?;
+        if confidence > 10_000 {
+            return Err(Error::InvalidResponse(
+                "workspace advisory confidence exceeds 100%".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceAdvisoryPage {
+    pub schema: String,
+    pub workspace_id: String,
+    pub events: Vec<WorkspaceAdvisory>,
+    pub next_cursor: u64,
+    pub truncated: bool,
+}
+
+/// Bounded, passive state for the neutral workspace advisory projection.
+/// Applying a page never starts a turn or emits a Runtime effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspaceAdvisoryState {
+    workspace_id: String,
+    cursor: u64,
+    generation: u64,
+    advisories: Vec<WorkspaceAdvisory>,
+    history_truncated: bool,
+}
+
+impl WorkspaceAdvisoryState {
+    pub fn new(workspace_id: impl Into<String>) -> Result<Self, Error> {
+        let workspace_id = workspace_id.into();
+        validate_projection_text("workspace_id", &workspace_id, 256)?;
+        Ok(Self {
+            workspace_id,
+            cursor: 0,
+            generation: 0,
+            advisories: Vec::new(),
+            history_truncated: false,
+        })
+    }
+
+    pub fn cursor(&self) -> u64 {
+        self.cursor
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    pub fn advisories(&self) -> &[WorkspaceAdvisory] {
+        &self.advisories
+    }
+
+    pub fn history_truncated(&self) -> bool {
+        self.history_truncated
+    }
+
+    pub fn apply_page(
+        &mut self,
+        consent: WorkspaceObserveConsent,
+        page: WorkspaceAdvisoryPage,
+    ) -> Result<usize, Error> {
+        if consent == WorkspaceObserveConsent::Off {
+            return Ok(0);
+        }
+        if page.schema != WORKSPACE_ADVISORY_SCHEMA || page.workspace_id != self.workspace_id {
+            return Err(Error::ProtocolMismatch(
+                "workspace advisory state has an invalid schema or workspace".into(),
+            ));
+        }
+        if page.events.len() > MAX_WORKSPACE_ADVISORIES_PER_PAGE {
+            return Err(Error::InvalidResponse(
+                "workspace advisory page exceeds its bound".into(),
+            ));
+        }
+
+        let mut previous = self.cursor;
+        let mut generation = self.generation;
+        for (index, advisory) in page.events.iter().enumerate() {
+            if advisory.sequence <= previous
+                || (advisory.sequence != previous.saturating_add(1)
+                    && !(index == 0 && page.truncated))
+            {
+                return Err(Error::InvalidResponse(
+                    "workspace advisory cursor is invalid".into(),
+                ));
+            }
+            advisory.validate_for(&self.workspace_id, generation)?;
+            previous = advisory.sequence;
+            generation = advisory.generation;
+        }
+        if page.next_cursor != previous {
+            return Err(Error::InvalidResponse(
+                "workspace advisory cursor does not match page".into(),
+            ));
+        }
+
+        let accepted = page.events.len();
+        self.advisories.extend(page.events);
+        let excess = self
+            .advisories
+            .len()
+            .saturating_sub(MAX_WORKSPACE_ADVISORY_HISTORY);
+        if excess > 0 {
+            self.advisories.drain(..excess);
+        }
+        self.cursor = page.next_cursor;
+        self.generation = generation;
+        self.history_truncated |= page.truncated || excess > 0;
+        Ok(accepted)
+    }
+}
+
 /// Minimal state a non-focus-stealing side panel can render.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentAttentionState {
@@ -1946,6 +2118,137 @@ mod tests {
 
         response["advisories"]["truncated"] = json!(true);
         assert!(parse_advisory_page(&response, 0, &host_instance_id()).is_ok());
+    }
+
+    fn workspace_advisory(sequence: u64, generation: u64) -> WorkspaceAdvisory {
+        WorkspaceAdvisory {
+            schema: WORKSPACE_ADVISORY_SCHEMA.into(),
+            sequence,
+            workspace_id: "workspace-1".into(),
+            kind: WorkspaceAdvisoryKind::Finding,
+            producer: WorkspaceAdvisoryProducer::Mapper,
+            summary: "Acceptance evidence is missing.".into(),
+            evidence: Some(format!("receipt-{sequence}")),
+            confidence_bps: Some(9_000),
+            generation,
+            ts_wall_ns: sequence,
+        }
+    }
+
+    fn workspace_advisory_page(
+        events: Vec<WorkspaceAdvisory>,
+        next_cursor: u64,
+    ) -> WorkspaceAdvisoryPage {
+        WorkspaceAdvisoryPage {
+            schema: WORKSPACE_ADVISORY_SCHEMA.into(),
+            workspace_id: "workspace-1".into(),
+            events,
+            next_cursor,
+            truncated: false,
+        }
+    }
+
+    #[test]
+    fn workspace_advisory_state_is_bounded_fail_closed_and_consent_gated() {
+        let mut state = WorkspaceAdvisoryState::new("workspace-1").unwrap();
+        let valid = workspace_advisory(1, 1);
+        assert_eq!(
+            state
+                .apply_page(
+                    WorkspaceObserveConsent::Off,
+                    workspace_advisory_page(vec![valid.clone()], 1),
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(state.cursor(), 0);
+
+        assert_eq!(
+            state
+                .apply_page(
+                    WorkspaceObserveConsent::ReadOnly,
+                    workspace_advisory_page(vec![valid], 1),
+                )
+                .unwrap(),
+            1
+        );
+
+        let mut missing_evidence = workspace_advisory(2, 1);
+        missing_evidence.evidence = None;
+        assert!(matches!(
+            state.apply_page(
+                WorkspaceObserveConsent::ReadOnly,
+                workspace_advisory_page(vec![missing_evidence], 2),
+            ),
+            Err(Error::InvalidResponse(_))
+        ));
+
+        let mut tampered_evidence = workspace_advisory(2, 1);
+        tampered_evidence.evidence = Some("receipt\nforged".into());
+        assert!(matches!(
+            state.apply_page(
+                WorkspaceObserveConsent::ReadOnly,
+                workspace_advisory_page(vec![tampered_evidence], 2),
+            ),
+            Err(Error::InvalidResponse(_))
+        ));
+
+        assert!(matches!(
+            state.apply_page(
+                WorkspaceObserveConsent::ReadOnly,
+                workspace_advisory_page(vec![workspace_advisory(2, 0)], 2),
+            ),
+            Err(Error::InvalidResponse(_))
+        ));
+
+        let mut mismatched = workspace_advisory_page(vec![workspace_advisory(2, 1)], 2);
+        mismatched.workspace_id = "workspace-2".into();
+        assert!(matches!(
+            state.apply_page(WorkspaceObserveConsent::ReadOnly, mismatched),
+            Err(Error::ProtocolMismatch(_))
+        ));
+
+        let mut serialized =
+            serde_json::to_value(workspace_advisory_page(vec![workspace_advisory(2, 1)], 2))
+                .unwrap();
+        serialized["events"][0]["kind"] = json!("unknown");
+        assert!(serde_json::from_value::<WorkspaceAdvisoryPage>(serialized).is_err());
+
+        let mut bounded = WorkspaceAdvisoryState::new("workspace-1").unwrap();
+        let first: Vec<_> = (1..=128)
+            .map(|sequence| workspace_advisory(sequence, 1))
+            .collect();
+        bounded
+            .apply_page(
+                WorkspaceObserveConsent::ReadOnly,
+                workspace_advisory_page(first, 128),
+            )
+            .unwrap();
+        bounded
+            .apply_page(
+                WorkspaceObserveConsent::ReadOnly,
+                workspace_advisory_page(vec![workspace_advisory(129, 1)], 129),
+            )
+            .unwrap();
+        assert_eq!(bounded.advisories().len(), MAX_WORKSPACE_ADVISORY_HISTORY);
+        assert_eq!(bounded.advisories().first().unwrap().sequence, 2);
+        assert!(bounded.history_truncated());
+    }
+
+    #[test]
+    fn workspace_advisory_page_requires_provenance_and_confidence() {
+        let mut advisory = workspace_advisory(1, 1);
+        advisory.confidence_bps = Some(10_001);
+        assert!(matches!(
+            advisory.validate_for("workspace-1", 0),
+            Err(Error::InvalidResponse(_))
+        ));
+        advisory.confidence_bps = Some(9_000);
+        advisory.workspace_id = "workspace-2".into();
+        assert!(matches!(
+            advisory.validate_for("workspace-1", 0),
+            Err(Error::ProtocolMismatch(_))
+        ));
     }
 
     fn observation(sequence: u64, generation: u64) -> WorkspaceObservation {

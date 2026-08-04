@@ -17,10 +17,13 @@ The client enforces contiguous cursors (unless the host marks the first item
 as a truncated replay), workspace/host-instance provenance, generation
 presence, and a maximum of 128 observations per page. `WorkspaceObservationState`
 adds the consumer-side cursor/generation guard and retains at most 128
-observations before projection. Advisories remain
-presentation-only. An observation cannot execute, schedule, approve, or inject
-a tool call; any action requires an explicit Agent turn, policy approval, and
-the Runtime effect boundary.
+observations before projection. The neutral simplicio.workspace.advisory/v1
+state is bounded to 128 entries, accepts only finding, risk, and suggestion
+from mapper, runtime, or agent, and requires workspace provenance, generation,
+opaque evidence, and bounded confidence before projection. Consent off returns
+without applying a page. An observation or advisory cannot execute, schedule,
+approve, or inject a tool call; any action requires an explicit Agent turn,
+policy approval, and the Runtime effect boundary.
 
 The machine-readable request and page contracts are
 `docs/contracts/workspace-observe-request-v1.schema.json` and
