@@ -469,12 +469,16 @@ def read_runtime_release_identity(
         or not runtime["name"]
         or not isinstance(runtime.get("version"), str)
         or not runtime["version"]
+        or not isinstance(runtime.get("commit"), str)
+        or not runtime["commit"]
+        or not isinstance(runtime.get("target"), str)
+        or not runtime["target"]
         or not isinstance(capabilities, list)
         or not capabilities
         or not all(isinstance(item, str) and item for item in capabilities)
     ):
         raise RuntimeError(
-            "runtime_incompatible: release manifest missing version/capabilities"
+            "runtime_incompatible: release manifest missing version/capabilities/commit/target"
         )
     try:
         digest = hashlib.sha256(Path(executable).resolve().read_bytes()).hexdigest()
