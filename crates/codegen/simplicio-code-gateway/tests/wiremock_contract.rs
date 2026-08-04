@@ -559,6 +559,13 @@ async fn device_login_flow_pending_then_granted_over_real_http() {
         })))
         .mount(&server)
         .await;
+    Mock::given(method("GET"))
+        .and(path(paths::ENTITLEMENT))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "plan": "pro", "expires_at": "2030-01-01T00:00:00Z", "max_request_tokens": 100, "max_tool_calls": 1
+        })))
+        .mount(&server)
+        .await;
 
     let endpoints = AuthEndpoints::new(base_url(&server)).unwrap();
     let store = Arc::new(MemorySecretStore::new());
@@ -567,24 +574,13 @@ async fn device_login_flow_pending_then_granted_over_real_http() {
     let device = client.begin_device_authorization().await.unwrap();
     assert_eq!(device.user_code, "ABCD-1234");
 
-    let token = client
-        .poll_device_authorization(&device, CancellationToken::new(), Utc::now())
+    let entitlement = client
+        .complete_device_authorization(&device, CancellationToken::new(), Utc::now())
         .await
-        .expect("device flow should eventually grant a token (after one pending poll)");
+        .expect("device flow should install an entitled session after approval");
 
-    client
-        .session
-        .install(
-            token,
-            Entitlement {
-                plan: "pro".into(),
-                expires_at: Utc::now() + chrono::Duration::hours(1),
-                max_request_tokens: 100,
-                max_tool_calls: 1,
-            },
-            Utc::now(),
-        )
-        .unwrap();
+    assert_eq!(entitlement.plan, "pro");
+    assert!(client.session.access_token(Utc::now()).is_ok());
     assert!(
         store.load_refresh_token().unwrap().is_some(),
         "a granted device flow must persist a refresh token"
