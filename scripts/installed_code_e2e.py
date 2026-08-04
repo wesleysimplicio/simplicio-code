@@ -408,6 +408,33 @@ def effect_arguments(
     }
 
 
+def _windows_wrapper_target(path: Path) -> Path | None:
+    """Find the first executable target in a Windows command wrapper."""
+    if path.suffix.lower() not in {".bat", ".cmd"}:
+        return None
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as error:
+        raise RuntimeError(f"agent_host_missing: cannot read wrapper: {path}") from error
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.lower().startswith(("rem ", "::", "@echo", "set ")):
+            continue
+        parts = stripped.split()
+        if len(parts) < 2:
+            continue
+        placeholder = parts[-1]
+        if placeholder != "%*" and not (
+            placeholder.startswith("%") and placeholder[1:].isdigit()
+        ):
+            continue
+        executable = parts[0]
+        if executable.startswith('"') and executable.endswith('"'):
+            executable = executable[1:-1]
+        return Path(executable)
+    return None
+
+
 def _external_dependencies() -> tuple[list[str], list[str]]:
     """Resolve independently installed executors without inventing a fallback."""
     encoded = os.environ.get("SIMPLICIO_AGENT_HOST_E2E_COMMAND")
@@ -430,12 +457,20 @@ def _external_dependencies() -> tuple[list[str], list[str]]:
     runtime = os.environ.get("SIMPLICIO_RUNTIME_BIN") or shutil.which("simplicio")
     if not runtime:
         raise RuntimeError("runtime_missing: set SIMPLICIO_RUNTIME_BIN")
-    agent_executable = shutil.which(agent[0]) or agent[0]
-    if not Path(agent_executable).is_file() or not os.access(agent_executable, os.X_OK):
+    agent_executable = Path(shutil.which(agent[0]) or agent[0])
+    if not agent_executable.is_file() or not os.access(agent_executable, os.X_OK):
         raise RuntimeError("agent_host_missing: AgentHost executable is not executable")
-    if not Path(runtime).is_file() or not os.access(runtime, os.X_OK):
+    wrapper_target = _windows_wrapper_target(agent_executable)
+    if wrapper_target is not None:
+        target = Path(shutil.which(str(wrapper_target)) or wrapper_target)
+        if not target.is_file() or not os.access(target, os.X_OK):
+            raise RuntimeError(
+                f"agent_host_missing: wrapper target is not executable: {target}"
+            )
+    runtime_path = Path(runtime)
+    if not runtime_path.is_file() or not os.access(runtime_path, os.X_OK):
         raise RuntimeError("runtime_missing: Runtime executable is not executable")
-    return agent, [runtime, "serve", "--mcp", "--stdio", "--json"]
+    return agent, [str(runtime_path), "serve", "--mcp", "--stdio", "--json"]
 
 
 def run(
