@@ -2,7 +2,7 @@
 
 - Schema: `simplicio.code-status/v1`
 - Generated: `2026-08-04T05:14:38.033610+00:00`
-- Commit: `e92766c9f311419094ae2098ccfc2f542c8118c3`
+- Commit: `e1114ccb0aa26f0d75573744e423abaec3a935fc`
 - Dirty checkout: `True`
 
 ## Version sources
