@@ -517,6 +517,25 @@ impl<S: SecretStore> IdentityClient<S> {
         }
     }
 
+    /// Finish a device login by exchanging the approved device code,
+    /// fetching the current entitlement, and installing the session atomically.
+    /// Callers can display the returned device details before invoking this method;
+    /// no provider credential or local fallback is involved.
+    pub async fn complete_device_authorization(
+        &self,
+        device: &DeviceAuthorization,
+        cancel: CancellationToken,
+        now: DateTime<Utc>,
+    ) -> Result<Entitlement, AuthError> {
+        let token = self.poll_device_authorization(device, cancel, now).await?;
+        let entitlement = self
+            .fetch_entitlement_with_token(&token.access_token)
+            .await?;
+        self.session
+            .install(token, entitlement.clone(), Utc::now())?;
+        Ok(entitlement)
+    }
+
     pub async fn refresh_session(&self) -> Result<(), AuthError> {
         let refresh = self
             .session
