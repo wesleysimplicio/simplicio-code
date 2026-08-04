@@ -170,6 +170,35 @@ class InstalledCodeE2ETest(unittest.TestCase):
                 ):
                     MODULE.run(ROOT)
 
+    def test_installed_dependency_diagnosis_is_effect_free(self):
+        import os
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            wrapper = Path(directory) / "agent.cmd"
+            missing_target = Path(directory) / "missing-hermes.exe"
+            wrapper.write_text(
+                '@echo off' + chr(10) + f'"{missing_target}" %*' + chr(10),
+                encoding="utf-8",
+            )
+            wrapper.chmod(0o755)
+            with patch.dict(
+                os.environ,
+                {
+                    "SIMPLICIO_AGENT_HOST_E2E_COMMAND": json.dumps([str(wrapper)]),
+                    "SIMPLICIO_RUNTIME_BIN": MODULE.sys.executable,
+                },
+                clear=False,
+            ):
+                diagnosis = MODULE.diagnose_installed_dependencies()
+        self.assertEqual(
+            diagnosis["schema"], "simplicio.installed-dependency-diagnostic/v1"
+        )
+        self.assertEqual(diagnosis["status"], "blocked")
+        self.assertFalse(diagnosis["effect_attempted"])
+        self.assertFalse(diagnosis["productive_flow_verified"])
+        self.assertIn("wrapper target is not executable", diagnosis["reason"])
+
     def test_fixture_rejects_invalid_identity_and_path_escape(self):
         rejected = FIXTURE.agent_response({"op": "turn.start", "turn_id": "one"}, {})
         self.assertFalse(rejected["ok"])
