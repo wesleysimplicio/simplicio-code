@@ -1,8 +1,8 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T16:01:19.132379+00:00`
-- Commit: `485440e3c52f1809ad9b12842a79d83f8dc27331`
+- Generated: `2026-08-04T16:07:26.564868+00:00`
+- Commit: `fb2c68a23f0a62cf08c33e1e58e4c7c6775707cc`
 - Dirty checkout: `True`
 
 ## Version sources
@@ -38,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@485440e3c52f1809ad9b12842a79d83f8dc27331`
-- Captured: `2026-08-04T16:00:57.982Z`
+- Source revision: `main@fb2c68a23f0a62cf08c33e1e58e4c7c6775707cc`
+- Captured: `2026-08-04T16:07:16.331Z`
 
 Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves GitHub history without asserting current acceptance; refresh this inventory after live GitHub re-query.
 
