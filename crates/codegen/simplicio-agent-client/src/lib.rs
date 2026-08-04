@@ -2214,6 +2214,10 @@ mod tests {
         serialized["events"][0]["kind"] = json!("unknown");
         assert!(serde_json::from_value::<WorkspaceAdvisoryPage>(serialized).is_err());
 
+        let mut action = serde_json::to_value(workspace_advisory(3, 1)).unwrap();
+        action["action"] = json!("run");
+        assert!(serde_json::from_value::<WorkspaceAdvisory>(action).is_err());
+
         let mut bounded = WorkspaceAdvisoryState::new("workspace-1").unwrap();
         let first: Vec<_> = (1..=128)
             .map(|sequence| workspace_advisory(sequence, 1))
