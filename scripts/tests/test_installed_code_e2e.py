@@ -35,6 +35,22 @@ class InstalledCodeE2ETest(unittest.TestCase):
             component_manifest["runtime"]["protocol_version"], "2024-11-05"
         )
         self.assertIn("simplicio_edit", component_manifest["runtime"]["tools"])
+        components = {
+            item["role"]: item for item in component_manifest["components"]
+        }
+        self.assertEqual(
+            set(components),
+            {"code", "agent_host", "runtime", "loop_hub", "mapper", "dev_cli", "fast"},
+        )
+        self.assertEqual(
+            components["agent_host"]["proof_kind"], "hermetic_fixture_non_proof"
+        )
+        self.assertEqual(
+            components["runtime"]["version"], "code-e2e-fixture/1"
+        )
+        for component in components.values():
+            self.assertIn("status", component)
+            self.assertIn("sha256", component)
         process_observations = component_manifest["process_observations"]
         self.assertEqual(
             process_observations["schema"], "simplicio.process-observations/v1"

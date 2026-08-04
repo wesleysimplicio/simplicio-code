@@ -72,6 +72,8 @@ def build_component_manifest(
     initialized: dict[str, object],
     tools: dict[str, object],
     *,
+    agent_command: list[str],
+    runtime_command: list[str],
     fixture_mode: bool,
 ) -> dict[str, object]:
     """Describe the independently observed components behind this receipt."""
@@ -92,6 +94,68 @@ def build_component_manifest(
             "tools": sorted(tool["name"] for tool in tools["tools"]),
         },
         "surfaces": list(SURFACES),
+        "components": [
+            build_component_entry(
+                "code",
+                str(Path(__file__).resolve()),
+                kind="source_harness",
+                proof_kind="source_harness",
+            ),
+            build_component_entry(
+                "agent_host",
+                agent_command[0] if agent_command else None,
+                kind="process_entrypoint",
+                proof_kind=(
+                    "hermetic_fixture_non_proof"
+                    if fixture_mode
+                    else "external_installed"
+                ),
+                version=(
+                    status.get("version")
+                    if isinstance(status.get("version"), str)
+                    else None
+                ),
+            ),
+            build_component_entry(
+                "runtime",
+                runtime_command[0] if runtime_command else None,
+                kind="process_entrypoint",
+                proof_kind=(
+                    "hermetic_fixture_non_proof"
+                    if fixture_mode
+                    else "external_installed"
+                ),
+                version=initialized["serverInfo"].get("version"),
+            ),
+            build_component_entry(
+                "loop_hub",
+                os.environ.get("SIMPLICIO_LOOP_BIN")
+                or shutil.which("simplicio-loop"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+            build_component_entry(
+                "mapper",
+                os.environ.get("SIMPLICIO_MAPPER_BIN")
+                or shutil.which("simplicio-mapper"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+            build_component_entry(
+                "dev_cli",
+                os.environ.get("SIMPLICIO_DEV_CLI_BIN")
+                or shutil.which("simplicio-dev-cli"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+            build_component_entry(
+                "fast",
+                os.environ.get("SIMPLICIO_FAST_BIN")
+                or shutil.which("simplicio-fast"),
+                kind="installed_adapter",
+                proof_kind="installed_observation",
+            ),
+        ],
     }
 
 
@@ -138,6 +202,67 @@ def build_process_observations(
             },
         ],
     }
+
+def build_component_entry(
+    role: str,
+    executable: str | None,
+    *,
+    kind: str,
+    proof_kind: str,
+    version: str | None = None,
+) -> dict[str, object]:
+    candidate = Path(executable).resolve() if executable else None
+    digest = None
+    observed_version = version
+    if (
+        observed_version is None
+        and kind != "source_harness"
+        and proof_kind != "hermetic_fixture_non_proof"
+    ):
+        observed_version = read_component_version(executable)
+    if candidate is not None and candidate.is_file():
+        try:
+            digest = hashlib.sha256(candidate.read_bytes()).hexdigest()
+        except OSError:
+            candidate = None
+    return {
+        "role": role,
+        "kind": kind,
+        "status": "observed" if candidate is not None else "missing",
+        "proof_kind": proof_kind,
+        "executable": executable,
+        "path": str(candidate) if candidate is not None else None,
+        "version": observed_version,
+        "sha256": digest,
+    }
+
+
+def read_component_version(executable: str | None) -> str | None:
+    if not executable:
+        return None
+    try:
+        result = subprocess.run(
+            [executable, "--version", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    for line in (result.stdout + "\n" + result.stderr).splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            return line[:200]
+        if isinstance(payload, dict) and isinstance(payload.get("version"), str):
+            return payload["version"]
+        return line[:200]
+    return None
+
 
 def negative_dependency_gates() -> list[dict[str, object]]:
     """Record the same deterministic fail-closed cases for every surface."""
@@ -672,7 +797,12 @@ def run(
                 "fixture_sha256": digest,
                 "component_manifest": {
                     **build_component_manifest(
-                        status, initialized, tools, fixture_mode=fixture_mode
+                        status,
+                        initialized,
+                        tools,
+                        agent_command=agent_command,
+                        runtime_command=runtime_command,
+                        fixture_mode=fixture_mode,
                     ),
                     "process_observations": build_process_observations(
                         first_agent_pid,
