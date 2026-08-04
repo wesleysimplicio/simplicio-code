@@ -1,8 +1,8 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T14:47:55.832270+00:00`
-- Commit: `a8b5cce9ca0bd04c88d0a4f56de5dccf457f2666`
+- Generated: `2026-08-04T15:06:27.244411+00:00`
+- Commit: `6d197266917e82db6c029fe13efbb46beb2b9b35`
 - Dirty checkout: `True`
 
 ## Version sources
@@ -38,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@a8b5cce9ca0bd04c88d0a4f56de5dccf457f2666`
-- Captured: `2026-08-04T14:47:27.3517482Z`
+- Source revision: `main@6d197266917e82db6c029fe13efbb46beb2b9b35`
+- Captured: `2026-08-04T15:05:29.2917756Z`
 
 Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves GitHub history without asserting current acceptance; refresh this inventory after live GitHub re-query.
 
@@ -55,11 +55,11 @@ Statuses are evidence states, not closure claims; HISTORICAL_CLOSED preserves Gi
 | #320 | `OPEN` | P0 | Code release | validated SHA; release assets; registry evidence | Replacing beta.5 requires a new SHA-tied release and public asset evidence. |
 | #321 | `OPEN` | P0 | Runtime installer + Code | trust root; Windows install/update | PR #380 merged actionable missing-OpenSSL blocking; trust-root, Windows install/update/rollback and public release evidence remain open. |
 | #322 | `OPEN` | P1 | Account/Gateway + Code | device login; entitlement backend | Device login and renewable entitlement require backend-backed proof. |
-| #323 | `OPEN` | P1 | Gateway + Runtime + Code | streaming tools cancel | OpenRouter replacement requires a governed gateway with real streaming/tools/cancel evidence. |
+| #323 | `OPEN` | P1 | Gateway + Runtime + Code | streaming tools cancel | PR #384 merged onboarding removal of provider-key instructions and adds a guard; production gateway deployment with real streaming/tools/cancel receipts remains open. |
 | #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | PR #381 merged deterministic 28-cell matrix regression coverage; built-binary, TTY, permissions and cross-platform evidence remain open. |
 | #325 | `OPEN` | P1 | Code + Runtime + Loop | cold/warm benchmark harness | PR #339 merged the 10-run Loop Hub restart benchmark and cleanup fix; S0-S3 Agent→Runtime→Loop matrix, installed AgentHost/Runtime proof, Windows process/RSS/CPU sampling, and Runtime issue-gate remain unverified. |
 | #326 | `BLOCKED` | P1 | Agent UX + Code | workspace.observe/advisory contract; productive AgentHost | Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable. |
-| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | PRs #331/#332/#333/#334/#335/#337/#338/#339/#350/#351 merged status, quality, benchmark and installed-E2E slices; live issue state and main SHA are refreshed here, while external release provenance/full CI and residual ownership evidence remain unverified. |
+| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | PRs #331/#332/#333/#334/#335/#337/#338/#339/#350/#351/#382/#383/#384 merged status, quality, benchmark, installed-E2E and onboarding slices; live issue state and main SHA are refreshed here, while external release provenance/full CI and residual ownership evidence remain unverified. |
 
 ## Migration note
 
