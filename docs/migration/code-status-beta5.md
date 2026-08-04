@@ -18,6 +18,10 @@ Consumers must not treat the bundle as proof of a public release. Before product
 
 The previous beta.5 value is retained only as historical drift context. It is not a current Code release claim.
 
+## Host adoption evidence boundary
+
+Code owns only versioned host text, bounded adoption fixtures, aggregate redacted telemetry, and rollback of the text. A host experiment must record the host/version, the exact text revision, consent, adoption outcome, and rollback decision. This boundary does not grant Code execution ownership: effects remain with Agent approval and Runtime, while Loop owns waves and coordination.
+
 ## Residuals
 
 AgentHost remains protocol-pinned but productive availability is unverified. Release publication, cross-platform packaging, and the remaining open issues in `docs/status/residual-issues.v1.json` require independent evidence before closure.
