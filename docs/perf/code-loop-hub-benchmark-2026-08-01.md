@@ -22,19 +22,19 @@ Observed environment:
 
 | Input | Value |
 | --- | --- |
-| Code SHA | `39ebdd93872b8fae0dc412641acc94c1c7bdc980` |
-| Loop SHA | `debe22e2d693a3042d09b6d452c312e7713fc8cf` |
+| Code SHA | `68327f340883359a8b27d2decd054e3726d36033` |
+| Loop SHA | `3b00cfadf5c519916526c71fc6a129f2de2e8e02` |
 | Runs | `10` |
 | Transport | `tcp://127.0.0.1:<ephemeral-port>` on Windows |
-| Receipt SHA-256 | `3CAE54C03081A0280F093F689A86FBC35CE0D9E6D2DDF37DDA8A30FDF32323A0` |
+| Receipt SHA-256 | `D92BF111DA5508CE1C43DBCEAE53CCCB0AC113E8040488110E579C18DCE90A5B` |
 
 ## Measured metrics
 
 | Metric | p50 (ms) | p95 (ms) |
 | --- | ---: | ---: |
-| Hub startup | 402.401 | 421.340 |
-| Code client lifecycle test | 1,441.232 | 1,810.371 |
-| Hub restart/reconnect downtime | 417.947 | 431.858 |
+| Hub startup | 423.844 | 651.910 |
+| Code client lifecycle test | 2,612.684 | 4,232.416 |
+| Hub restart/reconnect downtime | 551.335 | 676.307 |
 
 Every run reported one Hub identity, successful restart/reconnect, and the
 lifecycle `handshake → attach → submit → progress → cancel → resume → replay`.
@@ -43,8 +43,10 @@ local-LLM startup were both false.
 
 ## Explicit limits
 
-Process count, RSS, and CPU are `null`: this Windows runner does not expose the
+Process count, RSS, and CPU remain `null`: this Windows runner does not expose the
 Unix `ps`/`pgrep` probes, and the harness does not substitute zero or estimate
 them. A future Windows process sampler is required before those metrics can
-become gates. This benchmark also does not claim AgentHost or Runtime effects;
-those remain separate installed-E2E requirements.
+become gates. The restart cleanup now removes only the owned temporary lock
+after the Hub process exits; all 10 restart/reconnect cycles completed. This
+benchmark also does not claim AgentHost or Runtime effects; those remain
+separate installed-E2E requirements.
