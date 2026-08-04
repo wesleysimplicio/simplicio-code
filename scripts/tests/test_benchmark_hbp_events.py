@@ -54,6 +54,16 @@ def test_events_corruption_fails_closed_and_preserves_published_file():
         assert path.read_bytes() == published
 
 
+def test_hub_benchmark_requires_repeated_runs_for_p95():
+    try:
+        HUB_MODULE.validate_runs(1)
+    except ValueError as exc:
+        assert "at least 2 runs" in str(exc)
+    else:
+        raise AssertionError("single-run benchmark must fail closed")
+    assert HUB_MODULE.validate_runs(2) == 2
+
+
 def test_hub_cleanup_removes_owned_lock_after_process_exit():
     with tempfile.TemporaryDirectory() as tmp:
         lock = Path(tmp) / "hub.lock"
