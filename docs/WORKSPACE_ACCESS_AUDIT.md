@@ -8,15 +8,13 @@ scans the Simplicio-owned source scopes and emits
 Every direct filesystem, process, or tree-walk call site must have an owner,
 rationale, and classification. The audit rejects manifest rules that omit a
 non-empty owner or rationale before scanning source. `violation` and unclassified findings fail the
-gate; test fixtures and the short bootstrap allowlist remain explicit. The
-manifest intentionally records the current `xai-grok-workspace` bypasses as
-violations so the audit cannot be mistaken for proof that the migration is
-complete. The client and ACP extension filesystem surfaces now route list/stat/read/write/delete through the Agent-gated Runtime adapters; their remaining direct calls are explicit `cfg(test)` fixtures. This includes the still-pending auxiliary attachment, indexing, tree, fuzzy-search and
-walk paths even though the productive agent tools (`grep`, `hashline_grep`,
-`grep_files`, `list_dir`, apply/edit and terminal execution) are Runtime-wired.
-Consequently, a failing audit is expected evidence of the remaining in-repo
-work, not an external dependency failure and not a releasable acceptance
-receipt.
+gate; test fixtures and the short bootstrap allowlist remain explicit. Historical violation entries are retained only as zero-count inventory
+keys; a positive `max_count` for classification `violation` fails closed.
+The current scoped surfaces route workspace list/stat/read/write/delete,
+recursive listing, indexing and fuzzy enumeration through Runtime-backed
+adapters; direct filesystem calls in the scanned source are test fixtures or
+bounded session scratch. This scoped audit is not a cross-platform installed
+E2E receipt, so broader release and package evidence remains separate.
 
 The optional `baseline` is an upper bound keyed by path, access kind, and
 classification. It prevents a broad reviewed rule from silently accepting a

@@ -124,7 +124,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 7
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
@@ -136,7 +136,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
       "kind": "process",
       "classification": "violation",
-      "max_count": 1
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/attach_file.rs",
@@ -148,7 +148,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 1
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/client_fs.rs",
@@ -160,7 +160,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 2
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/codebase_index.rs",
@@ -184,13 +184,13 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/file_tree.rs",
       "kind": "walk",
       "classification": "violation",
-      "max_count": 2
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/fuzzy.rs",
       "kind": "walk",
       "classification": "violation",
-      "max_count": 3
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/git_status.rs",
@@ -202,7 +202,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 16
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
@@ -214,7 +214,7 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/index.rs",
       "kind": "walk",
       "classification": "violation",
-      "max_count": 2
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/jj_status.rs",
@@ -226,19 +226,19 @@
       "path": "crates/codegen/xai-grok-workspace/src/file_system/local_fs.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 1
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/walk.rs",
       "kind": "filesystem",
       "classification": "violation",
-      "max_count": 5
+      "max_count": 0
     },
     {
       "path": "crates/codegen/xai-grok-workspace/src/file_system/walk.rs",
       "kind": "walk",
       "classification": "violation",
-      "max_count": 3
+      "max_count": 0
     }
   ]
 }

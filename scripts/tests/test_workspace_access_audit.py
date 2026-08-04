@@ -101,6 +101,20 @@ def test_baseline_allows_removing_an_occurrence(tmp_path):
     assert result["status"] == "passed"
 
 
+def test_positive_violation_baseline_fails_closed_even_without_observed_finding(tmp_path):
+    manifest = _manifest(
+        tmp_path / "manifest.json",
+        [],
+        [{"path": "src/main.rs", "kind": "filesystem", "classification": "violation", "max_count": 1}],
+    )
+    result = audit(tmp_path, manifest)
+    assert result["status"] == "failed"
+    assert result["baseline_errors"] == [{
+        "path": "src/main.rs", "kind": "filesystem", "classification": "violation",
+        "observed": 0, "max_count": 1,
+    }]
+
+
 @pytest.mark.parametrize(
     ("override", "message"),
     [
