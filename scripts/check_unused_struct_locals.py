@@ -67,9 +67,55 @@ def scan_paths(paths: Iterable[Path]) -> list[dict[str, object]]:
     return findings
 
 
+def candidate_key(candidate: dict[str, object]) -> tuple[str, int, int, str]:
+    return (
+        Path(str(candidate["path"])).as_posix(),
+        int(candidate["line"]),
+        int(candidate["struct_line"]),
+        str(candidate["variable"]),
+    )
+
+
+def load_allowlist(path: Path) -> set[tuple[str, int, int, str]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict) or payload.get("schema") != "simplicio.struct-initializer-allowlist/v1":
+        raise ValueError(f"invalid allowlist schema in {path}")
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise ValueError(f"allowlist entries must be a list in {path}")
+    allowlisted = {candidate_key(entry) for entry in entries if isinstance(entry, dict)}
+    if len(allowlisted) != len(entries):
+        raise ValueError(f"allowlist contains invalid or duplicate entries in {path}")
+    return allowlisted
+
+
+def evaluate(
+    findings: list[dict[str, object]],
+    allowlisted: set[tuple[str, int, int, str]],
+    enforce: bool,
+) -> dict[str, object]:
+    finding_keys = {candidate_key(item) for item in findings}
+    unexpected = [item for item in findings if candidate_key(item) not in allowlisted]
+    stale = sorted(allowlisted - finding_keys)
+    status = (
+        "PASS" if not unexpected and not stale else "FAIL"
+    ) if enforce else ("REVIEW_ONLY" if findings else "PASS")
+    return {
+        "status": status,
+        "blocking": enforce,
+        "allowlisted_count": len(findings) - len(unexpected),
+        "unallowlisted_count": len(unexpected),
+        "stale_allowlist_count": len(stale),
+        "unallowlisted_candidates": unexpected,
+        "stale_allowlist": [list(item) for item in stale],
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Report likely unused Rust struct locals")
     parser.add_argument("--scope", action="append", type=Path, default=[])
+    parser.add_argument("--allowlist", type=Path, help="exact candidate identities allowed by review")
+    parser.add_argument("--enforce", action="store_true", help="fail on unallowlisted or stale candidates")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     scopes = args.scope or [
@@ -79,15 +125,17 @@ def main(argv: list[str] | None = None) -> int:
         Path("crates/codegen/xai-grok-pager/src/app/cli.rs"),
     ]
     findings = scan_paths(scopes)
+    allowlisted = load_allowlist(args.allowlist) if args.allowlist else set()
+    evaluation = evaluate(findings, allowlisted, args.enforce)
     report = {
         "schema": "simplicio.struct-initializer-review/v1",
-        "blocking": False,
         "scopes": [str(scope) for scope in scopes],
         "candidate_count": len(findings),
         "candidates": findings,
+        **evaluation,
     }
     print(json.dumps(report, indent=2, sort_keys=True) if args.json else json.dumps(report, indent=2))
-    return 0
+    return 1 if args.enforce and report["status"] != "PASS" else 0
 
 
 if __name__ == "__main__":
