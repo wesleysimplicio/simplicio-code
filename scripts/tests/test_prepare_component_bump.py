@@ -7,6 +7,7 @@ import subprocess
 import pytest
 
 from scripts.release.generate_component_client import render
+from scripts.release import prepare_component_bump as bump_module
 from scripts.release.prepare_component_bump import BumpRejected, canonical, main, prepare
 
 ROOT = Path(__file__).parents[2]
@@ -37,6 +38,17 @@ def signed_event(tmp_path: Path):
     subprocess.run(["openssl", "pkeyutl", "-sign", "-inkey", str(tmp_path / "private.pem"), "-rawin",
                     "-in", str(payload_file), "-out", str(signature_file)], check=True)
     return {"key_id": "publisher", "signature": base64.b64encode(signature_file.read_bytes()).decode(), "payload": payload}, trust, artifacts
+
+
+def test_missing_openssl_is_reported_as_an_actionable_block(monkeypatch, tmp_path):
+    def missing_openssl(*_args, **_kwargs):
+        raise FileNotFoundError("openssl")
+
+    monkeypatch.setattr(bump_module.subprocess, "run", missing_openssl)
+    with pytest.raises(BumpRejected, match="openssl executable unavailable"):
+        bump_module._verify_signature(
+            {}, base64.b64encode(b"signature").decode(), tmp_path / "publisher.pem"
+        )
 
 
 def test_verified_event_prepares_deterministic_bump_and_deduplicates(tmp_path):
