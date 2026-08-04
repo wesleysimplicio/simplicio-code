@@ -52,6 +52,7 @@ fn build() {
 
     cases = build_cases()
     check("matrix covers all combinations", len(cases) == 28)
+    check("matrix case names are unique", len({case.name for case in cases}) == len(cases))
     check("matrix includes positional always-approve", any("positional-always-approve" in case.name for case in cases))
     check("matrix includes no-tty and tty", {case.tty for case in cases} == {False, True})
     check(
