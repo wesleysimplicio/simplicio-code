@@ -412,6 +412,17 @@ mod tests {
     }
 
     #[test]
+    fn signed_manifest_rejects_empty_artifact_set() {
+        let (keypair, public_key) = generate_test_keypair();
+        let mut manifest = sample_manifest();
+        manifest.artifacts.clear();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let signature = sign(&keypair, &bytes);
+
+        assert!(verify_manifest_signature(&bytes, &b64(&signature), &b64(&public_key)).is_err());
+    }
+
+    #[test]
     fn find_artifact_looks_up_by_platform() {
         let manifest_bytes = sample_manifest_bytes();
         let manifest: ReleaseManifest = serde_json::from_slice(&manifest_bytes).unwrap();
