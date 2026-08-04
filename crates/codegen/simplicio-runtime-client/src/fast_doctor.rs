@@ -32,10 +32,17 @@ impl FastDoctorReport {
             FastSurfaceAction::Diagnose.as_action_name().to_string(),
             FastSurfaceAction::Refresh.as_action_name().to_string(),
         ];
-        if status.selected_engine.to_ascii_lowercase().contains("python")
+        if status
+            .selected_engine
+            .to_ascii_lowercase()
+            .contains("python")
             || status.fallback_reason.is_some()
         {
-            diagnostic_actions.push(FastSurfaceAction::RollbackPython.as_action_name().to_string());
+            diagnostic_actions.push(
+                FastSurfaceAction::RollbackPython
+                    .as_action_name()
+                    .to_string(),
+            );
         }
         diagnostic_actions.push(FastSurfaceAction::Disable.as_action_name().to_string());
         Self {
@@ -125,13 +132,14 @@ mod tests {
 
     #[test]
     fn python_fallback_exposes_reason_and_rollback_action() {
-        let report =
-            FastDoctorReport::from_status(&status(FastSurfaceMode::Full, "python", false));
+        let report = FastDoctorReport::from_status(&status(FastSurfaceMode::Full, "python", false));
         assert_eq!(report.fallback_reason.as_deref(), Some("rust_unavailable"));
-        assert!(report
-            .diagnostic_actions
-            .iter()
-            .any(|a| a == "rollback-python"));
+        assert!(
+            report
+                .diagnostic_actions
+                .iter()
+                .any(|a| a == "rollback-python")
+        );
     }
 
     #[test]
