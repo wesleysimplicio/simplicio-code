@@ -102,5 +102,15 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn(
             "missing required release platform(s): windows-x86_64", result.stderr
         )
+    def test_release_workflow_blocks_placeholder_trust_root_for_stable(self):
+        text = WORKFLOW.read_text(encoding="utf-8")
+        package = text.split(
+            "      - name: Generate signed release manifest", 1
+        )[1].split("  publish:", 1)[0]
+        self.assertIn(
+            'if [ "${{ steps.ver.outputs.channel }}" = "stable" ]; then',
+            package,
+        )
+        self.assertIn("production trust root required for stable release", package)
 if __name__ == "__main__":
     unittest.main()
