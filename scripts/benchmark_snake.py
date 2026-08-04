@@ -147,11 +147,12 @@ def npm_check(workspace: Path, script: str, timeout: int) -> tuple[str, str]:
     return "FAIL", (p.stderr or p.stdout)[-1000:]
 
 def run_agent(name: str, template: str, root: Path, model: str, timeout: int,
-              events: list[dict[str, Any]], receipt: str | None) -> dict[str, Any]:
+              events: list[dict[str, Any]], receipt: str | None,
+              correlation_id: str) -> dict[str, Any]:
     workspace = root / name
     workspace.mkdir()
     argv = command(template, workspace, model)
-    events.append({"event": "agent_started", "agent": name, "argv": argv, "ts_ms": ms()})
+    events.append({"event": "agent_started", "agent": name, "correlation_id": correlation_id, "argv": argv, "ts_ms": ms()})
     started = ms()
     try:
         p = subprocess.Popen(argv, cwd=workspace, stdout=subprocess.PIPE,
@@ -193,14 +194,14 @@ def run_agent(name: str, template: str, root: Path, model: str, timeout: int,
     if name == "simplicio" and status == "PASS" and runtime["status"] != "PASS":
         status = "UNVERIFIED"
     result = {
-        "agent": name, "status": status, "exit_code": p.returncode,
+        "agent": name, "correlation_id": correlation_id, "status": status, "exit_code": p.returncode,
         "timed_out": timed_out, "wall_ms": ms() - started,
         "cpu_ticks_linux": peak_ticks or None, "rss_peak_bytes": peak_rss or None,
         "tokens": usage(output), "token_usage_status": "MEASURED" if usage(output) else "UNAVAILABLE",
         "runtime_gate": runtime, "quality": {"product": product},
         "output_log": str(workspace / "agent-output.log"), "command": argv,
     }
-    events.append({"event": "agent_finished", "agent": name, "status": status,
+    events.append({"event": "agent_finished", "agent": name, "correlation_id": correlation_id, "status": status,
                    "wall_ms": result["wall_ms"], "ts_ms": ms()})
     return result
 
@@ -226,9 +227,10 @@ def main() -> int:
     for repetition in range(args.repetitions):
         root = Path(tempfile.mkdtemp(prefix=f"snake-{repetition}-",
                                       dir=str(args.workspace.resolve()) if args.workspace else None))
+        correlation_id = f"snake-{repetition}"
         for name, template in (("simplicio", args.simplicio_cmd), ("hermes", args.hermes_cmd)):
             runs.append({"repetition": repetition, **run_agent(
-                name, template, root, args.model, args.timeout, events, args.runtime_receipt)})
+                name, template, root, args.model, args.timeout, events, args.runtime_receipt, correlation_id)})
     status = "PASS" if all(r.get("status") == "PASS" for r in runs) else (
         "UNVERIFIED" if any(r.get("status") == "UNVERIFIED" for r in runs) else "FAIL")
     report = {
