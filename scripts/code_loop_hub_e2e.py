@@ -22,6 +22,15 @@ import tempfile
 import time
 
 
+MIN_P95_RUNS = 2
+
+
+def validate_runs(runs: int) -> int:
+    if runs < MIN_P95_RUNS:
+        raise ValueError(f"benchmark requires at least {MIN_P95_RUNS} runs for p95 metrics")
+    return runs
+
+
 def digest(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
@@ -318,7 +327,7 @@ def run_once(code_root: Path, loop_root: Path) -> dict[str, object]:
 def run(args: argparse.Namespace) -> dict[str, object]:
     code_root = args.repo.resolve()
     loop_root = args.loop_root.resolve()
-    runs = max(1, args.runs)
+    runs = validate_runs(args.runs)
     receipts = [run_once(code_root, loop_root) for _ in range(runs)]
     startup = [float(receipt["startup_ms"]) for receipt in receipts]
     test = [float(receipt["test_ms"]) for receipt in receipts]
@@ -361,7 +370,7 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, required=True)
     parser.add_argument("--loop-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--runs", type=int, default=1)
+    parser.add_argument("--runs", type=int, default=MIN_P95_RUNS)
     args = parser.parse_args()
     receipt = run(args)
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
