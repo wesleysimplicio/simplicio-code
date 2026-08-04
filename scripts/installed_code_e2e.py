@@ -36,6 +36,9 @@ FAST_MODES = ("rust", "python", "off")
 FAST_MATRIX_SCHEMA = "simplicio.code-fast-mode-matrix/v1"
 FAST_PROBE_TIMEOUT_S = 10.0
 RUNTIME_RELEASE_SCHEMA = "simplicio.release-manifest/v1"
+REQUIRED_RUNTIME_PROCESS_CAPABILITIES = frozenset((
+    "start", "status", "cancel", "wait"
+))
 
 
 def _validate_fast_modes(modes: tuple[str, ...]) -> tuple[str, ...]:
@@ -212,6 +215,15 @@ def validate_agent_status(status: dict[str, object] | None) -> None:
         raise RuntimeError("agent_host_incompatible")
 
 
+def validate_runtime_process_capabilities(initialized: dict[str, object]) -> None:
+    capabilities = initialized.get("capabilities")
+    capabilities = capabilities if isinstance(capabilities, dict) else {}
+    process = capabilities.get("runtime_process")
+    process = process if isinstance(process, dict) else {}
+    if any(process.get(name) is not True for name in REQUIRED_RUNTIME_PROCESS_CAPABILITIES):
+        raise RuntimeError("runtime_process_incompatible")
+
+
 def validate_runtime_contract(
     initialized: dict[str, object] | None, tools: dict[str, object] | None
 ) -> None:
@@ -220,6 +232,7 @@ def validate_runtime_contract(
         raise RuntimeError("runtime_missing")
     if initialized.get("protocolVersion") != "2024-11-05":
         raise RuntimeError("runtime_incompatible")
+    validate_runtime_process_capabilities(initialized)
     advertised = {
         tool.get("name") for tool in tools.get("tools", []) if isinstance(tool, dict)
     }
