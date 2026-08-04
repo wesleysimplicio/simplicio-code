@@ -365,6 +365,7 @@ def main() -> int:
     args = parser.parse_args()
     receipt = run(args)
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(encoded, encoding="utf-8")
     print(encoded, end="")
     return 0
