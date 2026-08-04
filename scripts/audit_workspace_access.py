@@ -40,6 +40,11 @@ def audit(root: Path, manifest: Path) -> dict[str, Any]:
     rules = spec.get("rules")
     if not isinstance(rules, list):
         raise ValueError("manifest rules must be a list")
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            raise ValueError(f"manifest rule {index} must be an object")
+        if not str(rule.get("owner", "")).strip() or not str(rule.get("rationale", "")).strip():
+            raise ValueError(f"manifest rule {index} requires owner and rationale")
 
     findings: list[dict[str, Any]] = []
     for scope in spec.get("scopes", ["crates/codegen"]):
