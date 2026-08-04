@@ -35,6 +35,7 @@
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 
 /// A release manifest for one version of `simplicio-code`, listing every
 /// published platform artifact and its checksum. This is the payload that
@@ -92,7 +93,68 @@ pub fn verify_manifest_signature(
         anyhow::anyhow!("manifest signature verification failed (tampered or wrong key)")
     })?;
 
-    serde_json::from_slice(manifest_bytes).context("signed manifest is not valid JSON")
+    let manifest: ReleaseManifest =
+        serde_json::from_slice(manifest_bytes).context("signed manifest is not valid JSON")?;
+    validate_release_manifest(&manifest)?;
+    Ok(manifest)
+}
+
+/// Validate the signed manifest's shape before any artifact is selected.
+///
+/// This is deliberately stricter than serde deserialization: release metadata is
+/// later used to form local paths, so malformed names, duplicate platforms, and
+/// ambiguous digests must fail closed.
+pub fn validate_release_manifest(manifest: &ReleaseManifest) -> Result<()> {
+    if semver::Version::parse(&manifest.version).is_err() {
+        bail!("release manifest has an invalid semver version");
+    }
+    if !matches!(manifest.channel.as_str(), "beta" | "stable") {
+        bail!(
+            "release manifest has an unsupported channel: {}",
+            manifest.channel
+        );
+    }
+    if manifest.artifacts.is_empty() {
+        bail!("release manifest contains no artifacts");
+    }
+
+    let mut platforms = HashSet::new();
+    for artifact in &manifest.artifacts {
+        if !is_safe_manifest_token(&artifact.platform) {
+            bail!(
+                "release manifest has an invalid platform: {}",
+                artifact.platform
+            );
+        }
+        if !platforms.insert(&artifact.platform) {
+            bail!(
+                "release manifest lists platform more than once: {}",
+                artifact.platform
+            );
+        }
+        if !is_safe_manifest_token(&artifact.filename) {
+            bail!(
+                "release manifest has an unsafe artifact filename: {}",
+                artifact.filename
+            );
+        }
+        if artifact.sha256.len() != 64
+            || !artifact.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            bail!(
+                "release manifest has an invalid SHA-256 for {}",
+                artifact.filename
+            );
+        }
+    }
+    Ok(())
+}
+
+fn is_safe_manifest_token(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
 }
 
 /// Verify that `data` hashes to `expected_sha256_hex` (case-insensitive hex).
@@ -121,6 +183,7 @@ pub fn find_artifact<'a>(
     manifest: &'a ReleaseManifest,
     platform: &str,
 ) -> Result<&'a ArtifactEntry> {
+    validate_release_manifest(manifest)?;
     manifest
         .artifacts
         .iter()
@@ -169,8 +232,8 @@ mod tests {
         base64::engine::general_purpose::STANDARD.encode(bytes)
     }
 
-    fn sample_manifest_bytes() -> Vec<u8> {
-        let manifest = ReleaseManifest {
+    fn sample_manifest() -> ReleaseManifest {
+        ReleaseManifest {
             version: "0.3.0-beta.1".to_string(),
             channel: "beta".to_string(),
             artifacts: vec![ArtifactEntry {
@@ -178,8 +241,11 @@ mod tests {
                 filename: "simplicio-code-0.3.0-beta.1-linux-x86_64".to_string(),
                 sha256: "e".repeat(64),
             }],
-        };
-        serde_json::to_vec(&manifest).unwrap()
+        }
+    }
+
+    fn sample_manifest_bytes() -> Vec<u8> {
+        serde_json::to_vec(&sample_manifest()).unwrap()
     }
 
     #[test]
@@ -287,6 +353,39 @@ mod tests {
         let truncated = &data[..data.len() - 5];
         let result = verify_artifact_checksum(truncated, &digest);
         assert!(result.is_err(), "truncated artifact must fail its checksum");
+    }
+
+    #[test]
+    fn signed_manifest_rejects_unsafe_filename() {
+        let (keypair, public_key) = generate_test_keypair();
+        let mut manifest = sample_manifest();
+        manifest.artifacts[0].filename = "../simplicio-code".to_string();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let signature = sign(&keypair, &bytes);
+
+        assert!(verify_manifest_signature(&bytes, &b64(&signature), &b64(&public_key)).is_err());
+    }
+
+    #[test]
+    fn signed_manifest_rejects_duplicate_platforms() {
+        let (keypair, public_key) = generate_test_keypair();
+        let mut manifest = sample_manifest();
+        manifest.artifacts.push(manifest.artifacts[0].clone());
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let signature = sign(&keypair, &bytes);
+
+        assert!(verify_manifest_signature(&bytes, &b64(&signature), &b64(&public_key)).is_err());
+    }
+
+    #[test]
+    fn signed_manifest_rejects_malformed_digest() {
+        let (keypair, public_key) = generate_test_keypair();
+        let mut manifest = sample_manifest();
+        manifest.artifacts[0].sha256 = "not-a-sha256".to_string();
+        let bytes = serde_json::to_vec(&manifest).unwrap();
+        let signature = sign(&keypair, &bytes);
+
+        assert!(verify_manifest_signature(&bytes, &b64(&signature), &b64(&public_key)).is_err());
     }
 
     #[test]
