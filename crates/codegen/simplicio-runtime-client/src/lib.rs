@@ -739,6 +739,11 @@ impl RuntimeClient {
         if argv.is_empty() {
             return Err(Error::ExecRejected("argv must not be empty".into()));
         }
+        if timeout_ms == 0 {
+            return Err(Error::ExecRejected(
+                "timeout_ms must be greater than zero".into(),
+            ));
+        }
         if idempotency_key.trim().is_empty() {
             return Err(Error::ExecRejected(
                 "idempotency_key must not be empty".into(),
