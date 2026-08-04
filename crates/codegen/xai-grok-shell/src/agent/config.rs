@@ -44,6 +44,8 @@ pub fn default_agent_type() -> String {
 }
 /// Default base URL for the cli chat proxy.
 pub const CLI_CHAT_PROXY_BASE_URL_DEFAULT: &str = "https://cli-chat-proxy.grok.com/v1";
+/// Environment variable selecting the Simplicio Code gateway base URL.
+pub const SIMPLICIO_CODE_GATEWAY_BASE_URL_ENV: &str = "SIMPLICIO_CODE_GATEWAY_BASE_URL";
 /// Default base URL for the public xAI API.
 pub const XAI_API_BASE_URL_DEFAULT: &str = "https://api.x.ai/v1";
 /// Default base URL for the asset server (profile images, etc.).
@@ -146,6 +148,10 @@ pub struct EndpointsConfig {
     /// default value) lets an org pin the proxy to the default on purpose.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cli_chat_proxy_base_url: Option<String>,
+    /// Simplicio Code gateway base URL, including the `/v1/code` prefix.
+    /// Env: `SIMPLICIO_CODE_GATEWAY_BASE_URL`. Blank means unset.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub simplicio_code_gateway_base_url: Option<String>,
     /// Base URL for the public xAI API.
     pub xai_api_base_url: String,
     /// Optional extra access-header value (applied only with the optional
@@ -311,6 +317,7 @@ impl EndpointsConfig {
     pub fn resolve_inference_base_url(&self) -> String {
         self.models_base_url
             .clone()
+            .or_else(|| blank_as_unset(&self.simplicio_code_gateway_base_url))
             .unwrap_or_else(|| self.proxy_url())
     }
     /// Feedback endpoint — an auxiliary service, so it defaults to the
@@ -526,7 +533,8 @@ impl EndpointsConfig {
                 .map(|b| Resolved::new(format!("gs://{b}"), ConfigSource::Default))
         })
     }
-    /// `models_list_url` > `{models_base_url}/models` > `{proxy_base_url}/models`.
+    /// `models_list_url` > `{models_base_url}/models` > gateway `/models`
+    /// > `{proxy_base_url}/models`.
     pub fn resolve_models_list_url(&self) -> String {
         if let Some(ref url) = self.models_list_url {
             return url.clone();
@@ -534,6 +542,7 @@ impl EndpointsConfig {
         let base = self
             .models_base_url
             .clone()
+            .or_else(|| blank_as_unset(&self.simplicio_code_gateway_base_url))
             .unwrap_or_else(|| self.proxy_url());
         format!("{}/models", base)
     }
@@ -542,6 +551,7 @@ impl Default for EndpointsConfig {
     fn default() -> Self {
         Self {
             cli_chat_proxy_base_url: std::env::var("GROK_CLI_CHAT_PROXY_BASE_URL").ok(),
+            simplicio_code_gateway_base_url: env_string(SIMPLICIO_CODE_GATEWAY_BASE_URL_ENV),
             xai_api_base_url: std::env::var("GROK_XAI_API_BASE_URL")
                 .unwrap_or_else(|_| XAI_API_BASE_URL_DEFAULT.to_owned()),
             alpha_test_key: None,
@@ -7701,6 +7711,7 @@ reasoning_effort = "low"
     fn unset_endpoint_env_vars() {
         for k in [
             "GROK_CLI_CHAT_PROXY_BASE_URL",
+            SIMPLICIO_CODE_GATEWAY_BASE_URL_ENV,
             "GROK_XAI_API_BASE_URL",
             "GROK_FEEDBACK_BASE_URL",
             "GROK_TRACE_UPLOAD_URL",
@@ -7716,6 +7727,38 @@ reasoning_effort = "low"
         ] {
             unsafe { std::env::remove_var(k) };
         }
+    }
+    #[test]
+    fn simplicio_gateway_endpoint_routes_inference_and_model_list() {
+        let cfg = EndpointsConfig {
+            simplicio_code_gateway_base_url: Some("https://gateway.example/v1/code".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            cfg.resolve_inference_base_url(),
+            "https://gateway.example/v1/code"
+        );
+        assert_eq!(
+            cfg.resolve_models_list_url(),
+            "https://gateway.example/v1/code/models"
+        );
+    }
+    #[test]
+    fn explicit_model_endpoint_overrides_simplicio_gateway() {
+        let cfg = EndpointsConfig {
+            simplicio_code_gateway_base_url: Some("https://gateway.example/v1/code".to_string()),
+            models_base_url: Some("https://custom.example/v1".to_string()),
+            models_list_url: Some("https://custom.example/v1/catalog".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            cfg.resolve_inference_base_url(),
+            "https://custom.example/v1"
+        );
+        assert_eq!(
+            cfg.resolve_models_list_url(),
+            "https://custom.example/v1/catalog"
+        );
     }
     /// INVARIANT: auxiliary-service resolvers resolve to the cli-chat-proxy, never
     /// `xai_api_base_url` — overriding ONLY inference keeps every aux endpoint on
