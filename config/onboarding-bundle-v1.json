@@ -1,85 +1,68 @@
 {
   "schema": "simplicio.onboarding-bundle/v1",
-  "bundle_version": "2026.07.28",
+  "bundle_version": "2026.08.04",
+  "captured_at_utc": "2026-08-04T05:20:00Z",
+  "source": "local source manifests plus live installed probes",
   "compatibility": {
     "current_major": 1,
-    "accepted_majors": [
-      1,
-      0
-    ]
+    "accepted_majors": [1, 0]
   },
   "components": [
     {
       "name": "code",
-      "version": "0.3.0-beta.5",
-      "capabilities": [
-        "tui",
-        "headless",
-        "acp",
-        "workspace"
-      ],
+      "version": "0.3.0-beta.3",
+      "capabilities": ["tui", "headless", "acp", "workspace"],
       "origin": "repository",
-      "probe": "simplicio-code"
+      "probe": "simplicio-code",
+      "source": "pyproject.toml"
     },
     {
       "name": "agent-host",
       "version": "1.0.0",
-      "capabilities": [
-        "turn",
-        "cancel",
-        "reconnect"
-      ],
+      "capabilities": ["turn", "cancel", "reconnect"],
       "origin": "external",
-      "probe": "simplicio-agent"
+      "probe": "simplicio-agent",
+      "evidence": "protocol pin only; productive AgentHost probe is unavailable"
     },
     {
       "name": "runtime",
-      "version": "1.0.0",
-      "capabilities": [
-        "governed-effects",
-        "persistent-transport"
-      ],
+      "version": "3.6.0",
+      "capabilities": ["governed-effects", "persistent-transport"],
       "origin": "external",
-      "probe": "simplicio-runtime"
+      "probe": "simplicio-runtime",
+      "evidence": "simplicio contracts smoke passed locally"
     },
     {
       "name": "loop-hub",
-      "version": "3.38.6",
-      "capabilities": [
-        "plan",
-        "resume",
-        "receipts"
-      ],
+      "version": "3.38.35",
+      "capabilities": ["plan", "resume", "receipts"],
       "origin": "pypi:simplicio-loop",
-      "probe": "simplicio-loop"
+      "probe": "simplicio-loop",
+      "evidence": "installed probe measured this version"
     },
     {
       "name": "mapper",
-      "version": "0.26.0",
-      "capabilities": [
-        "map",
-        "context"
-      ],
+      "version": "0.26.15",
+      "capabilities": ["map", "context"],
       "origin": "pypi:simplicio-mapper",
-      "probe": "simplicio-mapper"
+      "probe": "simplicio-mapper",
+      "evidence": "installed probe measured this version"
     },
     {
       "name": "dev-cli",
-      "version": "0.18.0",
-      "capabilities": [
-        "external-harness"
-      ],
+      "version": "0.18.6",
+      "capabilities": ["external-harness"],
       "origin": "pypi:simplicio-cli",
-      "probe": "simplicio-dev-cli"
+      "probe": "simplicio-dev-cli",
+      "evidence": "installed probe measured this version"
     },
     {
       "name": "fixtures",
       "version": "1.0.0",
-      "capabilities": [
-        "protocol-only"
-      ],
+      "capabilities": ["protocol-only"],
       "origin": "repository",
-      "path": "scripts/fixtures/simplicio_installed_fixture.py"
+      "path": "scripts/fixtures/simplicio_installed_fixture.py",
+      "evidence": "fixture is not productive dependency proof"
     }
   ]
 }

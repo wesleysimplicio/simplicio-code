@@ -1,8 +1,8 @@
 # Current status
 
 - Schema: `simplicio.code-status/v1`
-- Generated: `2026-08-04T04:51:22.001912+00:00`
-- Commit: `901b805c25ccdedc833d95040d5fb355a0c8f304`
+- Generated: `2026-08-04T05:14:38.033610+00:00`
+- Commit: `e92766c9f311419094ae2098ccfc2f542c8118c3`
 - Dirty checkout: `True`
 
 ## Version sources
@@ -12,6 +12,7 @@
 | python | `0.3.0b3` |
 | rust | `0.3.0-beta.3` |
 | readme | `0.3.0-beta.3` |
+| onboarding_bundle | `0.3.0-beta.3` |
 
 - Source version status: `PASS`
 - Release evidence status: `UNKNOWN`
@@ -37,8 +38,8 @@ Derived from source presence; external evidence is listed separately and is not 
 ## Residual issue inventory
 
 - Source: GitHub live issue list for wesleysimplicio/simplicio-code
-- Source revision: `main@901b805c25ccdedc833d95040d5fb355a0c8f304`
-- Captured: `2026-08-04T04:50:06Z`
+- Source revision: `main@db5fccf3eaaeea6f65c6048cdc0732fecf8ec634`
+- Captured: `2026-08-04T05:13:43.3099084Z`
 
 Statuses are evidence states, not closure claims; refresh this inventory after live GitHub re-query.
 
@@ -49,7 +50,7 @@ Statuses are evidence states, not closure claims; refresh this inventory after l
 | #315 | `OPEN` | P0 | Code + Simplicio ecosystem | #317; #318; #319; #320; #321; #322; #323; #324; #325; #326; #327 | Parent recovery objective remains open until child ACs have merged evidence. |
 | #316 | `BLOCKED` | P0 | Code CI/toolchain | Rust 1.94.1; GitHub CI | Gate-recovery slice merged; full cargo test and CI evidence are not green. |
 | #317 | `OPEN` | P0 | Runtime + Code | Runtime process capabilities; Agent | Foreground/background/cancel/reconcile contracts require Runtime-owned capabilities and installed E2E. |
-| #318 | `OPEN` | P0 | Code + Runtime | Runtime workspace contract; audit gate | Direct legacy workspace accesses remain an open audit objective. |
+| #318 | `BLOCKED` | P0 | Code + Runtime | Runtime workspace contract; audit gate | Scoped audit passes, but broad production-looking workspace accesses remain outside the manifest; full migration and adversarial evidence are not proven. |
 | #319 | `OPEN` | P0 | Code + Agent + Runtime + Loop | installed four-surface E2E | Installed AgentHost/Runtime/Loop Hub proof is not yet a merged, four-surface receipt. |
 | #320 | `OPEN` | P0 | Code release | validated SHA; release assets; registry evidence | Replacing beta.5 requires a new SHA-tied release and public asset evidence. |
 | #321 | `OPEN` | P0 | Runtime installer + Code | trust root; Windows install/update | Productive trust-root and Windows install/update/rollback evidence remains open. |
@@ -57,5 +58,9 @@ Statuses are evidence states, not closure claims; refresh this inventory after l
 | #323 | `OPEN` | P1 | Gateway + Runtime + Code | streaming tools cancel | OpenRouter replacement requires a governed gateway with real streaming/tools/cancel evidence. |
 | #324 | `OPEN` | P1 | Code CI | headless matrix; calibrated invariants | Headless matrix promotion to blocking gates remains open. |
 | #325 | `OPEN` | P1 | Code + Runtime + Loop | cold/warm benchmark harness | Startup/workspace-open/first-effect measurements and regression limits remain open. |
-| #326 | `OPEN` | P1 | Agent UX + Code | workspace.observe/advisory contract | Typed proactive advisory emission without a second coordinator remains open. |
-| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | This captured inventory and generated status gate are the current implementation lane. |
+| #326 | `BLOCKED` | P1 | Agent UX + Code | workspace.observe/advisory contract; productive AgentHost | Source contracts and protocol-only tests exist, but productive AgentHost E2E and the full advisory receipt are unavailable. |
+| #327 | `IN_PROGRESS` | P1 | Code governance | live GitHub re-query; version/capability sources | Status/inventory gate merged in PR #331; onboarding drift reconciliation is in progress, while external release and full-CI evidence remain unverified. |
+
+## Migration note
+
+Current onboarding pins and their measured drift are documented in [`docs/migration/code-status-beta5.md`](../migration/code-status-beta5.md).

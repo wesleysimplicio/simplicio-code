@@ -26,7 +26,7 @@ for the version of the code present in this tree.
 ---
 
 ## Estado do produto
-A fonte revisável do estado atual é [`docs/status/current.md`](docs/status/current.md); ela separa evidência de código, release, capabilities e residuais live.
+A fonte revisável do estado atual é [`docs/status/current.md`](docs/status/current.md); ela separa evidência de código, release, capabilities e residuais live. O drift do onboarding beta.5 está documentado em [`docs/migration/code-status-beta5.md`](docs/migration/code-status-beta5.md).
 
 Versão atual: **0.3.0-beta.3**.
 

@@ -99,6 +99,16 @@ def normalize(version: str) -> str:
     return version.replace("-beta.", "b").replace("-beta", "b")
 
 
+def read_bundle_code_version(path: Path) -> str:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    for component in payload.get("components", []):
+        if isinstance(component, dict) and component.get("name") == "code":
+            version = component.get("version")
+            if isinstance(version, str) and version:
+                return version
+    raise ValueError(f"code version not found in {path}")
+
+
 def load_residual_inventory(root: Path) -> dict[str, object]:
     path = root / RESIDUAL_PATH
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -160,7 +170,8 @@ def snapshot(root: Path) -> dict[str, object]:
         r'^version\s*=\s*"([^"]+)"$',
     )
     readme = read_version(root / "README.md", r"^Versão atual:\s*\*\*([^*]+)\*\*\.")
-    versions = {"python": py, "rust": rust, "readme": readme}
+    bundle_code = read_bundle_code_version(root / "config" / "onboarding-bundle-v1.json")
+    versions = {"python": py, "rust": rust, "readme": readme, "onboarding_bundle": bundle_code}
     normalized = {key: normalize(value) for key, value in versions.items()}
     source_consistent = len(set(normalized.values())) == 1
     commit = run_git(root, "rev-parse", "HEAD")
@@ -254,7 +265,15 @@ def render(data: dict[str, object]) -> str:
         f"| #{item['number']} | `{item['state']}` | {item.get('priority', 'UNSET')} | {item.get('owner', 'UNSET')} | {'; '.join(item['dependencies'])} | {item['evidence']} |"
         for item in issues
     )
-    lines.append("")
+    lines.extend(
+        [
+            "",
+            "## Migration note",
+            "",
+            "Current onboarding pins and their measured drift are documented in [`docs/migration/code-status-beta5.md`](../migration/code-status-beta5.md).",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -285,6 +304,9 @@ def validate_rendered_document(root: Path, data: dict[str, object]) -> None:
         row_prefix = f"| #{item['number']} | `{item['state']}` |"
         if row_prefix not in text:
             raise ValueError(f"status document is missing residual issue #{item['number']}")
+    migration_note = root / "docs/migration/code-status-beta5.md"
+    if not migration_note.exists() or "code-status-beta5.md" not in text:
+        raise ValueError("status document is missing the beta.5 migration note")
 
 
 def main() -> int:
