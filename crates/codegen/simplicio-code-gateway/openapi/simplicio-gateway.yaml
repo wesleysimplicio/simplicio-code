@@ -61,6 +61,12 @@ paths:
         Exchange a refresh token for a new pair. A compliant backend MUST
         invalidate the presented refresh token on success (single-use;
         replay must fail).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
       responses:
         "200":
           description: OK
@@ -179,6 +185,12 @@ components:
         interval:
           type: integer
           default: 5
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token:
+          type: string
     TokenResponse:
       type: object
       required: [access_token, expires_in]
