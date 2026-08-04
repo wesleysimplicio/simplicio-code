@@ -88,8 +88,9 @@ jobs:
         run: python3 scripts/status_snapshot.py --root . --check
       - name: Enforce workspace access boundary
         run: python3 scripts/audit_workspace_access.py --root . > workspace-access-audit.json
+      # The heuristic remains report-only: without --enforce, findings do not block.
+      # A malformed/crashed report must still fail the CI job instead of disappearing.
       - name: Run scoped struct-initializer review report
-        continue-on-error: true
         run: python3 scripts/check_unused_struct_locals.py --json > struct-initializer-report.json
       - name: Enforce deterministic initializer invariants
         run: python3 scripts/check_deterministic_invariants.py --root . --json > deterministic-invariants.json
