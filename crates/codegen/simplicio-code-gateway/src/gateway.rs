@@ -223,14 +223,20 @@ impl<S: SecretStore + 'static> PrivateGateway<S> {
             )));
         }
         limits.enforce(&request)?;
+        if let Some(request_id) = request.request_id.as_deref() {
+            validate_request_id(request_id)?;
+        }
         request.stream = true;
-        let response = self
+        let mut request_builder = self
             .http
             .post(self.url(paths::CHAT_COMPLETIONS))
-            .bearer_auth(self.token().await?)
-            .json(&request)
-            .send()
-            .await?;
+            .bearer_auth(self.token().await?);
+        if let Some(request_id) = request.request_id.as_deref() {
+            request_builder = request_builder
+                .header("x-request-id", request_id)
+                .header("idempotency-key", request_id);
+        }
+        let response = request_builder.json(&request).send().await?;
         if !response.status().is_success() {
             let status = response.status();
             let retry_after = parse_retry_after(&response);
@@ -272,6 +278,20 @@ impl<S: SecretStore + 'static> PrivateGateway<S> {
         };
         Ok(Box::pin(stream))
     }
+}
+
+fn validate_request_id(request_id: &str) -> Result<(), GatewayError> {
+    if request_id.is_empty()
+        || request_id.len() > 128
+        || !request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+    {
+        return Err(GatewayError::Rejected(
+            "request id must be 1-128 ASCII identifier characters".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub fn parse_sse_events(input: &[u8]) -> Result<(Vec<GatewayEvent>, Vec<u8>), GatewayError> {
@@ -470,6 +490,19 @@ mod tests {
             )
             .unwrap();
         session
+    }
+
+    #[test]
+    fn request_id_validation_rejects_header_injection() {
+        assert!(validate_request_id("req-42").is_ok());
+        assert!(matches!(
+            validate_request_id("req-42\r\nX-Leak: yes"),
+            Err(GatewayError::Rejected(_))
+        ));
+        assert!(matches!(
+            validate_request_id(""),
+            Err(GatewayError::Rejected(_))
+        ));
     }
 
     #[test]
