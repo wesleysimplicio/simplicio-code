@@ -15,11 +15,19 @@ Requirements: arrow-key controls, collisions and game-over; score and
 localStorage high score; top-10 scoreboard; restart; responsive UI; automated
 tests for core rules; package scripts for test and build. Do not edit outside
 the assigned workspace."""
+MIN_REPETITIONS = 10
+
 ALIASES = {
     "prompt_tokens": ("prompt_tokens", "input_tokens"),
     "completion_tokens": ("completion_tokens", "output_tokens"),
     "total_tokens": ("total_tokens",),
 }
+
+def validate_repetitions(value: int) -> int:
+    if value < MIN_REPETITIONS:
+        raise ValueError(f"repetitions must be >= {MIN_REPETITIONS}")
+    return value
+
 
 def ms() -> int:
     return time.monotonic_ns() // 1_000_000
@@ -213,13 +221,15 @@ def main() -> int:
     ap.add_argument("--workspace", type=Path)
     ap.add_argument("--output", type=Path, default=Path(".simplicio/benchmarks/snake"))
     ap.add_argument("--timeout", type=int, default=900)
-    ap.add_argument("--repetitions", type=int, default=1)
+    ap.add_argument("--repetitions", type=int, default=MIN_REPETITIONS)
     ap.add_argument("--runtime-receipt")
     args = ap.parse_args()
     if not args.model:
         ap.error("--model or MODEL is required for a comparable run")
-    if args.repetitions < 1:
-        ap.error("--repetitions must be >= 1")
+    try:
+        validate_repetitions(args.repetitions)
+    except ValueError as exc:
+        ap.error(str(exc))
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     events: list[dict[str, Any]] = []
