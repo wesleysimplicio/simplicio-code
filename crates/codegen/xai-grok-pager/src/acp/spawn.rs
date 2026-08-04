@@ -3,10 +3,14 @@
 //! Simplified to only support GrokShell (in-process) mode.
 //! Subprocess and remote modes can be added later if needed.
 
+use std::process::Stdio;
 use std::rc::Rc;
 use std::thread;
+use std::time::Duration;
 
+use agent_client_protocol as acp;
 use anyhow::Result;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tokio_util::sync::CancellationToken;
 
 use xai_acp_lib::{
@@ -87,6 +91,106 @@ pub async fn spawn_grok_shell(
 
     // Spawn the agent thread with direct dispatch
     let handle = spawn_agent_thread_direct(spawn_fn, acp_agent, agent_cancel.clone())?;
+
+    Ok(SpawnedAgent {
+        _thread_handle: handle,
+        channel: acp_client,
+        cancel: agent_cancel,
+        auth_manager: auth_manager_for_pager,
+    })
+}
+
+/// Spawn the installed `simplicio_agent` ACP adapter as a persistent subprocess.
+///
+/// This is the direct Code prompt path: one warm ACP connection, no AgentHost
+/// daemon, no Grok bootstrap, and no second copilot request per user prompt.
+pub async fn spawn_simplicio_agent(
+    agent_config: AgentConfig,
+    cancel: &CancellationToken,
+) -> Result<SpawnedAgent> {
+    let auth_manager =
+        std::sync::Arc::new(AuthManager::new(&grok_home(), agent_config.grok_com_config));
+    let auth_manager_for_pager = auth_manager.clone();
+    let agent_cancel = cancel.child_token();
+    let (acp_client, acp_agent) = acp_channels();
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<std::result::Result<(), String>>(1);
+    let thread_cancel = agent_cancel.clone();
+
+    let handle = thread::Builder::new()
+        .name("simplicio-agent-acp-worker".into())
+        .spawn(move || -> Result<()> {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let local = tokio::task::LocalSet::new();
+            local.block_on(&rt, async move {
+                let program = std::env::var_os("SIMPLICIO_AGENT_BIN")
+                    .unwrap_or_else(|| "simplicio_agent".into());
+                let mut child = match tokio::process::Command::new(&program)
+                    .arg("acp")
+                    .env("SIMPLICIO_CODE_DIRECT_LLM", "1")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .kill_on_drop(true)
+                    .spawn()
+                {
+                    Ok(child) => child,
+                    Err(error) => {
+                        let message =
+                            format!("failed to start {} acp: {error}", program.to_string_lossy());
+                        let _ = ready_tx.send(Err(message.clone()));
+                        anyhow::bail!(message);
+                    }
+                };
+
+                let outgoing = child
+                    .stdin
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("simplicio_agent ACP stdin unavailable"))?
+                    .compat_write();
+                let incoming = child
+                    .stdout
+                    .take()
+                    .ok_or_else(|| anyhow::anyhow!("simplicio_agent ACP stdout unavailable"))?
+                    .compat();
+
+                let client = AcpGatewaySender::<acp::AgentSide>::new(acp_agent.tx.clone())
+                    .with_tracing(true);
+                let (connection, handle_io) =
+                    acp::ClientSideConnection::new(client, outgoing, incoming, |future| {
+                        tokio::task::spawn_local(future);
+                    });
+                tokio::task::spawn_local(handle_io);
+                let gateway =
+                    AcpGatewayReceiver::<acp::ClientSide, _>::new(acp_agent.rx, connection)
+                        .with_tracing(true);
+                tokio::task::spawn_local(gateway.run());
+                tokio::task::yield_now().await;
+                let _ = ready_tx.send(Ok(()));
+
+                tokio::select! {
+                    _ = thread_cancel.cancelled() => {
+                        let _ = child.kill().await;
+                        Ok(())
+                    }
+                    status = child.wait() => {
+                        let status = status?;
+                        if status.success() {
+                            Ok(())
+                        } else {
+                            anyhow::bail!("simplicio_agent ACP exited with {status}")
+                        }
+                    }
+                }
+            })
+        })?;
+
+    match ready_rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Ok(())) => {}
+        Ok(Err(message)) => anyhow::bail!(message),
+        Err(error) => anyhow::bail!("simplicio_agent ACP startup timed out: {error}"),
+    }
 
     Ok(SpawnedAgent {
         _thread_handle: handle,

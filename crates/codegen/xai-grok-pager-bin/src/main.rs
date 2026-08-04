@@ -1498,43 +1498,171 @@ fn flag_dashboard_at_startup_if_requested(args: &mut PagerArgs) -> Result<()> {
     Ok(())
 }
 
-/// Start the headless Simplicio AgentHost on demand for the default Code TUI.
-/// The AgentHost is the backend; Code remains the only interactive surface.
-fn ensure_simplicio_agent_host() {
-    let program = env::var_os("SIMPLICIO_AGENT_BIN").unwrap_or_else(|| "simplicio-agent".into());
-    let daemon_ready = || {
-        std::process::Command::new(&program)
-            .args(["daemon", "status"])
-            .output()
-            .ok()
-            .and_then(|output| serde_json::from_slice::<serde_json::Value>(&output.stdout).ok())
-            .and_then(|status| status.get("ok").and_then(serde_json::Value::as_bool))
-            .unwrap_or(false)
-    };
-    if daemon_ready() {
-        return;
-    }
+fn shell_quote(value: &std::ffi::OsStr) -> String {
+    format!("'{}'", value.to_string_lossy().replace('\'', "'\"'\"'"))
+}
 
-    let Ok(_child) = std::process::Command::new(&program)
-        .args(["daemon", "start", "--warm-profile", "desktop"])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    else {
-        return;
-    };
-
-    // AgentHost preloads the model/provider catalog before binding its socket;
-    // allow that cold start to finish instead of falling through to a fake
-    // disconnected Code session.
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
-    while std::time::Instant::now() < deadline {
-        if daemon_ready() {
-            return;
+fn args_without_cwd() -> Vec<std::ffi::OsString> {
+    let mut filtered = Vec::new();
+    let mut args = env::args_os().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == "--cwd" {
+            let _ = args.next();
+            continue;
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        if arg.to_string_lossy().starts_with("--cwd=") {
+            continue;
+        }
+        filtered.push(arg);
     }
+    filtered
+}
+
+fn simplicio_code_bridge_file(bridge_id: &str) -> Result<std::path::PathBuf> {
+    let root = env::var_os("SIMPLICIO_AGENT_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .map(|home| home.join(".simplicio_agent"))
+        })
+        .unwrap_or_else(std::env::temp_dir);
+    let directory = root.join("code-bridges");
+    std::fs::create_dir_all(&directory)?;
+    Ok(directory.join(format!("{bridge_id}.jsonl")))
+}
+
+fn simplicio_agent_terminal_command(bridge_id: &str, bridge_file: &std::path::Path) -> String {
+    let program = env::var_os("SIMPLICIO_AGENT_BIN").unwrap_or_else(|| "simplicio_agent".into());
+    format!(
+        "exec env SIMPLICIO_CODE_COPILOT=1 SIMPLICIO_CODE_BRIDGE_ID={} \
+         SIMPLICIO_CODE_BRIDGE_FILE={} {}",
+        shell_quote(std::ffi::OsStr::new(bridge_id)),
+        shell_quote(bridge_file.as_os_str()),
+        shell_quote(&program)
+    )
+}
+
+const SIMPLICIO_AGENT_PANE_PERCENT: &str = "25";
+
+/// Put a literal `simplicio_agent` terminal beside Code. Outside tmux this
+/// creates a small two-pane session; inside tmux it only splits the current
+/// pane. The right pane is exactly 25% wide and shares Code's working folder.
+///
+/// Returns `true` when this process became the outer tmux launcher and should
+/// exit after the tmux session detaches.
+fn maybe_launch_simplicio_code_split(is_interactive: bool) -> Result<bool> {
+    if !is_interactive {
+        return Ok(false);
+    }
+
+    if env::var_os("SIMPLICIO_CODE_SPLIT_CHILD").is_some() {
+        return Ok(false);
+    }
+
+    let cwd = env::current_dir()?;
+    let started_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let bridge_id = format!("code-{}-{started_at}", std::process::id());
+    let bridge_file = simplicio_code_bridge_file(&bridge_id)?;
+    let right_command = simplicio_agent_terminal_command(&bridge_id, &bridge_file);
+    unsafe {
+        env::set_var("SIMPLICIO_CODE_BRIDGE_ID", &bridge_id);
+        env::set_var("SIMPLICIO_CODE_BRIDGE_FILE", &bridge_file);
+        env::set_var("SIMPLICIO_CODE_DIRECT_LLM", "1");
+    }
+
+    if env::var_os("TMUX").is_some() {
+        let split = std::process::Command::new("tmux")
+            .args([
+                "split-window",
+                "-h",
+                "-p",
+                SIMPLICIO_AGENT_PANE_PERCENT,
+                "-c",
+            ])
+            .arg(&cwd)
+            .arg(&right_command)
+            .status()?;
+        if !split.success() {
+            anyhow::bail!("tmux could not open the simplicio_agent side terminal");
+        }
+        let _ = std::process::Command::new("tmux")
+            .args(["set-option", "mouse", "on"])
+            .status();
+        let _ = std::process::Command::new("tmux")
+            .args(["select-pane", "-L"])
+            .status();
+        unsafe {
+            env::set_var("SIMPLICIO_CODE_SPLIT_CHILD", "1");
+        }
+        return Ok(false);
+    }
+
+    let executable = env::current_exe()?;
+    let mut left_command = format!(
+        "exec env SIMPLICIO_CODE_SPLIT_CHILD=1 SIMPLICIO_CODE_DIRECT_AGENT=1 \
+         SIMPLICIO_CODE_DIRECT_LLM=1 SIMPLICIO_CODE_BRIDGE_ID={} \
+         SIMPLICIO_CODE_BRIDGE_FILE={} {}",
+        shell_quote(std::ffi::OsStr::new(&bridge_id)),
+        shell_quote(bridge_file.as_os_str()),
+        shell_quote(executable.as_os_str())
+    );
+    for arg in args_without_cwd() {
+        left_command.push(' ');
+        left_command.push_str(&shell_quote(&arg));
+    }
+
+    let session = format!("simplicio-code-{}", std::process::id());
+    let created = std::process::Command::new("tmux")
+        .args(["new-session", "-d", "-s", &session, "-c"])
+        .arg(&cwd)
+        .arg(&left_command)
+        .status()?;
+    if !created.success() {
+        anyhow::bail!("tmux could not create the Simplicio Code workspace");
+    }
+
+    let split = std::process::Command::new("tmux")
+        .args([
+            "split-window",
+            "-h",
+            "-p",
+            SIMPLICIO_AGENT_PANE_PERCENT,
+            "-t",
+        ])
+        .arg(format!("{session}:0.0"))
+        .args(["-c"])
+        .arg(&cwd)
+        .arg(&right_command)
+        .status()?;
+    if !split.success() {
+        let _ = std::process::Command::new("tmux")
+            .args(["kill-session", "-t", &session])
+            .status();
+        anyhow::bail!("tmux could not open the simplicio_agent side terminal");
+    }
+
+    let _ = std::process::Command::new("tmux")
+        .args(["set-option", "-t", &session, "status", "off"])
+        .status();
+    let _ = std::process::Command::new("tmux")
+        .args(["set-option", "-t", &session, "mouse", "on"])
+        .status();
+    let _ = std::process::Command::new("tmux")
+        .args(["select-pane", "-t"])
+        .arg(format!("{session}:0.0"))
+        .status();
+
+    let attached = std::process::Command::new("tmux")
+        .args(["attach-session", "-t", &session])
+        .status()?;
+    if !attached.success() {
+        anyhow::bail!("tmux Simplicio Code workspace exited with {attached}");
+    }
+    Ok(true)
 }
 
 const RUNTIME_SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
@@ -1831,9 +1959,14 @@ async fn async_main() -> Result<()> {
         .and_then(|path| path.file_name().map(|name| name.to_owned()))
         .and_then(|name| name.to_str().map(str::to_owned))
         .is_some_and(|name| name == "simplicio-code" || name == "simplicio_code");
-    if simplicio_code_entrypoint && is_interactive {
-        ensure_simplicio_agent_host();
-        unsafe { env::set_var("SIMPLICIO_CODE_AGENT_FIRST", "1") };
+    if simplicio_code_entrypoint {
+        unsafe {
+            env::set_var("SIMPLICIO_CODE_DIRECT_AGENT", "1");
+            env::remove_var("SIMPLICIO_CODE_AGENT_FIRST");
+        }
+        if maybe_launch_simplicio_code_split(is_interactive)? {
+            return Ok(());
+        }
     }
     let opens_cockpit = is_interactive
         && args.resume_session.is_none()
@@ -1845,13 +1978,7 @@ async fn async_main() -> Result<()> {
         // The first screen is Code's native `/dashboard`, not a second
         // cockpit process. This keeps the dashboard's own navigation, tabs,
         // terminal/session actions, and scrollback in one TUI.
-        ensure_simplicio_agent_host();
         unsafe { env::set_var("GROK_OPEN_DASHBOARD_AT_STARTUP", "1") };
-
-        // Keep the Code visual session, but make its productive prompt path
-        // AgentHost-owned. The legacy in-process ACP remains only as the
-        // rendering/session shell and cannot select a second provider.
-        unsafe { env::set_var("SIMPLICIO_CODE_AGENT_FIRST", "1") };
     }
     if let Some(command) = args.command.take() {
         match command {
@@ -2403,6 +2530,16 @@ async fn signal_leaders_to_relaunch(installed_version: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_quote_preserves_spaces_and_single_quotes() {
+        assert_eq!(
+            shell_quote(std::ffi::OsStr::new("agent's workspace")),
+            "'agent'\"'\"'s workspace'"
+        );
+        assert_eq!(SIMPLICIO_AGENT_PANE_PERCENT, "25");
+    }
+
     #[cfg(all(feature = "jemalloc", unix))]
     struct TempHeapDump(std::path::PathBuf);
     #[cfg(all(feature = "jemalloc", unix))]
