@@ -1,0 +1,10 @@
+{
+  "schema": "simplicio.code-host-bias-fixture/v1",
+  "host": "codex",
+  "host_version": "fixture",
+  "control_text": "docs/host-bias/CONTROL.md",
+  "bias_text": "docs/host-bias/SKILL.md",
+  "bias_revision": "uwp-v3.1",
+  "execution_owner": "agent-runtime-loop",
+  "enforcement": "none"
+}
